@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.1.2
+
+### 评论区
+
+- 红心按钮右侧新增评论按钮，显示评论数量，最多显示为 `999+`。
+- 点击评论按钮会打开评论面板。
+- 评论面板支持网易云音乐和 QQ 音乐评论接口。
+
+### 智能过渡 / Crossfade
+
+- 歌曲切换新增智能过渡效果
+- 同时重绑 WebAudio 频谱与音量链路，避免视觉响应或音量控制断掉。
+- 底部“智能过渡”标识
+
+### 继续听 / Home
+
+- “继续听”优先接上上次恢复的播放队列和当前歌曲。
+- 显示当前恢复队列里的歌曲、封面、歌手和队列位置。
+- 点击“继续听”会从恢复队列当前位置继续播放，不再新建单曲队列。
+
+### 其他修正
+
+- 点击歌曲详情时保持二级面板逻辑。
+- Home 卡片部分英文标签改为中文。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

@@ -52,19 +52,19 @@ Get-Content RELEASE.md
 - `public/default-user-fx-archive.json` JSON 解析：通过。
 - 代码内置默认快照与 `public/default-user-fx-archive.json` 字段比对：一致。
 - Git 跟踪高风险残留检查：没有匹配 `.exe/.dll/.scr/.bat/.cmd/.ps1/.vbs/.jse/.wsf/.hta/.xlsm/.msi`。
-- `npm run build:win`：第一次被旧代理 `127.0.0.1:26001` 拦截；切到 `127.0.0.1:10808` 后构建成功。
+- `npm run build:win`：旧代理 `127.0.0.1:26001` 不可用；当前本机代理端口为 `127.0.0.1:7890`，electron-builder 下载 NSIS 构建资源时应使用该端口。
 - Defender 状态：实时防护开启，签名版本 `1.453.247.0`。
 - Defender 已扫描新安装包和 `dist\win-unpacked`；`Get-MpThreatDetection` 查询为空。
 - 安装包 SHA256：`bd53aae4e551f5b0b5a398a51e6ec1de5a9a57cb42e5eecedb0a1647fdcee6e6`。
 
 ## 发布注意
 
-- GitHub CLI 命令需要在命令内覆盖代理：
+- GitHub CLI / electron-builder 命令需要在命令内覆盖代理：
 
 ```powershell
-$env:HTTP_PROXY='http://127.0.0.1:10808'
-$env:HTTPS_PROXY='http://127.0.0.1:10808'
-$env:ALL_PROXY='socks5://127.0.0.1:10808'
+$env:HTTP_PROXY='http://127.0.0.1:7890'
+$env:HTTPS_PROXY='http://127.0.0.1:7890'
+$env:ALL_PROXY='socks5://127.0.0.1:7890'
 ```
 
 - 发布 `v1.1.0` 时不要上传 `dist/latest.yml`。
