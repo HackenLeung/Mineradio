@@ -2197,6 +2197,15 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
         <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
       </div>
+      <div class="fx-section-label">智能过渡画面</div>
+      <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
+        <button data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')">镜面</button>
+        <button data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')">频谱</button>
+        <button data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')">方块</button>
+        <button data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')">右滑</button>
+        <button data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
+        <button data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
+      </div>
       <div class="fx-section-label">桌面 / 壁纸</div>
       <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
       <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
@@ -2762,11 +2771,12 @@ var AUDIO_SILENCE_GAIN = 0.0001;
 var AUDIO_PLAY_TIMEOUT_MS = 3600;
 var smartTransitionChipTimer = null, smartTransitionChipSerial = 0;
 var SMART_TRANSITION_CHIP_MS = 2800;
+var SMART_TRANSITION_VISUAL_MS = 30000;
 var SMART_TRANSITION_FADE_OUT_MS = 960;
 var smartCrossfadeState = null;
-var SMART_CROSSFADE_DURATION_MS = 7600;
+var SMART_CROSSFADE_DURATION_MS = 30000;
 var SMART_CROSSFADE_MIN_REMAINING_SEC = 4.2;
-var SMART_CROSSFADE_MAX_REMAINING_SEC = 12.5;
+var SMART_CROSSFADE_MAX_REMAINING_SEC = 30;
 var SMART_CROSSFADE_LAST_LYRIC_LEAD_SEC = 5.4;
 var userPlaylists = [], qqPlaylists = [], myPodcastCollections = [], myPodcastItems = {}, playlistCoverCache = {};
 var CUSTOM_COVER_STORE_KEY = 'mineradio-custom-covers';
@@ -3324,6 +3334,7 @@ var fxDefaults = {
   performanceBackground: 'auto',
   performanceQuality: 'high',
   liveBackgroundKeep: false,
+  smartTransitionStyle: 'mirror',
   cam: 'off',
 };
 var PACKAGED_DEFAULT_USER_FX_ARCHIVE_NAME = '默认测试';
@@ -5868,6 +5879,13 @@ prevCoverTex.minFilter = THREE.LinearFilter; prevCoverTex.magFilter = THREE.Line
   var x = c.getContext('2d'); x.fillStyle = '#1c1c28'; x.fillRect(0,0,4,4);
   prevCoverTex.image = c; prevCoverTex.needsUpdate = true;
 })();
+var smartCoverTex = new THREE.Texture();
+smartCoverTex.minFilter = THREE.LinearFilter; smartCoverTex.magFilter = THREE.LinearFilter;
+(function(){
+  var c = document.createElement('canvas'); c.width = c.height = 4;
+  var x = c.getContext('2d'); x.fillStyle = '#1c1c28'; x.fillRect(0,0,4,4);
+  smartCoverTex.image = c; smartCoverTex.needsUpdate = true;
+})();
 
 var uniforms = {
   uTime:       { value: 0 },
@@ -5894,7 +5912,10 @@ var uniforms = {
   uTintStrength:{ value: 0 },
   uCoverTex:   { value: coverTex },
   uPrevCoverTex:{ value: prevCoverTex },
+  uSmartCoverTex:{ value: smartCoverTex },
   uColorMixT:  { value: 1.0 },        // 0=显示旧封面 → 1=显示新封面
+  uSmartCoverT:{ value: 0 },
+  uSmartCoverMode:{ value: 0 },
   uEdgeTex:    { value: coverEdgeTex },
   uRippleTex:  { value: rippleTex },
   uRippleCount:{ value: 0 },
@@ -5926,8 +5947,8 @@ uniform float uPreset, uIntensity, uDepth, uPointScale, uSpeed, uTwist;
 uniform float uVinylSpin;
 uniform float uColorBoost, uScatter, uCoverRes, uBgFade;
 uniform float uHasCover, uHasDepth, uEdgeEnabled, uAiBoost;
-uniform float uMouseActive, uPixel, uColorMixT, uLoading;
-uniform sampler2D uCoverTex, uPrevCoverTex, uEdgeTex, uRippleTex;
+uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode;
+uniform sampler2D uCoverTex, uPrevCoverTex, uSmartCoverTex, uEdgeTex, uRippleTex;
 uniform int uRippleCount;
 uniform vec2 uMouseXY, uHandXY;
 uniform float uHandActive, uGestureGrip;
@@ -5989,6 +6010,94 @@ vec3 samplePrevCoverColor(vec2 uv) {
   return texture2D(uPrevCoverTex, safeCoverUv(uv)).rgb;
 }
 
+vec3 sampleSmartCoverColor(vec2 uv) {
+  return texture2D(uSmartCoverTex, safeCoverUv(uv)).rgb;
+}
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float smartCoverMask(vec2 uv) {
+  float p = clamp(uSmartCoverT, 0.0, 1.0);
+  if (p <= 0.001) return 0.0;
+  float mode = uSmartCoverMode;
+  if (mode < 0.5) {
+    float edge = 1.08 - p * 1.18;
+    return smoothstep(edge - 0.075, edge + 0.075, uv.x);
+  }
+  if (mode < 1.5) {
+    vec2 grid = vec2(11.0, 11.0);
+    vec2 cell = floor(uv * grid);
+    float rnd = hash21(cell);
+    float rightBias = (1.0 - uv.x) * 0.20;
+    return smoothstep(rnd + rightBias - 0.16, rnd + rightBias + 0.12, p);
+  }
+  if (mode < 2.5) {
+    float d = length(uv - 0.5);
+    float disc = 1.0 - smoothstep(0.34 + p * 0.05, 0.56, d);
+    return max(smoothstep(0.62, 0.96, p), disc * smoothstep(0.18, 0.72, p));
+  }
+  if (mode < 3.5) {
+    float front = smoothstep(0.08, 0.86, p + uv.x * 0.18);
+    return clamp(front, 0.0, 1.0);
+  }
+  if (mode < 4.5) {
+    float scan = smoothstep(1.06 - p * 1.22 - 0.055, 1.06 - p * 1.22 + 0.055, uv.x);
+    float stripe = smoothstep(0.18, 0.88, sin((uv.x + p * 0.22) * 88.0) * 0.5 + 0.5);
+    return clamp(max(scan, scan * stripe), 0.0, 1.0);
+  }
+  if (mode < 5.5) {
+    float wave = 0.5 + 0.5 * sin(uv.x * 20.0 + uv.y * 9.0 + p * 9.0);
+    float band = smoothstep(0.22, 0.86, p + wave * 0.20 - abs(uv.y - 0.5) * 0.22);
+    return clamp(band, 0.0, 1.0);
+  }
+  float fold = abs(uv.x - 0.5);
+  float side = smoothstep(0.04, 0.48, p - fold * 0.62);
+  return clamp(side, 0.0, 1.0);
+}
+
+vec3 smartCoverMixColor(vec2 uv, vec3 baseColor) {
+  float mask = smartCoverMask(uv);
+  if (mask <= 0.001) return baseColor;
+  vec2 suv = uv;
+  if (uSmartCoverMode > 1.5 && uSmartCoverMode < 2.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    float spin = p * 3.14159265 * 1.35;
+    vec2 q = uv - 0.5;
+    float cs = cos(spin), sn = sin(spin);
+    suv = safeCoverUv(mat2(cs, -sn, sn, cs) * q + 0.5);
+  } else if (uSmartCoverMode > 2.5 && uSmartCoverMode < 3.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    suv = safeCoverUv(uv + vec2((1.0 - p) * 0.18, 0.0));
+  } else if (uSmartCoverMode > 4.5 && uSmartCoverMode < 5.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    float wave = sin(uv.x * 24.0 + p * 8.0) * (1.0 - p) * 0.045;
+    suv = safeCoverUv(uv + vec2(0.0, wave));
+  } else if (uSmartCoverMode > 5.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    float bend = (uv.x - 0.5) * (1.0 - p) * 0.10;
+    suv = safeCoverUv(uv + vec2(bend, 0.0));
+  }
+  vec3 nextColor = sampleSmartCoverColor(suv);
+  if (uSmartCoverMode > 1.5 && uSmartCoverMode < 2.5) {
+    float d = length(uv - 0.5);
+    float rim = smoothstep(0.28, 0.52, d);
+    nextColor = mix(nextColor, nextColor * 0.50 + vec3(0.04), rim * 0.42);
+  } else if (uSmartCoverMode > 2.5 && uSmartCoverMode < 3.5) {
+    nextColor *= 1.02;
+    baseColor *= 0.78;
+  } else if (uSmartCoverMode > 3.5 && uSmartCoverMode < 4.5) {
+    float line = smoothstep(0.92, 1.0, sin((uv.x + uSmartCoverT * 0.25) * 88.0) * 0.5 + 0.5);
+    nextColor += vec3(0.10, 0.14, 0.16) * line;
+  } else if (uSmartCoverMode > 5.5) {
+    float crease = 1.0 - smoothstep(0.0, 0.18, abs(uv.x - 0.5));
+    nextColor += vec3(0.12) * crease;
+    baseColor *= 1.0 - crease * 0.18;
+  }
+  return mix(baseColor, nextColor, mask);
+}
+
 vec4 sampleEdgeColor(vec2 uv) {
   return texture2D(uEdgeTex, safeCoverUv(uv));
 }
@@ -6029,6 +6138,7 @@ void main(){
   vec3 newCol = sampleNewCoverColor(sampleUv);
   vec3 prevCol = samplePrevCoverColor(sampleUv);
   vec3 coverColor = mix(prevCol, newCol, clamp(uColorMixT, 0.0, 1.0));
+  coverColor = smartCoverMixColor(sampleUv, coverColor);
   vec4 edge = sampleEdgeColor(sampleUv);
   float depthVal = edge.r;
   float edgeVal  = edge.g;
@@ -6092,6 +6202,7 @@ void main(){
     newCol = sampleNewCoverColor(sampleUv);
     prevCol = samplePrevCoverColor(sampleUv);
     coverColor = mix(prevCol, newCol, clamp(uColorMixT, 0.0, 1.0));
+    coverColor = smartCoverMixColor(sampleUv, coverColor);
     vColor = mix(defaultColor, coverColor, uHasCover);
 
     float depthFade = smoothstep(-4.5, 4.5, zPos);
@@ -6172,6 +6283,7 @@ void main(){
         vec3 softPrev = (samplePrevCoverColor(coverUv + sx) + samplePrevCoverColor(coverUv - sx) + samplePrevCoverColor(coverUv + sy) + samplePrevCoverColor(coverUv - sy)) * 0.25;
         coverColor = mix(coverColor, mix(softPrev, softNew, clamp(uColorMixT, 0.0, 1.0)), hiResGuard * 0.42);
       }
+      coverColor = smartCoverMixColor(coverUv, coverColor);
       vColor = mix(defaultColor, coverColor, uHasCover);
       float coverShade = 1.02 + 0.10 * (1.0 - smoothstep(0.0, coverR, d));
       vColor *= coverShade;
@@ -6304,6 +6416,59 @@ void main(){
     pos.z += grip * (0.18 + uBass * 0.22 + gripWave * 0.10);
   }
 
+  if (uSmartCoverT > 0.001) {
+    float st = clamp(uSmartCoverT, 0.0, 1.0);
+    float sm = smartCoverMask(safeCoverUv(aUv));
+    float edgeBand = 1.0 - smoothstep(0.05, 0.28, abs(sm - 0.5));
+    if (uSmartCoverMode < 0.5) {
+      pos.x += edgeBand * 0.16;
+      pos.z += edgeBand * (0.22 + uBeat * 0.18);
+      maxRippleAmp = max(maxRippleAmp, edgeBand * 0.30);
+    } else if (uSmartCoverMode < 1.5) {
+      vec2 cell = floor(aUv * vec2(11.0, 11.0));
+      float rnd = hash21(cell);
+      float pop = sm * (1.0 - sm) * 4.0;
+      pos.z += pop * (0.38 + rnd * 0.42);
+      pos.xy += vec2(hash11(aRand * 17.0) - 0.5, hash11(aRand * 23.0) - 0.5) * pop * 0.08;
+      maxRippleAmp = max(maxRippleAmp, pop * 0.34);
+    } else if (uSmartCoverMode < 2.5) {
+      vec2 q = aUv - 0.5;
+      float d = length(q);
+      float discIn = smoothstep(0.08, 0.42, st);
+      float discOut = smoothstep(0.70, 1.0, st);
+      float discMix = discIn * (1.0 - discOut);
+      float angle = atan(q.y, q.x) + st * 3.14159265 * 1.35;
+      float targetR = clamp(d, 0.08, 0.48) * 3.9;
+      pos.xy = mix(pos.xy, vec2(cos(angle), sin(angle)) * targetR, discMix * 0.54);
+      pos.z += discMix * (0.22 + sin(d * 42.0 - st * 12.0) * 0.035);
+      maxRippleAmp = max(maxRippleAmp, discMix * 0.24);
+    } else if (uSmartCoverMode < 3.5) {
+      float slide = smoothstep(0.04, 0.86, st);
+      pos.x += (1.0 - slide) * 0.34 * sm - slide * 0.10 * (1.0 - sm);
+      pos.z += sm * (0.30 + (1.0 - st) * 0.25) - (1.0 - sm) * 0.08;
+      pos.y += sin(aUv.y * 3.14159265) * sm * 0.018;
+      maxRippleAmp = max(maxRippleAmp, sm * (1.0 - sm) * 0.32);
+    } else if (uSmartCoverMode < 4.5) {
+      float scanLine = edgeBand;
+      pos.z += scanLine * 0.34;
+      pos.x += scanLine * 0.08;
+      maxRippleAmp = max(maxRippleAmp, scanLine * 0.36);
+    } else if (uSmartCoverMode < 5.5) {
+      float wave = sin(aUv.x * 24.0 + st * 8.0);
+      float band = sm * (1.0 - sm) * 4.0;
+      pos.y += wave * (1.0 - st) * 0.42 * band;
+      pos.x += sin(aUv.y * 18.0 + st * 6.0) * 0.10 * band;
+      pos.z += band * 0.24;
+      maxRippleAmp = max(maxRippleAmp, band * 0.30);
+    } else if (uSmartCoverMode < 6.5) {
+      float crease = 1.0 - smoothstep(0.0, 0.18, abs(aUv.x - 0.5));
+      float fold = sm * (1.0 - sm) * 4.0;
+      pos.x += (aUv.x - 0.5) * fold * 0.22;
+      pos.z += crease * (0.26 + fold * 0.18);
+      maxRippleAmp = max(maxRippleAmp, max(crease * 0.18, fold * 0.22));
+    }
+  }
+
   // ====================================================
   //  通用: 离散感 / 扭曲
   // ====================================================
@@ -6426,7 +6591,7 @@ var material = new THREE.ShaderMaterial({
 });
 
 var bloomVs = vs
-  .replace('uniform float uMouseActive, uPixel, uColorMixT, uLoading;', 'uniform float uMouseActive, uPixel, uColorMixT, uLoading, uBloomSize;')
+  .replace('uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode;', 'uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode, uBloomSize;')
   .replace('gl_PointSize = sz * uPixel * uPointScale;', 'gl_PointSize = sz * uPixel * uPointScale * uBloomSize;');
 var bloomFs = `
 precision highp float;
@@ -7689,6 +7854,7 @@ function readSavedLyricLayout() {
       shelfOpacity: clampRange(raw.shelfOpacity == null ? fxDefaults.shelfOpacity : Number(raw.shelfOpacity), 0.25, 1),
       shelfBgOpacity: clampRange(raw.shelfBgOpacity == null ? fxDefaults.shelfBgOpacity : Number(raw.shelfBgOpacity), 0.25, 0.98),
       shelfAccentColor: normalizeHexColor(raw.shelfAccentColor || fxDefaults.shelfAccentColor, fxDefaults.shelfAccentColor),
+      smartTransitionStyle: normalizeSmartTransitionStyle(raw.smartTransitionStyle || fxDefaults.smartTransitionStyle),
       cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam
     };
   } catch (e) {
@@ -7779,6 +7945,7 @@ function saveLyricLayout() {
       shelfOpacity: clampRange(fx.shelfOpacity == null ? fxDefaults.shelfOpacity : Number(fx.shelfOpacity), 0.25, 1),
       shelfBgOpacity: clampRange(fx.shelfBgOpacity == null ? fxDefaults.shelfBgOpacity : Number(fx.shelfBgOpacity), 0.25, 0.98),
       shelfAccentColor: normalizeHexColor(fx.shelfAccentColor || fxDefaults.shelfAccentColor, fxDefaults.shelfAccentColor),
+      smartTransitionStyle: normalizeSmartTransitionStyle(fx.smartTransitionStyle || fxDefaults.smartTransitionStyle),
       cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam
     }));
   } catch (e) {}
@@ -7817,6 +7984,41 @@ function applyShelfCameraDefaultAngle(force) {
 }
 function normalizeShelfPresence(value) {
   return String(value || '') === 'always' ? 'always' : 'auto';
+}
+function normalizeSmartTransitionStyle(value) {
+  value = String(value || '');
+  return /^(wipe|blocks|spectrum|mirror|random|off)$/.test(value) ? value : 'mirror';
+}
+function smartTransitionStyleMode(value) {
+  value = normalizeSmartTransitionStyle(value);
+  if (value === 'off') return -1;
+  if (value === 'blocks') return 1;
+  if (value === 'spectrum') return 5;
+  if (value === 'mirror') return 6;
+  return 0;
+}
+function resolveSmartTransitionStyleForRun(value) {
+  value = normalizeSmartTransitionStyle(value);
+  if (value === 'off') return 'off';
+  if (value !== 'random') return value;
+  var pool = ['wipe', 'blocks', 'spectrum', 'mirror'];
+  return pool[Math.floor(Math.random() * pool.length)] || 'wipe';
+}
+function updateSmartTransitionStyleControls() {
+  var current = normalizeSmartTransitionStyle(fx && fx.smartTransitionStyle);
+  document.querySelectorAll('#smart-transition-style-seg [data-smart-transition-style]').forEach(function(btn){
+    btn.classList.toggle('active', btn.getAttribute('data-smart-transition-style') === current);
+  });
+}
+function setSmartTransitionStyle(style, silent) {
+  fx.smartTransitionStyle = normalizeSmartTransitionStyle(style);
+  updateSmartTransitionStyleControls();
+  saveLyricLayout();
+  if (!silent) {
+    var labels = { wipe:'右滑擦入', blocks:'方块替换', spectrum:'频谱重组', mirror:'镜面翻页', random:'随机', off:'关闭' };
+    var label = labels[fx.smartTransitionStyle] || '右滑擦入';
+    showToast('智能过渡画面: ' + label);
+  }
 }
 function normalizedShelfNumber(key, fallback, min, max) {
   var value = fx && fx[key] != null ? Number(fx[key]) : fallback;
@@ -9974,8 +10176,17 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   if (shelfManager) shelfManager.onCoverChange(thumbSrc);
 
   // 启动颜色渐变 (1.4 秒)
-  var colorMixMs = opts.colorMixDuration || (fx.preset === 0 ? 520 : 1400);
-  startColorMixTween(opts.fromResolutionChange ? (fx.preset === 0 ? 300 : 520) : colorMixMs);
+  if (opts.smartTransitionHandoff) {
+    if (colorMixTween) {
+      cancelAnimationFrame(colorMixTween.raf);
+      colorMixTween = null;
+    }
+    uniforms.uColorMixT.value = 1;
+    if (typeof resetSmartCoverTransition === 'function') setTimeout(resetSmartCoverTransition, 120);
+  } else {
+    var colorMixMs = opts.colorMixDuration || (fx.preset === 0 ? 520 : 1400);
+    startColorMixTween(opts.fromResolutionChange ? (fx.preset === 0 ? 300 : 520) : colorMixMs);
+  }
 
   function refreshCoverDependentColors() {
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
@@ -15242,6 +15453,72 @@ function updatePlaybackQualityUi() {
     option.title = locked ? '需要网易云 SVIP 账号' : playbackQualityLabel(q);
   });
 }
+var smartCoverTransition = null;
+var smartCoverTransitionSerial = 0;
+function resetSmartCoverTransition() {
+  smartCoverTransition = null;
+  uniforms.uSmartCoverT.value = 0;
+}
+function setSmartCoverTextureFromImage(img) {
+  if (!img) return false;
+  try {
+    var size = Math.min(512, coverTextureSizeForResolution(fx.coverResolution));
+    var cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    var ctx = cv.getContext('2d');
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    var s = Math.min(iw, ih);
+    ctx.drawImage(img, (iw - s) / 2, (ih - s) / 2, s, s, 0, 0, size, size);
+    smartCoverTex.image = cv;
+    smartCoverTex.needsUpdate = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function loadSmartCoverTexture(song, serial) {
+  song = hydrateCustomCover(song || {});
+  var src = songCoverSrc(song, 512) || song.cover || '';
+  if (!src) return;
+  var loadSrc = isInlineCoverSrc(src) ? src : coverProxySrc(src);
+  if (!loadSrc) return;
+  var img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  img.onload = function() {
+    if (!smartCoverTransition || smartCoverTransition.serial !== serial) return;
+    if (setSmartCoverTextureFromImage(img)) smartCoverTransition.ready = true;
+  };
+  img.src = loadSrc;
+}
+function startSmartCoverTransition(song, durationMs) {
+  var serial = ++smartCoverTransitionSerial;
+  var duration = Math.max(1800, Number(durationMs) || SMART_TRANSITION_CHIP_MS);
+  var runStyle = resolveSmartTransitionStyleForRun(fx && fx.smartTransitionStyle);
+  if (runStyle === 'off') {
+    resetSmartCoverTransition();
+    return;
+  }
+  smartCoverTransition = {
+    serial: serial,
+    startedAt: performance.now(),
+    durationMs: duration,
+    ready: false,
+    mode: smartTransitionStyleMode(runStyle)
+  };
+  uniforms.uSmartCoverT.value = 0;
+  uniforms.uSmartCoverMode.value = smartCoverTransition.mode;
+  loadSmartCoverTexture(song, serial);
+  uniforms.uBurstAmt.value = Math.max(uniforms.uBurstAmt.value || 0, 0.36);
+}
+function tickSmartCoverTransition(now) {
+  if (!smartCoverTransition) return;
+  var t = clamp01((now - smartCoverTransition.startedAt) / Math.max(1, smartCoverTransition.durationMs));
+  var readyGate = smartCoverTransition.ready ? 1 : 0;
+  uniforms.uSmartCoverT.value = visualEase(t) * readyGate;
+  if (t >= 1) resetSmartCoverTransition();
+}
 function hideSmartTransitionChip(serial) {
   if (serial && serial !== smartTransitionChipSerial) return;
   if (smartTransitionChipTimer) {
@@ -15377,6 +15654,7 @@ function cancelSmartCrossfade(reason) {
   stopSmartCrossfadeAudio(state);
   smartCrossfadeState = null;
   hideSmartTransitionChip();
+  resetSmartCoverTransition();
   restorePlaybackGain();
 }
 function setCurrentAudioOutputGainForCrossfade(value) {
@@ -15451,6 +15729,7 @@ async function startSmartCrossfadeAuto() {
     smartCrossfadeState = { active: true, nextIdx: idx, token: currentToken, currentSongKey: currentSongKey, audio: nextAudio, raf: 0, timer: null, durationMs: mixMs, previousOnended: audio && audio.onended };
     var state = smartCrossfadeState;
     showSmartTransitionChip(mixMs + 1600);
+    startSmartCoverTransition(song, mixMs + 1200);
     try { audio.onended = null; } catch (e) {}
     nextAudio.load();
     await nextAudio.play();
@@ -15464,6 +15743,7 @@ async function startSmartCrossfadeAuto() {
       Promise.resolve(playQueueAt(state.nextIdx, {
         preserveHomeState: true,
         smartTransition: false,
+        smartTransitionHandoff: true,
         crossfadeHandoffAudio: handoffAudio,
         resumeAt: resumeAt,
         fadeInMs: 1400
@@ -19007,7 +19287,10 @@ async function playQueueAt(idx, opts) {
   var canFadeCurrentAudio = !!(audio && audio.src && !audio.paused && !audio.ended && targetVolume > 0.001);
   var showSmartTransition = !!opts.smartTransition && hasTransitionFrom && canFadeCurrentAudio && !opts.qualitySwitch && !opts.autoRepeat && !(Number(opts.resumeAt) > 0);
   if (showSmartTransition) showSmartTransitionChip(opts.smartTransitionDurationMs || SMART_TRANSITION_CHIP_MS);
-  else hideSmartTransitionChip();
+  else {
+    hideSmartTransitionChip();
+    if (!opts.crossfadeHandoffAudio) resetSmartCoverTransition();
+  }
   markRenderInteraction('track-switch', 1500);
   var playPhase = 'start';
   function markPlayPhase(name) { playPhase = name; }
@@ -19029,6 +19312,7 @@ async function playQueueAt(idx, opts) {
   markPlayPhase('track-setup');
   var song = safePlaybackStep('hydrate-song', function(){ return hydrateCustomCover(playQueue[idx]); }) || playQueue[idx];
   playQueue[idx] = song;
+  if (showSmartTransition) startSmartCoverTransition(song, opts.smartTransitionDurationMs || SMART_TRANSITION_CHIP_MS);
   var playbackContext = opts.context || (song && song.radioContext) || null;
   activeRadioContext = playbackContext || null;
   safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
@@ -19066,6 +19350,8 @@ async function playQueueAt(idx, opts) {
   safePlaybackStep('cover-load', function(){
     var customCover = getCustomCoverForSong(song);
     var coverOpts = { trackToken: token, deferHeavy: true, delay: firstVisualPlay ? 380 : 680, timeout: firstVisualPlay ? 1400 : 1900 };
+    if (opts.smartTransitionHandoff) coverOpts.smartTransitionHandoff = true;
+    if (showSmartTransition) coverOpts.colorMixDuration = opts.smartTransitionDurationMs || SMART_TRANSITION_VISUAL_MS;
     if (customCover) applyCoverDataUrl(customCover, coverOpts);
     else loadCoverFromUrl(song.cover ? coverUrlWithSize(song.cover, 400) : '', coverOpts);
   });
@@ -19097,6 +19383,7 @@ async function playQueueAt(idx, opts) {
     if (!data.url) {
       if (showSmartTransition) pauseCurrentAudioForTrackSwitch();
       hideSmartTransitionChip();
+      if (showSmartTransition) resetSmartCoverTransition();
       if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
       if (await tryAutoPlaybackFallback(song, data, idx, token, opts)) return;
       handlePlaybackUnavailable(song, data);
@@ -19239,6 +19526,7 @@ async function playQueueAt(idx, opts) {
         try { opts.crossfadeHandoffAudio.pause(); } catch (e) {}
       }
       hideSmartTransitionChip();
+      if (showSmartTransition) resetSmartCoverTransition();
       if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
       forcePlaybackControlsInteractive();
       if (opts.manual) {
@@ -19252,6 +19540,7 @@ async function playQueueAt(idx, opts) {
     if (useCrossfadeHandoff) {
       smartCrossfadeState = null;
       hideSmartTransitionChip();
+      if (!opts.smartTransitionHandoff) resetSmartCoverTransition();
     }
     markPlayPhase('session-begin');
     safePlaybackStep('listen-session-begin', function(){ beginListenSession(song, playbackContext); });
@@ -19271,6 +19560,7 @@ async function playQueueAt(idx, opts) {
   } catch (err) {
     console.error('Play failed:', { phase: playPhase, error: err }, err);
     hideSmartTransitionChip();
+    resetSmartCoverTransition();
     hideLoading();
     forcePlaybackControlsInteractive();
     if (!isPlaybackRecursionError(err) && token === trackSwitchToken && !opts.manual && playQueue.length > 1) {
@@ -19282,6 +19572,7 @@ async function playQueueAt(idx, opts) {
   } catch (setupErr) {
     console.error('Play setup failed:', { phase: playPhase, error: setupErr }, setupErr);
     hideSmartTransitionChip();
+    resetSmartCoverTransition();
     hideLoading();
     forcePlaybackControlsInteractive();
     if (!isPlaybackRecursionError(setupErr) && typeof token !== 'undefined' && token === trackSwitchToken && !opts.manual && playQueue.length > 1) {
@@ -19367,6 +19658,13 @@ function setPlayIcon(p) {
     ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'
     : '<path d="M8 5v14l11-7z"/>';
 }
+function allowSmartTransitionForManualTrackSwitch(opts) {
+  opts = opts || {};
+  if (opts.smartTransition === false) return false;
+  if (opts.autoAdvance) return true;
+  resetSmartCoverTransition();
+  return false;
+}
 function nextTrack(opts) {
   opts = opts || {};
   if (!playQueue.length) return;
@@ -19375,10 +19673,11 @@ function nextTrack(opts) {
   var fromIdx = currentIdx;
   if (playMode === 'shuffle') currentIdx = Math.floor(Math.random() * playQueue.length);
   else currentIdx = (currentIdx + 1) % playQueue.length;
+  var allowSmartTransition = allowSmartTransitionForManualTrackSwitch(opts);
   Promise.resolve(playQueueAt(currentIdx, {
-    smartTransition: opts.smartTransition !== false && fromIdx >= 0 && playQueue.length > 1,
+    smartTransition: allowSmartTransition && opts.autoAdvance === true && fromIdx >= 0 && playQueue.length > 1,
     smartTransitionFromIdx: fromIdx,
-    smartTransitionDurationMs: opts.autoAdvance ? 3200 : SMART_TRANSITION_CHIP_MS
+    smartTransitionDurationMs: SMART_TRANSITION_VISUAL_MS
   })).finally(forcePlaybackControlsInteractive);
 }
 function prevTrack(opts) {
@@ -19388,10 +19687,11 @@ function prevTrack(opts) {
   forcePlaybackControlsInteractive();
   var fromIdx = currentIdx;
   currentIdx = (currentIdx - 1 + playQueue.length) % playQueue.length;
+  var allowSmartTransition = allowSmartTransitionForManualTrackSwitch(opts);
   Promise.resolve(playQueueAt(currentIdx, {
-    smartTransition: opts.smartTransition !== false && fromIdx >= 0 && playQueue.length > 1,
+    smartTransition: allowSmartTransition && opts.autoAdvance === true && fromIdx >= 0 && playQueue.length > 1,
     smartTransitionFromIdx: fromIdx,
-    smartTransitionDurationMs: SMART_TRANSITION_CHIP_MS
+    smartTransitionDurationMs: SMART_TRANSITION_VISUAL_MS
   })).finally(forcePlaybackControlsInteractive);
 }
 function shuffleQueue() {
@@ -20919,6 +21219,7 @@ function normalizeFxArchiveSnapshot(raw) {
     shelfOpacity: archiveNumber(raw, 'shelfOpacity', fxDefaults.shelfOpacity, 0.25, 1),
     shelfBgOpacity: archiveNumber(raw, 'shelfBgOpacity', fxDefaults.shelfBgOpacity, 0.25, 0.98),
     shelfAccentColor: normalizeHexColor(raw.shelfAccentColor || fxDefaults.shelfAccentColor, fxDefaults.shelfAccentColor),
+    smartTransitionStyle: normalizeSmartTransitionStyle(raw.smartTransitionStyle || fxDefaults.smartTransitionStyle),
     cam: archiveMode(raw, 'cam', /^(off|gesture)$/, fxDefaults.cam)
   };
 }
@@ -22212,6 +22513,7 @@ function updateFxInputs() {
   document.querySelectorAll('#shelf-seg button').forEach(function(b){ b.classList.toggle('active', b.dataset.shelf === fx.shelf); });
   updateShelfControlUi();
   document.querySelectorAll('#cam-seg button').forEach(function(b){ b.classList.toggle('active', b.dataset.cam === fx.cam); });
+  updateSmartTransitionStyleControls();
   refreshPresetGrid();
   updateLyricColorControls();
   updateLyricHighlightControls();
@@ -27542,6 +27844,7 @@ function animate() {
   // 通用转场脉冲: 只作为切换预设时的短促提亮。
   uniforms.uBurstAmt.value *= 0.90;
   tickPresetTransition();
+  tickSmartCoverTransition(now);
 
   updateRipples(dt);
   updateFloatLayer(dt);

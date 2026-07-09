@@ -12,11 +12,11 @@
 
 ## Stable Project Facts
 
-- 可运行程序：`E:\桌面\播放器软件\Mineradio\Mineradio.exe`
-- 运行版主目录：`E:\桌面\播放器软件\Mineradio`
-- 真实代码/Git 仓库：`E:\桌面\播放器软件\Mineradio\resources\app`
+- 可运行程序：开发期用 `npm start`；构建后程序为 `D:\projects\Mineradio\dist\win-unpacked\Mineradio.exe`
+- 运行版主目录：`D:\projects\Mineradio`
+- 真实代码/Git 仓库：`D:\projects\Mineradio`
 - GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
-- 统一备份目录：`E:\桌面\播放器软件\工作区备份`
+- 统一备份目录：`D:\projects\Mineradio\工作区备份`
 - 当前源码检查点：`v1.1.0`
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
@@ -26,11 +26,18 @@
 
 ## Workspace Organization
 
+2026-07-08 当前本地工作区：
+
+- 当前有效源码/Git 仓库是 `D:\projects\Mineradio`。
+- 开发期用 `npm start` 运行检查；构建后 exe 路径按 `D:\projects\Mineradio\dist\win-unpacked\Mineradio.exe`。
+- 备份统一放到 `D:\projects\Mineradio\工作区备份`。
+- 不要再按旧 `E:\桌面\播放器软件\Mineradio\resources\app` 路径操作；当前机器上该目录不存在。
+
 2026-06-18 已整理工作区：
 
-- 真正项目移动到 `E:\桌面\播放器软件\Mineradio`。
-- 旧的 `editable-install`、历史 `backups`、`备份`、截图、旧计划文档和验证目录都归档到 `E:\桌面\播放器软件\工作区备份\2026-06-18-workspace-cleanup`。
-- 项目内历史 `backups` 也归档到 `E:\桌面\播放器软件\工作区备份\2026-06-18-workspace-cleanup\project-internal`。
+- 真正项目当前在 `D:\projects\Mineradio`。
+- 旧的 `editable-install`、历史 `backups`、`备份`、截图、旧计划文档和验证目录统一归档到 `D:\projects\Mineradio\工作区备份\2026-06-18-workspace-cleanup`。
+- 项目内历史 `backups` 也归档到 `D:\projects\Mineradio\工作区备份\2026-06-18-workspace-cleanup\project-internal`。
 - 根目录 `AGENTS.md` 负责给新对话指路；项目内 `AGENTS.md` 负责项目规则。
 
 ## Release Memory
@@ -211,7 +218,7 @@
 - 禁止回退或改坏的点：不要把旧安装包重新标为可信；不要让 `v1.0.10` 客户端通过软件内更新自动拉取 `v1.1.0`；不要复用旧 `dist`、旧备份包或历史 packaged build。
 
 ### 2026-06-24 - 默认测试作为默认用户存档
-- 用户认可/要求保留：`E:\Download\默认测试.json` 需要成为软件首次启用默认用户存档，并且软件内视觉参数默认值也按这份 JSON 快照初始化。
+- 用户认可/要求保留：仓库内 `public/default-user-fx-archive.json` 需要成为软件首次启用默认用户存档，并且软件内视觉参数默认值也按这份 JSON 快照初始化。
 - 涉及文件：`public/index.html`、`public/default-user-fx-archive.json`。
 - 关键参数/实现：`fxDefaults` 与 `PACKAGED_DEFAULT_FX_SNAPSHOT` 同步为「默认测试」；没有本地 `mineradio-lyric-layout-v1` 时 `readSavedLyricLayout()` 使用 packaged snapshot；没有本地用户存档 key 时自动创建「默认测试」存档槽位。
 - 禁止回退或改坏的点：不要让首次启动回到旧青色 UI、动态自动隐藏歌单架或播客默认显示；不要覆盖已有用户本地存档，只在首次没有用户存档 key 时种入默认槽。
@@ -347,11 +354,11 @@
 
 ### 2026-06-18 - 将 win-unpacked 设为 Mineradio 主运行目录
 
-- 用户认可/要求保留：用户实际检查软件靠 `win-unpacked` 里的 `Mineradio.exe`，所以 `win-unpacked` 已提升为 `E:\桌面\播放器软件\Mineradio` 主目录。
-- 涉及文件：`E:\桌面\播放器软件\AGENTS.md`、`E:\桌面\播放器软件\Mineradio\AGENTS.md`、`AGENTS.md`、本文件。
-- 关键参数/实现：真实代码/Git 仓库移动到 `E:\桌面\播放器软件\Mineradio\resources\app`；可运行程序在 `E:\桌面\播放器软件\Mineradio\Mineradio.exe`。
-- 禁止回退或改坏的点：以后不要修改外层旧源码路径；改代码必须进入 `resources\app`，否则用户打开 exe 看不到效果。
-- 补充：运行版 `node_modules` 可能没有打包依赖；发布前如缺少 `electron-builder`，在 `resources\app` 里执行 `npm install`。
+- 用户认可/要求保留：当前本地有效源码/Git 仓库已调整为 `D:\projects\Mineradio`；开发期用 `npm start` 检查，构建后检查 `dist\win-unpacked\Mineradio.exe`。
+- 涉及文件：`AGENTS.md`、`docs\PROJECT_MEMORY.md`、`docs\HANDOFF_NEXT_CHAT.md`。
+- 关键参数/实现：真实代码/Git 仓库是 `D:\projects\Mineradio`；构建后可运行程序路径是 `D:\projects\Mineradio\dist\win-unpacked\Mineradio.exe`。
+- 禁止回退或改坏的点：以后不要按旧 `E:\桌面\播放器软件\Mineradio\resources\app` 路径操作；改代码必须进入 `D:\projects\Mineradio`，否则用户本地看不到效果。
+- 补充：发布前如缺少 `electron-builder`，在 `D:\projects\Mineradio` 里执行 `npm install`。
 
 ### 2026-06-18 - 保留最小化内存优化边界
 
