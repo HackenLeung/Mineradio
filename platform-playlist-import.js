@@ -245,7 +245,7 @@ const SOURCE_ALIASES = {
   wy:'wy', '163':'wy', netease:'wy', '小芸':'wy',
   kw:'kw', kuwo:'kw', '小蜗':'kw',
   kg:'kg', kugou:'kg', '小枸':'kg', '小狗':'kg',
-  kgc:'kgc', kglite:'kgc', concept:'kgc', '小枸概念版':'kgc', '酷狗概念版':'kgc', '概念版':'kgc',
+  kgc:'kgc', kglite:'kgc', concept:'kgc', '小枸概念版':'kgc', '小狗概念版':'kgc', '概念版':'kgc',
   mg:'mg', migu:'mg', '小菇':'mg',
 };
 
@@ -492,7 +492,7 @@ function detect(input, preferredSource) {
     const match = text.match(rx);
     if (match) return { source:ruleSource, kind:ruleKind, id:match[1], input:text };
   }
-  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
+  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|小狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
   if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
   if (source && /^\d+$/.test(text)) return { source, id:text, input:text };
   if (source === 'kg' && /^gcid_[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
@@ -778,7 +778,7 @@ async function importQQ(id) {
     Number(baseInfo && (baseInfo.songnum || baseInfo.songNum) || 0),
     rows.length
   );
-  // Older QQ endpoints often expose only the first 120 songs unless song_begin
+  // Older 小Q endpoints often expose only the first 120 songs unless song_begin
   // and song_num are requested explicitly. Continue paging through both modern
   // and legacy endpoints and stop only after repeated stagnant pages or total is reached.
   let stagnantPages = 0;
@@ -856,9 +856,9 @@ async function importQQAlbum(id) {
     const total = Number(payload.totalNum || payload.total || info.total || rows.length);
     if (!pageRows.length || (total && rows.length >= total)) break;
   }
-  if (!rows.length) throw new Error('QQ album import failed');
+  if (!rows.length) throw new Error('小Q album import failed');
   return {
-    name:info.name || info.title || info.Falbum_name || `QQ Album ${albumId}`,
+    name:info.name || info.title || info.Falbum_name || `小Q Album ${albumId}`,
     cover:(info.mid || info.albumMid || albumId) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${info.mid || info.albumMid || albumId}.jpg` : '',
     songs:finalizeImportedSongs(rows.map(item => ({
       id:item.id || item.songid || item.songId,
@@ -880,7 +880,7 @@ async function importQQAlbum(id) {
 async function importWY(id) {
   const data = await fetchJson(`https://music.163.com/api/v6/playlist/detail?id=${id}&n=10000&s=0`, { headers:{ Referer:'https://music.163.com/' } });
   const list = data?.playlist || data?.result;
-  if (!list) throw new Error('网易云歌单读取失败');
+  if (!list) throw new Error('小云歌单读取失败');
   const initialTracks = Array.isArray(list?.tracks) ? list.tracks : [];
   const trackIds = (list?.trackIds || []).map(item => String(item?.id || item)).filter(Boolean);
   const loadedIds = new Set(initialTracks.map(item => String(item?.id || '')));
@@ -896,7 +896,7 @@ async function importWY(id) {
   }
   const byId = new Map([...initialTracks, ...extraTracks].map(item => [String(item.id), item]));
   const tracks = trackIds.length
-    ? trackIds.map(trackId => byId.get(trackId) || { id:trackId, name:`网易云歌曲 ${trackId}`, ar:[], al:{} })
+    ? trackIds.map(trackId => byId.get(trackId) || { id:trackId, name:`小云歌曲 ${trackId}`, ar:[], al:{} })
     : initialTracks;
   return {
     name:list.name || `小芸歌单 ${id}`, cover:list.coverImgUrl || '',
@@ -1708,7 +1708,7 @@ async function importKG(id, originalInput, context = {}) {
   const songs = mapKugouSongs(rows);
   if (!songs.length) throw new Error('小狗歌单读取失败');
   return {
-    name:info.name || info.specialname || detailHtml.match(/<title>([^<]+)/i)?.[1]?.replace(/_酷狗音乐.*$/i, '') || `小枸歌单 ${identity}`,
+    name:info.name || info.specialname || detailHtml.match(/<title>([^<]+)/i)?.[1]?.replace(/_[^<]*音乐.*$/i, '') || `小枸歌单 ${identity}`,
     cover:String(info.pic || info.imgurl || info.img || '').replace('{size}', '400'),
     songs,
   };

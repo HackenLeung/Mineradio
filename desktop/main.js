@@ -67,9 +67,6 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
 ];
@@ -654,7 +651,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: '网易云音乐登录',
+      title: '小云登录',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -726,9 +723,9 @@ async function openNeteaseMusicLoginWindow(owner) {
         const cookie = await readNeteaseLoginCookieHeader(cookieSession);
         resolve(neteaseCookieHasLogin(cookie)
           ? { ok: true, cookie, partial: !qqCookieHasPlaybackLogin(cookie) }
-          : { ok: false, cancelled: true, message: '网易云登录窗口已关闭' });
+          : { ok: false, cancelled: true, message: '小云登录窗口已关闭' });
       } catch (e) {
-        resolve({ ok: false, error: e.message || '网易云登录窗口已关闭' });
+        resolve({ ok: false, error: e.message || '小云登录窗口已关闭' });
       }
     });
 
@@ -756,7 +753,7 @@ async function openQQMusicLoginWindow(owner) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: 'QQ 音乐登录',
+      title: '小Q登录',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -786,18 +783,18 @@ async function openQQMusicLoginWindow(owner) {
           warmupStarted = true;
           setTimeout(() => {
             if (!settled && loginWindow && !loginWindow.isDestroyed()) {
-              loginWindow.loadURL('https://y.qq.com/n/ryqq/player').catch((e) => console.warn('QQ login warmup navigation failed:', e.message));
+              loginWindow.loadURL('https://y.qq.com/n/ryqq/player').catch((e) => console.warn('小Q login warmup navigation failed:', e.message));
             }
           }, 900);
         }
       } catch (e) {
-        console.warn('QQ login cookie check failed:', e.message);
+        console.warn('小Q login cookie check failed:', e.message);
       }
     };
 
     loginWindow.webContents.setWindowOpenHandler(({ url }) => {
       if (/^https?:\/\//i.test(url)) {
-        loginWindow.loadURL(url).catch((e) => console.warn('QQ login popup navigation failed:', e.message));
+        loginWindow.loadURL(url).catch((e) => console.warn('小Q login popup navigation failed:', e.message));
       } else {
         shell.openExternal(url).catch(() => {});
       }
@@ -828,9 +825,9 @@ async function openQQMusicLoginWindow(owner) {
         const cookie = await readQQLoginCookieHeader(cookieSession);
         resolve(qqCookieHasLogin(cookie)
           ? { ok: true, cookie }
-          : { ok: false, cancelled: true, message: 'QQ 登录窗口已关闭' });
+          : { ok: false, cancelled: true, message: '小Q登录窗口已关闭' });
       } catch (e) {
-        resolve({ ok: false, error: e.message || 'QQ 登录窗口已关闭' });
+        resolve({ ok: false, error: e.message || '小Q登录窗口已关闭' });
       }
     });
 
@@ -1798,7 +1795,7 @@ async function createWindow() {
       fs.unlinkSync(legacyQQCookie);
     }
   } catch (e) {
-    console.warn('QQ cookie migration skipped:', e.message);
+    console.warn('小Q cookie migration skipped:', e.message);
   }
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
@@ -1824,7 +1821,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
 

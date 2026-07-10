@@ -1,6 +1,6 @@
 // ====================================================================
 //  粒子音乐可视化播放器 — Server v2
-//  - 网易云搜索 / 歌曲URL / 封面/音频代理
+//  - 小云搜索 / 歌曲URL / 封面/音频代理
 //  - 扫码登录 (login_qr_*) + cookie 持久化 (./.cookie)
 //  - 试听检测 (freeTrialInfo) + 全 quality 探测
 //  - 所有受保护 API 都会带上已登录用户的 cookie
@@ -1816,7 +1816,7 @@ function getKugouLoginInfo() {
     loggedIn,
     hasCookie: !!kugouCookie,
     userId,
-    nickname: loggedIn ? (kugouCookieNickname(obj) || '酷狗音乐用户') : '酷狗音乐',
+    nickname: loggedIn ? (kugouCookieNickname(obj) || '小狗用户') : '小狗',
     avatar: loggedIn ? kugouCookieAvatar(obj) : '',
     vipType,
     vipLevel: isVip ? 'vip' : 'none',
@@ -1825,7 +1825,7 @@ function getKugouLoginInfo() {
     vipLabel: isVip ? 'Kugou VIP' : '无 VIP',
     playbackKeyReady: loggedIn,
     preview: !loggedIn,
-    message: loggedIn ? '已保存酷狗网页登录会话' : '未登录酷狗音乐'
+    message: loggedIn ? '已保存小狗网页登录会话' : '未登录小狗'
   };
 }
 
@@ -1844,21 +1844,21 @@ function classifyNeteasePlaybackRestriction(lastData, loginInfo) {
   const code = Number(lastData && lastData.code);
   const freeTrial = lastData && lastData.freeTrialInfo;
   if (!loggedIn) {
-    return playbackRestriction('netease', 'login_required', '网易云需要登录后尝试获取完整播放地址', 'login', { code, fee });
+    return playbackRestriction('netease', 'login_required', '小云需要登录后尝试获取完整播放地址', 'login', { code, fee });
   }
   if (freeTrial) {
-    return playbackRestriction('netease', 'trial_only', '网易云仅返回试听片段，完整播放需要会员或购买', 'upgrade', { code, fee });
+    return playbackRestriction('netease', 'trial_only', '小云仅返回试听片段，完整播放需要会员或购买', 'upgrade', { code, fee });
   }
   if (fee === 1) {
-    return playbackRestriction('netease', 'vip_required', '网易云歌曲需要 VIP 权限，当前无法获取完整播放地址', 'upgrade', { code, fee });
+    return playbackRestriction('netease', 'vip_required', '小云歌曲需要 VIP 权限，当前无法获取完整播放地址', 'upgrade', { code, fee });
   }
   if (fee === 4 || fee === 8) {
-    return playbackRestriction('netease', 'paid_required', '网易云歌曲需要单曲、专辑购买或更高权限', 'purchase', { code, fee });
+    return playbackRestriction('netease', 'paid_required', '小云歌曲需要单曲、专辑购买或更高权限', 'purchase', { code, fee });
   }
   if (code === 404 || code === 403) {
-    return playbackRestriction('netease', 'copyright_unavailable', '网易云版权暂不可播，换源或稍后重试会更稳', 'switch_source', { code, fee });
+    return playbackRestriction('netease', 'copyright_unavailable', '小云版权暂不可播，换源或稍后重试会更稳', 'switch_source', { code, fee });
   }
-  return playbackRestriction('netease', 'url_unavailable', '网易云没有返回可播放地址，可能是版权、会员或地区限制', loggedIn ? 'switch_source' : 'login', { code, fee });
+  return playbackRestriction('netease', 'url_unavailable', '小云没有返回可播放地址，可能是版权、会员或地区限制', loggedIn ? 'switch_source' : 'login', { code, fee });
 }
 function classifyQQPlaybackRestriction(info, session) {
   const hasSession = typeof session === 'object' ? !!session.hasSession : !!session;
@@ -1867,21 +1867,21 @@ function classifyQQPlaybackRestriction(info, session) {
   const code = Number((info && (info.result || info.code || info.errtype)) || 0);
   const lower = rawMsg.toLowerCase();
   if (!hasSession) {
-    return playbackRestriction('qq', 'login_required', 'QQ 音乐需要登录或授权后才能获取播放地址', 'login', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'login_required', '小Q需要登录或授权后才能获取播放地址', 'login', { code, rawMessage: rawMsg });
   }
   if (!hasPlaybackKey && code === 104003) {
-    return playbackRestriction('qq', 'login_required', 'QQ 音乐当前只拿到了网页登录状态，还缺少播放授权，请重新打开官方 QQ 音乐登录窗口完成授权', 'login', { code, rawMessage: rawMsg, missingPlaybackKey: true });
+    return playbackRestriction('qq', 'login_required', '小Q当前只拿到了网页登录状态，还缺少播放授权，请重新打开官方小Q登录窗口完成授权', 'login', { code, rawMessage: rawMsg, missingPlaybackKey: true });
   }
   if (code === 104003) {
-    return playbackRestriction('qq', 'copyright_unavailable', 'QQ 音乐没有给当前版本返回播放地址，通常是版权、会员或官方版本限制，可以换一个搜索结果或切到网易云源', 'switch_source', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'copyright_unavailable', '小Q没有给当前版本返回播放地址，通常是版权、会员或官方版本限制，可以换一个搜索结果或切到小云源', 'switch_source', { code, rawMessage: rawMsg });
   }
   if (/vip|会员|付费|购买|数字专辑|专辑|pay/.test(lower + rawMsg)) {
-    return playbackRestriction('qq', 'paid_required', 'QQ 音乐歌曲需要会员、购买或数字专辑权限', 'upgrade', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'paid_required', '小Q歌曲需要会员、购买或数字专辑权限', 'upgrade', { code, rawMessage: rawMsg });
   }
   if (code && code !== 0) {
-    return playbackRestriction('qq', 'copyright_unavailable', rawMsg || 'QQ 音乐版权暂不可播或仅官方客户端可播', 'switch_source', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'copyright_unavailable', rawMsg || '小Q版权暂不可播或仅官方客户端可播', 'switch_source', { code, rawMessage: rawMsg });
   }
-  return playbackRestriction('qq', 'url_unavailable', 'QQ 音乐没有返回播放地址，可能受版权、会员或官方客户端限制', 'switch_source', { code, rawMessage: rawMsg });
+  return playbackRestriction('qq', 'url_unavailable', '小Q没有返回播放地址，可能受版权、会员或官方客户端限制', 'switch_source', { code, rawMessage: rawMsg });
 }
 const NETEASE_QUALITY_CANDIDATES = [
   { level: 'jymaster', br: 1999000, label: '超清母带', svip: true },
@@ -2352,7 +2352,7 @@ function normalizeQQProfile(body, cookieObj) {
     loggedIn: !!(uin && qqCookieMusicKey(cookieObj)),
     preview: false,
     userId: uin,
-    nickname: nick || (uin ? ('QQ ' + uin) : 'QQ 音乐'),
+    nickname: nick || (uin ? ('小Q ' + uin) : '小Q'),
     avatar,
     vipType,
     hasCookie: !!qqCookie,
@@ -2440,7 +2440,7 @@ function mapQQPlaylist(pl, kind) {
     cover: pl.diss_cover || pl.logo || pl.picurl || pl.cover || '',
     trackCount: pl.song_cnt || pl.songnum || pl.total_song_num || pl.song_count || 0,
     playCount: pl.listen_num || pl.visitnum || pl.play_count || 0,
-    creator: pl.hostname || pl.nick || pl.creator || 'QQ 音乐',
+    creator: pl.hostname || pl.nick || pl.creator || '小Q',
     subscribed: kind === 'collect',
     specialType: 0,
   };
@@ -2521,7 +2521,7 @@ async function handleQQPlaylistTracks(id) {
   const info = await getQQLoginInfo();
   if (!info.loggedIn || !info.userId) return { loggedIn: false, provider: 'qq', tracks: [] };
   const pid = String(id || '').trim();
-  if (!pid) return { loggedIn: true, provider: 'qq', error: 'Missing QQ playlist id', tracks: [] };
+  if (!pid) return { loggedIn: true, provider: 'qq', error: 'Missing 小Q playlist id', tracks: [] };
   const result = await qqGetJSON('https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg', {
     type: 1,
     utf8: 1,
@@ -2976,10 +2976,10 @@ function mapKugouPlaylist(raw) {
     source: 'kugou',
     type: 'kugou',
     id: String(id || ''),
-    name: String(name || '酷狗歌单'),
+    name: String(name || '小狗歌单'),
     cover: String(cover || '').replace(/\{size\}/g, '240'),
     trackCount: Number(raw.count || raw.song_count || raw.total || raw.file_count || raw.songcount || 0) || 0,
-    creator: raw.username || raw.nickname || raw.user_name || '酷狗音乐',
+    creator: raw.username || raw.nickname || raw.user_name || '小狗',
   };
 }
 
@@ -3325,7 +3325,7 @@ async function handleKugouSongUrl(hash, albumAudioId, albumId, qualityPreference
   const code = json && (json.error_code || json.errcode || json.status);
   const restriction = playableUrl ? null : playbackRestriction('kugou',
     loginInfo.loggedIn ? 'paid_required' : 'login_required',
-    loginInfo.loggedIn ? '酷狗没有返回当前账号可播放地址，可能需要会员、购买或官方客户端权限' : '酷狗歌曲需要登录后获取播放地址',
+    loginInfo.loggedIn ? '小狗没有返回当前账号可播放地址，可能需要会员、购买或官方客户端权限' : '小狗歌曲需要登录后获取播放地址',
     loginInfo.loggedIn ? 'upgrade' : 'login',
     { code, rawMessage: json && (json.error || json.errmsg || json.message || '') });
   return {
@@ -3519,7 +3519,7 @@ async function handleQQSearch(keywords, limit) {
 
 async function handleQQSongUrl(mid, mediaMid, qualityPreference) {
   const songmid = String(mid || '').trim();
-  if (!songmid) return { provider: 'qq', url: '', error: 'MISSING_MID', message: 'Missing QQ song mid' };
+  if (!songmid) return { provider: 'qq', url: '', error: 'MISSING_MID', message: 'Missing 小Q song mid' };
   const guid = String(10000000 + Math.floor(Math.random() * 90000000));
   const cookieObj = qqCookieObject();
   const uin = qqCookieUin(cookieObj) || '0';
@@ -3596,7 +3596,7 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference) {
 function mapQQComment(raw) {
   raw = raw || {};
   const user = raw.user || raw.uin || {};
-  const nickname = raw.nick || raw.nickname || raw.encrypt_uin || user.nick || user.nickname || user.name || 'QQ 音乐用户';
+  const nickname = raw.nick || raw.nickname || raw.encrypt_uin || user.nick || user.nickname || user.name || '小Q用户';
   const avatar = raw.avatarurl || raw.avatar || user.avatarurl || user.avatar || '';
   const timeRaw = Number(raw.time || raw.commenttime || raw.createTime || 0) || 0;
   return {
@@ -3622,7 +3622,7 @@ async function handleQQSongComments(id, mid, limit, offset) {
       console.warn('[QQComments] detail fallback failed:', e.message);
     }
   }
-  if (!topid) return { provider: 'qq', error: 'Missing QQ song id', comments: [] };
+  if (!topid) return { provider: 'qq', error: 'Missing 小Q song id', comments: [] };
   const page = Math.max(0, Math.floor((offset || 0) / Math.max(1, limit || 20)));
   const uin = qqCookieUin() || '0';
   const body = await qqGetJSON('https://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg', {
@@ -3688,7 +3688,7 @@ function normalizeQQSongId(id) {
 async function handleQQLyric(mid, id) {
   const songMID = String(mid || '').trim();
   const songID = normalizeQQSongId(id);
-  if (!songMID && !songID) return { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' };
+  if (!songMID && !songID) return { provider: 'qq', error: 'Missing 小Q song mid or id', lyric: '' };
 
   let lyricText = '';
   let transText = '';
@@ -4067,7 +4067,7 @@ function normalizeLoginInfo(profile, account, extra) {
   return {
     loggedIn: true,
     userId,
-    nickname: profile.nickname || profile.userName || '网易云用户',
+    nickname: profile.nickname || profile.userName || '小云用户',
     avatar: profile.avatarUrl || profile.avatar || '',
     ...vip,
   };
@@ -4400,7 +4400,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const mid = url.searchParams.get('mid') || url.searchParams.get('songmid') || '';
       const id = url.searchParams.get('id') || url.searchParams.get('qqId') || '';
-      if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing QQ song mid or id', lyric: '' }, 400); return; }
+      if (!mid && !id) { sendJSON(res, { provider: 'qq', error: 'Missing 小Q song mid or id', lyric: '' }, 400); return; }
       const data = await handleQQLyric(mid, id);
       sendJSON(res, data);
     } catch (err) {
@@ -4429,7 +4429,7 @@ const server = http.createServer(async (req, res) => {
       const normalized = normalizeQQCookieInput(raw);
       const obj = parseCookieString(normalized);
       if (!qqCookieUin(obj) || !qqCookieMusicKey(obj)) {
-        sendJSON(res, { provider: 'qq', loggedIn: false, error: 'INVALID_QQ_COOKIE', message: 'QQ cookie 缺少 uin 或有效登录票据' }, 400);
+        sendJSON(res, { provider: 'qq', loggedIn: false, error: 'INVALID_QQ_COOKIE', message: '小Q cookie 缺少 uin 或有效登录票据' }, 400);
         return;
       }
       saveQQCookie(normalized);
@@ -4487,7 +4487,7 @@ const server = http.createServer(async (req, res) => {
       const raw = body.cookie || body.data || body.text || '';
       const normalized = normalizeKugouCookieInput(raw);
       if (!normalized) {
-        sendJSON(res, { provider: 'kugou', loggedIn: false, error: 'INVALID_KUGOU_COOKIE', message: '酷狗 cookie 为空' }, 400);
+        sendJSON(res, { provider: 'kugou', loggedIn: false, error: 'INVALID_KUGOU_COOKIE', message: '小狗 cookie 为空' }, 400);
         return;
       }
       saveKugouCookie(normalized);
@@ -4498,7 +4498,7 @@ const server = http.createServer(async (req, res) => {
           provider: 'kugou',
           loggedIn: false,
           error: 'KUGOU_LOGIN_REQUIRED',
-          message: '酷狗登录未完成，请扫码或输入账号后再同步',
+          message: '小狗登录未完成，请扫码或输入账号后再同步',
         }, 400);
         return;
       }
@@ -4766,7 +4766,7 @@ const server = http.createServer(async (req, res) => {
       const normalized = normalizeCookieHeader(raw);
       const obj = parseCookieString(normalized);
       if (!obj.MUSIC_U) {
-        sendJSON(res, { loggedIn: false, error: 'INVALID_NETEASE_COOKIE', message: '网易云 cookie 缺少 MUSIC_U' }, 400);
+        sendJSON(res, { loggedIn: false, error: 'INVALID_NETEASE_COOKIE', message: '小云 cookie 缺少 MUSIC_U' }, 400);
         return;
       }
       saveCookie(normalized);
@@ -4775,7 +4775,7 @@ const server = http.createServer(async (req, res) => {
         info = {
           loggedIn: true,
           pendingProfile: true,
-          nickname: '网易云用户',
+          nickname: '小云用户',
           avatar: '',
           vipType: 0,
           vipLevel: 'none',
@@ -4873,7 +4873,7 @@ const server = http.createServer(async (req, res) => {
           info = {
             loggedIn: true,
             pendingProfile: true,
-            nickname: (body.nickname || (body.profile && body.profile.nickname) || '网易云用户'),
+            nickname: (body.nickname || (body.profile && body.profile.nickname) || '小云用户'),
             avatar: body.avatarUrl || (body.profile && body.profile.avatarUrl) || '',
             vipType: 0,
             vipLevel: 'none',

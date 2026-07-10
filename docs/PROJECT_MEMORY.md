@@ -17,7 +17,7 @@
 - 真实代码/Git 仓库：`D:\projects\Mineradio`
 - GitHub 仓库：`https://github.com/HackenLeung/Mineradio.git`
 - 统一备份目录：`D:\projects\Mineradio\工作区备份`
-- 当前源码检查点：`v1.1.4`。
+- 当前源码检查点：`v1.1.5`。
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
 - 更新包命名规则：从 `v1.0.10` 起，快速补丁本地文件名和 GitHub Release label 使用 `Mineradio-旧版本→新版本.patch.json` 这种右箭头格式；GitHub 资产底层 `name` 可能会把 `→` 净化成点号，但更新解析仍可识别 from/to 版本。
@@ -92,7 +92,7 @@
   - `Mineradio-1.0.5-to-1.0.8.patch.json`
   - `Mineradio-1.0.6-to-1.0.8.patch.json`
   - `Mineradio-1.0.7-to-1.0.8.patch.json`
-- `v1.0.8` 包含 QQ 音乐播放授权修复、Home 施工卡片和控制台展开、视觉预设顺序调整、用户存档、歌词颜色重启恢复、播放/暂停淡入淡出，以及安魂十字架选中态蓝色修复。
+- `v1.0.8` 包含小Q播放授权修复、Home 施工卡片和控制台展开、视觉预设顺序调整、用户存档、歌词颜色重启恢复、播放/暂停淡入淡出，以及安魂十字架选中态蓝色修复。
 - `v1.0.7` 已发布到 GitHub：`https://github.com/XxHuberrr/Mineradio/releases/tag/v1.0.7`
 - `v1.0.7` Release 资产包括：
   - `latest.yml`
@@ -183,11 +183,18 @@
 
 ## Memory Entries
 
+### 2026-07-11 - v1.1.5 平台展示与性能优化
+
+- 用户要求保留：平台展示名统一为小云、小Q、小狗；优化播放画面和安装完成后的首次启动占用，同时保持 GPU 渲染和现有视觉质感。
+- 涉及文件：`public/index.html`、`desktop/main.js`、README、CHANGELOG、RELEASE 和平台说明文档。
+- 关键参数/实现：低/中/高画质为 30/45/60 FPS，超高画质跟随显示器刷新率；失焦 24 FPS，最小化或隐藏 1 FPS；本地库扫描与 WebGL 预热在启动页退出后错峰执行。
+- 禁止回退或改坏的点：不要恢复默认高画质无限高刷、主窗口全局禁用后台节流或启动页期间并发执行本地库扫描和场景预编译；不要通过降低粒子质感替代调度与限帧优化。
+
 ### 2026-07-10 - v1.1.4 三平台、本地库与自定义 Home
 
-- 用户要求保留：网易云、QQ、酷狗登录状态同时保留，默认只展示当前平台账号和云歌单，“全部”只做汇总；其他平台仍可作为后台自动换源。
+- 用户要求保留：小云、小Q、小狗登录状态同时保留，默认只展示当前平台账号和云歌单，“全部”只做汇总；其他平台仍可作为后台自动换源。
 - 涉及文件：`public/index.html`、`server.js`、`desktop/main.js`、`desktop/preload.js`、`platform-playlist-import.js`、`package.json`、`.gitignore`。
-- 关键实现：酷狗登录/歌单/搜索/播放/歌词/音质；本地库按文件夹二级预览并恢复本地播放；Home 紧凑歌单卡片和自定义图片文案；天气改为 Open-Meteo 纯信息，设置集中到自定义首页，失败时不渲染。
+- 关键实现：小狗登录/歌单/搜索/播放/歌词/音质；本地库按文件夹二级预览并恢复本地播放；Home 紧凑歌单卡片和自定义图片文案；天气改为 Open-Meteo 纯信息，设置集中到自定义首页，失败时不渲染。
 - 数据边界：`.cookie`、`.qq-cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 不提交；`platform-playlist-import.js` 是运行与打包需要的源码，必须随功能提交。
 - 禁止回退或改坏的点：不要恢复三账号同时堆在顶部、跨平台歌单混显、天气电台补歌、天气失败仍占位、本地库封面丢失或重启后本地歌曲无法继续播放。
 
@@ -198,12 +205,12 @@
 - 关键参数/实现：安装路径强制规范化到独立 `Mineradio` 子目录；非空且非 Mineradio-owned 的目录阻止安装；只有 `.mineradio-install-root` 标记才算 Mineradio-owned；新安装器跳过没有该标记的旧卸载器，只删除旧 `Uninstall Mineradio.exe` 单文件并清理卸载注册表；新卸载器只删除已知 Mineradio/Electron 顶层文件，`resources`/`locales` 等子目录只做非递归空目录删除。
 - 禁止回退或改坏的点：绝对不要恢复 `RMDir /r $INSTDIR` 删除安装根目录；不要递归删除安装目录下的应用子目录；不要默认回到 `AppData\Local\Programs` 或 C 盘；不要允许用户把 Mineradio 直接装进已有杂项目录后由卸载器递归清空。
 
-### 2026-06-25 - 多音乐接口热插拔方案与 QQ-only 登录 Bug
+### 2026-06-25 - 多音乐接口热插拔方案与小Q-only 登录 Bug
 
-- 用户认可/要求保留：多接口扩展先作为工程方案纳入工作区，后续新增酷狗、汽水、Apple Music、Spotify 前先按方案推进；QQ 音乐只登录时弹“未登录，仅试听”的问题必须作为前置 P0 修复。
+- 用户认可/要求保留：多接口扩展先作为工程方案纳入工作区，后续新增小狗、汽水、Apple Music、Spotify 前先按方案推进；小Q只登录时弹“未登录，仅试听”的问题必须作为前置 P0 修复。
 - 涉及文件：`docs/MUSIC_PROVIDER_PLUGIN_PLAN.md`、后续预计涉及 `server.js`、`public/index.html`、`desktop/main.js`、`desktop/preload.js`。
-- 关键参数/实现：先修 QQ-only 登录播放链，再抽 `providers/` 注册表；Provider 分 `direct-url` 与 `sdk-player` 两类，Apple Music/Spotify 不承诺直链播放，酷狗/汽水先做能力验证。
-- 禁止回退或改坏的点：不要让网易云登录态成为 QQ 或其它 Provider 的播放前置条件；不要把新增源继续硬塞成更多分支；不要承诺所有平台都能像网易云/QQ 一样返回可直接播放 URL。
+- 关键参数/实现：先修小Q-only 登录播放链，再抽 `providers/` 注册表；Provider 分 `direct-url` 与 `sdk-player` 两类，Apple Music/Spotify 不承诺直链播放，小狗/汽水先做能力验证。
+- 禁止回退或改坏的点：不要让小云登录态成为小Q或其它 Provider 的播放前置条件；不要把新增源继续硬塞成更多分支；不要承诺所有平台都能像小云/小Q一样返回可直接播放 URL。
 
 ### 2026-06-25 - Ctrl 缩放卡住临时处理与 Bug 计划
 
@@ -315,8 +322,8 @@
 
 - 用户认可/要求保留：情绪节奏音效大师先作为后续开发方案保存，之后可直接调用本方案继续实现。
 - 涉及文件：后续预计涉及 `dj-analyzer.js`、`public/index.html`、`server.js`（如需缓存/接口），当前仅记录方案。
-- 关键参数/实现：自研本地引擎，不依赖网易云私有音效接口；分析 BPM、鼓点置信度、kick/snare/onset、能量曲线、段落变化、drop、低频比例、亮度、人声密度、动态范围；输出 `energy/aggression/groove/space/brightness/warmth/stability` 等情绪节奏参数；音效层使用 WebAudio 的轻量 EQ、动态压缩、限幅、轻微饱和、空间宽度，默认“自动·轻微”，带原声 A/B 和一键关闭；视觉电影镜头读取同一情绪节奏结果，电子歌偏 kick 锁拍，摇滚偏军鼓/段落爆发，阴郁歌偏慢推镜和粒子呼吸。
-- 禁止回退或改坏的点：不要依赖网易云不可控私有音效模型；不要默认强处理导致原曲削波、音量跳变或听感变闷；必须有音量匹配、防削波、CPU 上限、失败回退原声和单曲关闭能力。第一阶段优先做“分析层 + UI 状态展示 + 保守 EQ/压缩”，确认听感后再接电影镜头。
+- 关键参数/实现：自研本地引擎，不依赖小云私有音效接口；分析 BPM、鼓点置信度、kick/snare/onset、能量曲线、段落变化、drop、低频比例、亮度、人声密度、动态范围；输出 `energy/aggression/groove/space/brightness/warmth/stability` 等情绪节奏参数；音效层使用 WebAudio 的轻量 EQ、动态压缩、限幅、轻微饱和、空间宽度，默认“自动·轻微”，带原声 A/B 和一键关闭；视觉电影镜头读取同一情绪节奏结果，电子歌偏 kick 锁拍，摇滚偏军鼓/段落爆发，阴郁歌偏慢推镜和粒子呼吸。
+- 禁止回退或改坏的点：不要依赖小云不可控私有音效模型；不要默认强处理导致原曲削波、音量跳变或听感变闷；必须有音量匹配、防削波、CPU 上限、失败回退原声和单曲关闭能力。第一阶段优先做“分析层 + UI 状态展示 + 保守 EQ/压缩”，确认听感后再接电影镜头。
 
 ### 2026-06-22 - 播放器控制台音质按钮位置审美
 
@@ -389,9 +396,9 @@
 - 关键参数/实现：`SKULL_MODEL_BASE_ROTATION_X = -0.26`、`SKULL_MODEL_SCALE = 2.34`、`SKULL_MODEL_BASE_POSITION.y = 0.22`；默认骷髅相机 `pos=(0,-2.52,4.98)`、`look=(0,-0.20,0.02)`，保持低机位仰视压迫感。
 - 禁止回退或改坏的点：不要把双击回正改回平视；不要让歌词从嘴部锁定跳到普通镜头歌词位置；3D 歌单架打开时应使用左侧大骷髅近景、右侧偏中歌单架构图。
 
-### 2026-06-21 - QQ 音乐接口播放授权排障记录
+### 2026-06-21 - 小Q接口播放授权排障记录
 
-- 用户认可/要求保留：保存这次 QQ 音乐接口修复记录；以后遇到 QQ 登录后头像/昵称异常、歌单能读但歌曲不能播、`104003` 等同类问题，优先按本记录排查。
+- 用户认可/要求保留：保存这次小Q接口修复记录；以后遇到小Q登录后头像/昵称异常、歌单能读但歌曲不能播、`104003` 等同类问题，优先按本记录排查。
 - 涉及文件：`docs/QQ_MUSIC_INTERFACE_NOTES.md`、`server.js`、`desktop/main.js`、`public/index.html`。
 - 关键参数/实现：区分网页账号态 `p_skey` 和播放票据 `qm_keyst`/`qqmusic_key`/`music_key`/`wxskey`；`/api/qq/login/status` 返回 `playbackKeyReady`；缺播放票据时 `104003` 归类为 `login_required`；昵称头像用 `ptnick_*` 和 `qlogo.cn` 兜底。
-- 禁止回退或改坏的点：不要再把 `p_skey` 当作完整 QQ 音乐播放授权；不要因为 QQ 资料接口 `code:1000` 就清空头像/昵称或标记未登录；修 QQ 播放前先读 `docs/QQ_MUSIC_INTERFACE_NOTES.md`。
+- 禁止回退或改坏的点：不要再把 `p_skey` 当作完整小Q播放授权；不要因为小Q资料接口 `code:1000` 就清空头像/昵称或标记未登录；修小Q播放前先读 `docs/QQ_MUSIC_INTERFACE_NOTES.md`。

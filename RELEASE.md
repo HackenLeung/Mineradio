@@ -1,14 +1,14 @@
 # 发布流程
 
-## v1.1.4 当前构建
+## v1.1.5 当前构建
 
-- 版本号：`1.1.4`。
-- 更新内容：三平台账号与搜索、酷狗完整链路、本地文件夹音乐库、平台歌单导入、自定义 Home、纯天气显示、托盘控制、倍速/音调、均衡器、歌词布局和壁纸管理。
+- 版本号：`1.1.5`。
+- 更新内容：三平台展示名统一、前台分档限帧、失焦与后台降载、启动重任务错峰，以及 v1.1.4 的三平台账号、本地库和 Home 功能。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目与原作者署名见 README。
 - 构建前必须确认 `.cookie`、`.qq-cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 本地提交应包含 `platform-playlist-import.js`，它是运行和打包所需源码。
 - 构建命令：`npm run build:win`。
-- 预期资产：`dist/Mineradio-1.1.4-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
+- 预期资产：`dist/Mineradio-1.1.5-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - npm 审计现有 `NeteaseCloudMusicApi` 依赖链仍报告 2 个 high、1 个 moderate；上游暂无兼容修复，禁止直接执行会降级到 3.x 的 `npm audit fix --force`。
 
 以下 `v1.1.0` 内容为历史发布边界。
