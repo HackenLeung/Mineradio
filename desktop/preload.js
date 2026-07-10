@@ -12,11 +12,25 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
   openQQMusicLogin: () => ipcRenderer.invoke('qq-music-open-login'),
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
+  openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
+  clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
+  getDesktopBehavior: () => ipcRenderer.invoke('mineradio-desktop-behavior-get'),
+  setDesktopBehavior: (payload) => ipcRenderer.invoke('mineradio-desktop-behavior-set', payload || {}),
+  updateTrayPlayback: (payload) => ipcRenderer.invoke('mineradio-tray-playback-update', payload || {}),
+  onTrayCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-tray-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-tray-command', listener);
+  },
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
+  chooseLocalMusicFolder: () => ipcRenderer.invoke('mineradio-local-music-choose-folder'),
+  scanLocalMusicFolder: (folderPath) => ipcRenderer.invoke('mineradio-local-music-scan-folder', folderPath),
+  resolveLocalMusicFile: (filePath) => ipcRenderer.invoke('mineradio-local-music-resolve-file', filePath),
   onGlobalHotkey: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});

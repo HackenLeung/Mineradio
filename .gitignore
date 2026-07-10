@@ -18,8 +18,10 @@ win-unpacked/
 # User data and private state
 .cookie
 .qq-cookie
+.kugou-cookie
 updates/
 backups/
+/工作区备份/
 *.log
 *.tmp
 *.cache

@@ -15,9 +15,9 @@
 - 可运行程序：开发期用 `npm start`；构建后程序为 `D:\projects\Mineradio\dist\win-unpacked\Mineradio.exe`
 - 运行版主目录：`D:\projects\Mineradio`
 - 真实代码/Git 仓库：`D:\projects\Mineradio`
-- GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
+- GitHub 仓库：`https://github.com/HackenLeung/Mineradio.git`
 - 统一备份目录：`D:\projects\Mineradio\工作区备份`
-- 当前源码检查点：`v1.1.0`
+- 当前源码检查点：`v1.1.4`。
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
 - 更新包命名规则：从 `v1.0.10` 起，快速补丁本地文件名和 GitHub Release label 使用 `Mineradio-旧版本→新版本.patch.json` 这种右箭头格式；GitHub 资产底层 `name` 可能会把 `→` 净化成点号，但更新解析仍可识别 from/to 版本。
@@ -182,6 +182,14 @@
 ```
 
 ## Memory Entries
+
+### 2026-07-10 - v1.1.4 三平台、本地库与自定义 Home
+
+- 用户要求保留：网易云、QQ、酷狗登录状态同时保留，默认只展示当前平台账号和云歌单，“全部”只做汇总；其他平台仍可作为后台自动换源。
+- 涉及文件：`public/index.html`、`server.js`、`desktop/main.js`、`desktop/preload.js`、`platform-playlist-import.js`、`package.json`、`.gitignore`。
+- 关键实现：酷狗登录/歌单/搜索/播放/歌词/音质；本地库按文件夹二级预览并恢复本地播放；Home 紧凑歌单卡片和自定义图片文案；天气改为 Open-Meteo 纯信息，设置集中到自定义首页，失败时不渲染。
+- 数据边界：`.cookie`、`.qq-cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 不提交；`platform-playlist-import.js` 是运行与打包需要的源码，必须随功能提交。
+- 禁止回退或改坏的点：不要恢复三账号同时堆在顶部、跨平台歌单混显、天气电台补歌、天气失败仍占位、本地库封面丢失或重启后本地歌曲无法继续播放。
 
 ### 2026-06-25 - 安装器路径与卸载防误删 P0 规则
 

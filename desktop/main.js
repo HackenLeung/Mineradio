@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu } = require('electron');
 const net = require('net');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
@@ -22,6 +23,10 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mineradioTray = null;
+let appQuitting = false;
+let desktopBehaviorSettings = null;
+let trayPlaybackState = { title: '未播放', artist: '', playing: false, volume: 1 };
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -32,10 +37,28 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const DESKTOP_BEHAVIOR_FILE = 'desktop-behavior.json';
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
+const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
+const LOCAL_LIBRARY_AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.opus', '.m4a', '.mp4', '.aac', '.webm']);
+const LOCAL_LIBRARY_COVER_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+const LOCAL_LIBRARY_LYRIC_EXTS = ['.lrc', '.txt'];
+const LOCAL_LIBRARY_COVER_NAMES = ['cover', 'folder', 'front', 'album', 'artwork', '封面', '专辑封面'];
+const LOCAL_LIBRARY_MIME = {
+  '.mp3': 'audio/mpeg',
+  '.flac': 'audio/flac',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.webm': 'audio/webm',
+};
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -88,6 +111,15 @@ const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'WEVNSM',
   'WNMCID',
   'JSESSIONID-WYYY',
+];
+const KUGOU_LOGIN_COOKIE_PRIORITY = [
+  'KuGoo',
+  'kg_mid',
+  'kg_dfid',
+  'KugooID',
+  'userid',
+  'token',
+  't',
 ];
 
 function findOpenPort(startPort) {
@@ -259,6 +291,195 @@ function getSenderWindow(event) {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
+function desktopBehaviorPath() {
+  return path.join(app.getPath('userData'), DESKTOP_BEHAVIOR_FILE);
+}
+
+function readDesktopBehaviorSettings() {
+  if (desktopBehaviorSettings) return desktopBehaviorSettings;
+  const defaults = { closeToTray: false, openAtLogin: false, immersiveAutoFullscreen: false };
+  try {
+    const raw = JSON.parse(fs.readFileSync(desktopBehaviorPath(), 'utf8')) || {};
+    desktopBehaviorSettings = {
+      closeToTray: raw.closeToTray === true,
+      openAtLogin: raw.openAtLogin === true,
+      immersiveAutoFullscreen: raw.immersiveAutoFullscreen === true,
+    };
+  } catch (_e) {
+    desktopBehaviorSettings = defaults;
+  }
+  return desktopBehaviorSettings;
+}
+
+function saveDesktopBehaviorSettings(next) {
+  desktopBehaviorSettings = Object.assign({}, readDesktopBehaviorSettings(), next || {});
+  try {
+    fs.writeFileSync(desktopBehaviorPath(), JSON.stringify(desktopBehaviorSettings, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Desktop behavior save failed:', e.message);
+  }
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!desktopBehaviorSettings.openAtLogin, path: process.execPath });
+  } catch (e) {
+    console.warn('Login item update failed:', e.message);
+  }
+  updateMineradioTray();
+  return Object.assign({}, desktopBehaviorSettings);
+}
+
+function ensureMineradioTray() {
+  if (mineradioTray || !fs.existsSync(APP_ICON_ICO)) return mineradioTray;
+  mineradioTray = new Tray(APP_ICON_ICO);
+  mineradioTray.setToolTip('Mineradio');
+  mineradioTray.on('click', focusMainWindow);
+  mineradioTray.on('double-click', focusMainWindow);
+  updateMineradioTray();
+  return mineradioTray;
+}
+
+function updateMineradioTray() {
+  if (!mineradioTray) return;
+  const songLabel = trayPlaybackState.title && trayPlaybackState.title !== '未播放'
+    ? `${trayPlaybackState.title}${trayPlaybackState.artist ? ' - ' + trayPlaybackState.artist : ''}`
+    : '未播放';
+  const volume = Math.max(0, Math.min(1, Number(trayPlaybackState.volume) || 0));
+  const sendTrayCommand = (command, payload = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mineradio-tray-command', { command, ...payload });
+    }
+  };
+  mineradioTray.setToolTip(songLabel === '未播放' ? 'Mineradio' : `Mineradio\n${songLabel}`);
+  mineradioTray.setContextMenu(Menu.buildFromTemplate([
+    { label: songLabel.length > 52 ? songLabel.slice(0, 49) + '...' : songLabel, enabled: false },
+    { type: 'separator' },
+    { label: trayPlaybackState.playing ? '暂停' : '播放', click: () => sendTrayCommand('toggle-play') },
+    { label: '上一曲', click: () => sendTrayCommand('previous') },
+    { label: '下一曲', click: () => sendTrayCommand('next') },
+    {
+      label: `音量 ${Math.round(volume * 100)}%`,
+      submenu: [
+        { label: '音量 +10%', click: () => sendTrayCommand('volume', { value: 0.1 }) },
+        { label: '音量 -10%', click: () => sendTrayCommand('volume', { value: -0.1 }) },
+        { label: volume > 0.001 ? '静音' : '恢复音量', click: () => sendTrayCommand('mute') },
+      ],
+    },
+    { type: 'separator' },
+    { label: '打开 Mineradio', click: focusMainWindow },
+    {
+      label: '退出 Mineradio',
+      click: () => {
+        appQuitting = true;
+        app.quit();
+      },
+    },
+  ]));
+}
+
+function localMediaUrl(filePath) {
+  if (!localServer || typeof localServer.registerLocalMediaPath !== 'function' || !mainServerPort) return '';
+  const id = localServer.registerLocalMediaPath(filePath);
+  return id ? `http://127.0.0.1:${mainServerPort}/api/local-media?id=${encodeURIComponent(id)}` : '';
+}
+
+function localLibraryEntryFromPath(filePath, rootPath) {
+  const abs = path.resolve(String(filePath || ''));
+  const ext = path.extname(abs).toLowerCase();
+  if (!LOCAL_LIBRARY_AUDIO_EXTS.has(ext)) return null;
+  let stat;
+  try {
+    stat = fs.statSync(abs);
+  } catch (_e) {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+  const root = rootPath ? path.resolve(rootPath) : path.dirname(abs);
+  const rel = path.relative(root, abs) || path.basename(abs);
+  const dir = path.dirname(abs);
+  const base = path.join(dir, path.basename(abs, ext));
+  let sidecarCoverUrl = '';
+  for (const coverExt of LOCAL_LIBRARY_COVER_EXTS) {
+    const sameName = base + coverExt;
+    if (fs.existsSync(sameName)) {
+      sidecarCoverUrl = localMediaUrl(sameName);
+      break;
+    }
+  }
+  if (!sidecarCoverUrl) {
+    for (const name of LOCAL_LIBRARY_COVER_NAMES) {
+      for (const coverExt of LOCAL_LIBRARY_COVER_EXTS) {
+        const candidate = path.join(dir, name + coverExt);
+        if (fs.existsSync(candidate)) {
+          sidecarCoverUrl = localMediaUrl(candidate);
+          break;
+        }
+      }
+      if (sidecarCoverUrl) break;
+    }
+  }
+  let sidecarLyricText = '';
+  let sidecarLyricPath = '';
+  for (const lyricExt of LOCAL_LIBRARY_LYRIC_EXTS) {
+    const candidate = base + lyricExt;
+    try {
+      const lyricStat = fs.statSync(candidate);
+      if (lyricStat.isFile() && lyricStat.size > 0 && lyricStat.size <= 512 * 1024) {
+        sidecarLyricText = fs.readFileSync(candidate, 'utf8');
+        sidecarLyricPath = candidate;
+        break;
+      }
+    } catch (_e) {}
+  }
+  return {
+    fullPath: abs,
+    filePath: abs,
+    url: localMediaUrl(abs),
+    name: path.basename(abs),
+    relativePath: path.join(path.basename(root), rel).replace(/\\/g, '/'),
+    webkitRelativePath: path.join(path.basename(root), rel).replace(/\\/g, '/'),
+    size: stat.size,
+    lastModified: Math.round(stat.mtimeMs),
+    type: LOCAL_LIBRARY_MIME[ext] || '',
+    sidecarCoverUrl,
+    sidecarLyricText,
+    sidecarLyricPath,
+  };
+}
+
+async function scanLocalMusicFolder(folderPath) {
+  const root = path.resolve(String(folderPath || ''));
+  const rootStat = await fs.promises.stat(root);
+  if (!rootStat.isDirectory()) throw new Error('LOCAL_LIBRARY_NOT_DIRECTORY');
+  const files = [];
+  const stack = [''];
+  let visited = 0;
+  while (stack.length) {
+    const relDir = stack.pop();
+    const absDir = path.join(root, relDir);
+    let entries = [];
+    try {
+      entries = await fs.promises.readdir(absDir, { withFileTypes: true });
+    } catch (_e) {
+      continue;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }));
+    for (const entry of entries) {
+      visited += 1;
+      if (visited > 60000) break;
+      const rel = path.join(relDir, entry.name);
+      const abs = path.join(root, rel);
+      if (entry.isDirectory()) {
+        stack.push(rel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const item = localLibraryEntryFromPath(abs, root);
+      if (item) files.push(item);
+    }
+    if (visited > 60000) break;
+  }
+  return { ok: true, folderPath: root, files, truncated: visited > 60000 };
+}
+
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -349,6 +570,13 @@ function neteaseCookieHasLogin(cookieText) {
   return !!obj.MUSIC_U;
 }
 
+function kugouCookieHasLogin(cookieText) {
+  const obj = parseCookieHeader(cookieText);
+  const userId = String(obj.userid || obj.KugooID || obj.kugou_id || '').replace(/\D/g, '');
+  const authToken = obj.token || obj.KuGoo || obj.t || '';
+  return !!(userId && authToken);
+}
+
 function isQQCookieDomain(domain) {
   const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
   return normalized === 'qq.com' || normalized.endsWith('.qq.com') || normalized.endsWith('qqmusic.qq.com');
@@ -359,6 +587,12 @@ function isNeteaseCookieDomain(domain) {
   return normalized === '163.com' || normalized.endsWith('.163.com') ||
     normalized === 'music.163.com' || normalized.endsWith('.music.163.com') ||
     normalized === 'netease.com' || normalized.endsWith('.netease.com');
+}
+
+function isKugouCookieDomain(domain) {
+  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
+  return normalized === 'kugou.com' || normalized.endsWith('.kugou.com') ||
+    normalized === 'kgimg.com' || normalized.endsWith('.kgimg.com');
 }
 
 function buildCookieHeaderFor(cookies, isAllowedDomain, priority) {
@@ -395,6 +629,11 @@ async function readQQLoginCookieHeader(cookieSession) {
 async function readNeteaseLoginCookieHeader(cookieSession) {
   const cookies = await cookieSession.cookies.get({});
   return buildCookieHeaderFor(cookies, isNeteaseCookieDomain, NETEASE_LOGIN_COOKIE_PRIORITY);
+}
+
+async function readKugouLoginCookieHeader(cookieSession) {
+  const cookies = await cookieSession.cookies.get({});
+  return buildCookieHeaderFor(cookies, isKugouCookieDomain, KUGOU_LOGIN_COOKIE_PRIORITY);
 }
 
 async function openNeteaseMusicLoginWindow(owner) {
@@ -600,6 +839,150 @@ async function openQQMusicLoginWindow(owner) {
   });
 }
 
+async function openKugouMusicLoginWindow(owner) {
+  const cookieSession = session.fromPartition(KUGOU_LOGIN_PARTITION);
+  await clearKugouMusicLoginSession();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let pollTimer = null;
+
+    const loginWindow = new BrowserWindow({
+      width: 920,
+      height: 720,
+      minWidth: 760,
+      minHeight: 560,
+      parent: owner && !owner.isDestroyed() ? owner : undefined,
+      modal: false,
+      show: false,
+      autoHideMenuBar: true,
+      title: 'Kugou Music Login',
+      backgroundColor: '#111111',
+      icon: APP_ICON_ICO,
+      webPreferences: {
+        partition: KUGOU_LOGIN_PARTITION,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const finish = async (result) => {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (loginWindow && !loginWindow.isDestroyed()) {
+        loginWindow.close();
+      }
+      resolve(result);
+    };
+
+    const checkCookies = async () => {
+      try {
+        const cookie = await readKugouLoginCookieHeader(cookieSession);
+        if (kugouCookieHasLogin(cookie)) {
+          finish({ ok: true, cookie });
+        }
+      } catch (e) {
+        console.warn('Kugou login cookie check failed:', e.message);
+      }
+    };
+
+    const localJson = (pathname) => new Promise((ok, fail) => {
+      const port = mainServerPort || Number(process.env.PORT) || 3000;
+      const req = http.get(`http://127.0.0.1:${port}${pathname}`, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', chunk => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const data = body ? JSON.parse(body) : {};
+            if (res.statusCode >= 400) {
+              const err = new Error(data.message || data.error || `HTTP_${res.statusCode}`);
+              err.data = data;
+              fail(err);
+              return;
+            }
+            ok(data);
+          } catch (e) {
+            fail(e);
+          }
+        });
+      });
+      req.setTimeout(12000, () => req.destroy(new Error('Kugou login request timeout')));
+      req.on('error', fail);
+    });
+
+    const startKugouQrLogin = async () => {
+      try {
+        const qr = await localJson('/api/kugou/login/qr/key?t=' + Date.now());
+        const key = qr && (qr.key || qr.qrcode);
+        if (!key || !qr.url) throw new Error('Kugou QR login URL missing');
+        await loginWindow.loadURL(qr.url);
+        const pollLogin = async () => {
+          try {
+            const data = await localJson('/api/kugou/login/qr/check?key=' + encodeURIComponent(key) + '&t=' + Date.now());
+            if (data && data.code === 803 && data.loggedIn) {
+              finish(Object.assign({ ok: true }, data));
+            } else if (data && data.code === 800) {
+              finish({ ok: false, error: data.message || 'Kugou QR expired, please try again' });
+            }
+          } catch (e) {
+            console.warn('Kugou QR login check failed:', e.message);
+          }
+        };
+        pollTimer = setInterval(pollLogin, 1200);
+        pollLogin();
+      } catch (e) {
+        console.warn('Kugou QR login failed, falling back to web home:', e.message);
+        pollTimer = setInterval(checkCookies, 1200);
+        loginWindow.loadURL(KUGOU_LOGIN_URL).catch((err) => finish({ ok: false, error: err.message }));
+      }
+    };
+
+    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\/([^/]+\.)?kugou\.com/i.test(url) || /^https?:\/\/([^/]+\.)?kgimg\.com/i.test(url)) {
+        loginWindow.loadURL(url).catch((e) => console.warn('Kugou login popup navigation failed:', e.message));
+      } else if (/^https?:\/\//i.test(url)) {
+        shell.openExternal(url).catch(() => {});
+      }
+      return { action: 'deny' };
+    });
+
+    loginWindow.webContents.on('did-finish-load', () => {
+      checkCookies();
+      loginWindow.webContents.executeJavaScript(`
+        setTimeout(() => {
+          const nodes = Array.from(document.querySelectorAll('a, button, span, div'));
+          const loginNode = nodes.find((node) => {
+            const text = (node.textContent || '').trim();
+            if (!/登录|登陆|立即登录/.test(text)) return false;
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          if (loginNode) loginNode.click();
+        }, 700);
+      `, true).catch(() => {});
+    });
+
+    loginWindow.on('ready-to-show', () => loginWindow.show());
+    loginWindow.on('closed', async () => {
+      if (settled) return;
+      if (pollTimer) clearInterval(pollTimer);
+      try {
+        const cookie = await readKugouLoginCookieHeader(cookieSession);
+        resolve(kugouCookieHasLogin(cookie)
+          ? { ok: true, cookie }
+          : { ok: false, cancelled: true, message: 'Kugou login window closed' });
+      } catch (e) {
+        resolve({ ok: false, error: e.message || 'Kugou login window closed' });
+      }
+    });
+
+    startKugouQrLogin();
+  });
+}
+
 async function clearQQMusicLoginSession() {
   const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
@@ -610,6 +993,14 @@ async function clearQQMusicLoginSession() {
 
 async function clearNeteaseMusicLoginSession() {
   const cookieSession = session.fromPartition(NETEASE_LOGIN_PARTITION);
+  await cookieSession.clearStorageData({
+    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
+  });
+  return { ok: true };
+}
+
+async function clearKugouMusicLoginSession() {
+  const cookieSession = session.fromPartition(KUGOU_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
     storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
   });
@@ -1121,6 +1512,31 @@ ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
 
+ipcMain.handle('mineradio-desktop-behavior-get', () => {
+  ensureMineradioTray();
+  return readDesktopBehaviorSettings();
+});
+
+ipcMain.handle('mineradio-desktop-behavior-set', (_event, payload = {}) => {
+  const next = {};
+  if (Object.prototype.hasOwnProperty.call(payload, 'closeToTray')) next.closeToTray = payload.closeToTray === true;
+  if (Object.prototype.hasOwnProperty.call(payload, 'openAtLogin')) next.openAtLogin = payload.openAtLogin === true;
+  if (Object.prototype.hasOwnProperty.call(payload, 'immersiveAutoFullscreen')) next.immersiveAutoFullscreen = payload.immersiveAutoFullscreen === true;
+  return saveDesktopBehaviorSettings(next);
+});
+
+ipcMain.handle('mineradio-tray-playback-update', (_event, payload = {}) => {
+  trayPlaybackState = {
+    title: String(payload.title || '未播放').trim() || '未播放',
+    artist: String(payload.artist || '').trim(),
+    playing: payload.playing === true,
+    volume: Math.max(0, Math.min(1, Number(payload.volume) || 0)),
+  };
+  ensureMineradioTray();
+  updateMineradioTray();
+  return { ok: true };
+});
+
 ipcMain.handle('mineradio-hotkeys-configure-global', (_event, bindings) => {
   return configureMineradioGlobalHotkeys(bindings);
 });
@@ -1160,6 +1576,40 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   }
 });
 
+ipcMain.handle('mineradio-local-music-choose-folder', async (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    const result = await dialog.showOpenDialog(owner, {
+      title: '选择本地音乐文件夹',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: false, canceled: true };
+    return await scanLocalMusicFolder(result.filePaths[0]);
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_CHOOSE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-music-scan-folder', async (_event, folderPath) => {
+  try {
+    if (!folderPath) return { ok: false, error: 'LOCAL_LIBRARY_PATH_EMPTY' };
+    return await scanLocalMusicFolder(folderPath);
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_SCAN_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-music-resolve-file', async (_event, filePath) => {
+  try {
+    if (!filePath) return { ok: false, error: 'LOCAL_LIBRARY_FILE_PATH_EMPTY' };
+    const file = localLibraryEntryFromPath(filePath, path.dirname(path.resolve(String(filePath))));
+    if (!file) return { ok: false, error: 'LOCAL_LIBRARY_FILE_MISSING' };
+    return { ok: true, file };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_FILE_RESOLVE_FAILED' };
+  }
+});
+
 ipcMain.handle('netease-music-open-login', async (event) => {
   return openNeteaseMusicLoginWindow(getSenderWindow(event));
 });
@@ -1174,6 +1624,14 @@ ipcMain.handle('qq-music-open-login', async (event) => {
 
 ipcMain.handle('qq-music-clear-login', async () => {
   return clearQQMusicLoginSession();
+});
+
+ipcMain.handle('kugou-music-open-login', async (event) => {
+  return openKugouMusicLoginWindow(getSenderWindow(event));
+});
+
+ipcMain.handle('kugou-music-clear-login', async () => {
+  return clearKugouMusicLoginSession();
 });
 
 ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
@@ -1320,6 +1778,8 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
+  saveDesktopBehaviorSettings(readDesktopBehaviorSettings());
+  ensureMineradioTray();
   const port = await findOpenPort(3000);
   mainServerPort = port;
 
@@ -1327,6 +1787,7 @@ async function createWindow() {
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  process.env.KUGOU_COOKIE_FILE = path.join(app.getPath('userData'), '.kugou-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
@@ -1398,6 +1859,14 @@ async function createWindow() {
   mainWindow.on('blur', () => sendWindowState(mainWindow));
   mainWindow.on('move', () => scheduleWindowStateSend(mainWindow));
   mainWindow.on('resize', () => scheduleWindowStateSend(mainWindow));
+  mainWindow.on('close', (event) => {
+    if (appQuitting) return;
+    if (readDesktopBehaviorSettings().closeToTray) {
+      event.preventDefault();
+      mainWindow.hide();
+      updateMineradioTray();
+    }
+  });
   mainWindow.on('closed', () => {
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
@@ -1459,6 +1928,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    appQuitting = true;
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
