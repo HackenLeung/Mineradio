@@ -940,6 +940,8 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .qr-shell #qr-img{margin:0}
 .qr-shell.web-login-preview{display:flex;align-items:center;justify-content:center;padding:14px;background:radial-gradient(circle at 50% 42%,rgba(191,214,107,.22),transparent 46%),rgba(255,255,255,.035);border:1px solid rgba(191,214,107,.26);box-shadow:0 16px 42px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.08)}
 .qr-shell.web-login-preview.netease-preview{background:radial-gradient(circle at 50% 42%,rgba(217,91,103,.22),transparent 46%),rgba(255,255,255,.035);border-color:rgba(217,91,103,.28)}
+.qr-shell.logged-in{box-shadow:0 16px 42px rgba(0,0,0,.32),0 0 0 1px rgba(126,226,168,.38),inset 0 1px 0 rgba(255,255,255,.10)}
+.qr-shell.logged-in .qq-login-mark{border-color:rgba(126,226,168,.48);background:radial-gradient(circle at 50% 42%,rgba(126,226,168,.18),transparent 58%),rgba(255,255,255,.035)}
 .qr-shell.web-login-preview #qr-img{display:none}
 .qq-login-mark{display:none;width:100%;height:100%;border-radius:12px;border:1px solid rgba(191,214,107,.30);align-items:center;justify-content:center;flex-direction:column;gap:8px;color:rgba(243,255,209,.88);background:linear-gradient(135deg,rgba(191,214,107,.10),rgba(157,184,207,.05));cursor:pointer;font-family:inherit;outline:none;transition:transform .22s,border-color .22s,background .22s,box-shadow .22s}
 .qr-shell.web-login-preview .qq-login-mark{display:flex}
@@ -968,6 +970,7 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .account-provider-chip.kugou{border-color:rgba(68,199,255,.28);color:#d4f5ff;background:rgba(68,199,255,.085)}
 .account-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
 .account-modal-actions .modal-btn{padding:8px 10px}
+.account-modal-actions .listen-ranking-entry{grid-column:1/-1}
 .account-hint{margin-top:10px;font-size:11px;line-height:1.45;color:rgba(255,255,255,.38)}
 .modal .btn-row{display:flex;gap:10px;justify-content:center;margin-top:16px}
 .dual-login-modal .btn-row{flex-wrap:wrap}
@@ -1048,6 +1051,21 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .artist-song-action:hover{transform:translateY(-1px);background:rgba(255,255,255,.07);box-shadow:0 12px 28px rgba(0,0,0,.24)}
 .artist-song-action.collect:hover{color:#ff3038;border-color:rgba(255,48,56,.58);background:rgba(255,0,0,.075);box-shadow:0 0 22px rgba(255,48,56,.12),inset 0 0 0 1px rgba(255,48,56,.08)}
 .artist-song-action.next:hover{color:#fff;border-color:rgba(255,255,255,.24)}
+.listen-ranking-modal{width:min(650px,92vw);max-width:min(650px,92vw);max-height:min(760px,calc(100vh - 72px));padding:26px;text-align:left;display:flex;flex-direction:column;overflow:hidden}
+.listen-ranking-modal h2{text-align:center;margin-bottom:13px}
+.listen-ranking-tabs{display:flex;gap:7px;padding:4px;border-radius:999px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.075);margin-bottom:13px}
+.listen-ranking-tabs button{flex:1;height:32px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.46);font:700 11px/1 var(--font-sans);cursor:pointer;transition:background .2s,color .2s}
+.listen-ranking-tabs button.active{background:rgba(var(--fc-accent-rgb),.11);color:#fff;box-shadow:inset 0 0 0 1px rgba(var(--fc-accent-rgb),.22)}
+.listen-ranking-note{font-size:10.5px;color:rgba(255,255,255,.36);margin:0 3px 10px}
+.listen-ranking-list{min-height:180px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
+.listen-ranking-list::-webkit-scrollbar{display:none}
+.listen-ranking-item{display:flex;align-items:center;gap:11px;padding:9px 10px;margin-bottom:7px;border-radius:13px;border:1px solid rgba(255,255,255,.065);background:rgba(255,255,255,.035);cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+.listen-ranking-item:hover{background:rgba(255,255,255,.07);border-color:rgba(var(--fc-accent-rgb),.22);transform:translateY(-1px)}
+.listen-ranking-rank{width:28px;text-align:center;color:rgba(255,255,255,.36);font-size:11px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.listen-ranking-item:nth-child(1) .listen-ranking-rank{color:#f4d28a}.listen-ranking-item:nth-child(2) .listen-ranking-rank{color:#c8d0d8}.listen-ranking-item:nth-child(3) .listen-ranking-rank{color:#c89367}
+.listen-ranking-cover{width:43px;height:43px;border-radius:9px;object-fit:cover;background:rgba(255,255,255,.07);flex:0 0 auto}
+.listen-ranking-main{min-width:0;flex:1}.listen-ranking-name{font-size:12.5px;color:rgba(255,255,255,.91);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.listen-ranking-artist{margin-top:3px;font-size:10.5px;color:rgba(255,255,255,.39);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.listen-ranking-count{font-size:10.5px;color:rgba(255,255,255,.42);white-space:nowrap;flex:0 0 auto}
 @media (max-height:720px),(max-width:1100px){
   .track-detail-modal{width:min(620px,94vw);max-height:calc(100vh - 64px);padding:22px}
   .track-detail-modal h2{margin-bottom:12px}
@@ -2544,7 +2562,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   </div>
   <div id="pl-pane" style="display:none">
     <div class="queue-toolbar">
-      <div class="queue-chip">登录后显示小云 / 小Q歌单</div>
+      <div class="queue-chip">登录后显示歌单</div>
       <div style="display:flex;gap:6px"><button class="fx-mini-btn ghost" onclick="createLocalUserPlaylist()" style="height:26px;padding:0 10px;font-size:11px">新建本地</button><button class="fx-mini-btn ghost" onclick="openPlatformPlaylistImport()" style="height:26px;padding:0 10px;font-size:11px">导入歌单</button><button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)" style="height:26px;padding:0 10px;font-size:11px">刷新</button></div>
     </div>
     <div id="pl-list" style="margin-top:6px"></div>
@@ -2792,6 +2810,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">全部</button>
     </div>
     <div class="account-modal-actions">
+      <button id="account-listen-ranking" class="modal-btn listen-ranking-entry" onclick="openListenRanking()">听歌排行</button>
       <button id="account-add-netease" class="modal-btn" onclick="openProviderLogin('netease')">补登小云</button>
       <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登小Q</button>
       <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登小狗</button>
@@ -2801,6 +2820,21 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button class="modal-btn" onclick="closeUserModal()">关闭</button>
       <button id="account-logout-btn" class="modal-btn primary" onclick="logoutActiveAccount()">退出当前平台</button>
     </div>
+  </div>
+</div>
+
+<div id="listen-ranking-modal" class="modal-mask">
+  <div class="modal listen-ranking-modal">
+    <h2>听歌排行</h2>
+    <div class="listen-ranking-tabs">
+      <button id="listen-ranking-week" type="button" onclick="setListenRankingMode('week')">小云周榜</button>
+      <button id="listen-ranking-all" type="button" onclick="setListenRankingMode('all')">小云总榜</button>
+      <button id="listen-ranking-kugou" type="button" onclick="setListenRankingMode('kugou')">小狗排行</button>
+      <button id="listen-ranking-local" type="button" onclick="setListenRankingMode('local')">本地排行</button>
+    </div>
+    <div id="listen-ranking-note" class="listen-ranking-note"></div>
+    <div id="listen-ranking-list" class="listen-ranking-list"><div class="detail-loading">正在读取听歌排行</div></div>
+    <div class="btn-row"><button class="modal-btn" onclick="closeListenRanking()">关闭</button></div>
   </div>
 </div>
 
@@ -3018,9 +3052,13 @@ var SMART_TRANSITION_VISUAL_MS = 30000;
 var SMART_TRANSITION_FADE_OUT_MS = 960;
 var smartCrossfadeState = null;
 var SMART_CROSSFADE_DURATION_MS = 30000;
+var SMART_CROSSFADE_PRELOAD_SEC = 15;
+var SMART_CROSSFADE_CHECK_MS = 1000;
 var SMART_CROSSFADE_MIN_REMAINING_SEC = 4.2;
 var SMART_CROSSFADE_MAX_REMAINING_SEC = 30;
 var SMART_CROSSFADE_LAST_LYRIC_LEAD_SEC = 5.4;
+var smartCrossfadeSafetyTimer = null;
+var smartCrossfadeBlockedSongKey = '';
 var userPlaylists = [], qqPlaylists = [], kugouPlaylists = [], myPodcastCollections = [], myPodcastItems = {}, playlistCoverCache = {};
 var CUSTOM_COVER_STORE_KEY = 'mineradio-custom-covers';
 var CUSTOM_LYRIC_STORE_KEY = 'mineradio-custom-lyrics-v1';
@@ -4506,10 +4544,10 @@ var renderInteractionBoostUntil = 0;
 var renderInteractionReason = '';
 function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
-  if (quality === 'eco') return { cap: 0.95, min: 0.56, budget: 2400000 };
-  if (quality === 'balanced') return { cap: 1.12, min: 0.66, budget: 3800000 };
-  if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
-  return { cap: RENDER_DPR_CAP, min: RENDER_MIN_DPR, budget: RENDER_PIXEL_BUDGET };
+  if (quality === 'eco') return { cap: 1.0, min: 0.56, budget: 2400000 };
+  if (quality === 'balanced') return { cap: 1.25, min: 0.66, budget: 3800000 };
+  if (quality === 'ultra') return { cap: window.devicePixelRatio || 1, min: 0.85, budget: Infinity };
+  return { cap: 1.5, min: RENDER_MIN_DPR, budget: RENDER_PIXEL_BUDGET };
 }
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
@@ -4517,7 +4555,7 @@ function getRenderPixelRatio() {
   if (isVisibleBackgroundMode()) return Math.min(device, 0.90);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
   var quality = renderQualityProfile();
-  var budgetCap = Math.sqrt(quality.budget / cssPixels);
+  var budgetCap = isFinite(quality.budget) ? Math.sqrt(quality.budget / cssPixels) : quality.cap;
   var cap = Math.min(quality.cap, budgetCap);
   return Math.max(quality.min, Math.min(device, cap));
 }
@@ -11465,7 +11503,7 @@ async function fetchBeatPrefetchAudioUrl(song) {
   if (!is小Q && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
   if (is小Q && qqPlaybackQualityCeiling && (requestedQuality === 'jymaster' || requestedQuality === 'hires' || requestedQuality === 'lossless')) requestedQuality = qqPlaybackQualityCeiling;
   var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
-  var data = isQQ
+  var data = is小Q
     ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
     : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + qualityParam);
   if (!data || !data.url || data.trial) return null;
@@ -16596,7 +16634,11 @@ function shouldStartSmartCrossfadeByLyrics(currentSec, durationSec) {
   return remaining <= 7.4;
 }
 async function fetchSmartCrossfadePlaybackUrl(song) {
-  if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return null;
+  if (!song) return null;
+  if (song.type === 'local' || song.source === 'local' || song.localUrl) {
+    var localUrl = song.localUrl || song.url || '';
+    return localUrl ? { data: null, proxyUrl: localUrl, local: true, trial: false } : null;
+  }
   var provider = songProviderKey(song);
   var isQQPlayback = provider === 'qq';
   var isKugouPlayback = provider === 'kugou';
@@ -16612,21 +16654,27 @@ async function fetchSmartCrossfadePlaybackUrl(song) {
       ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&albumAudioId=' + encodeURIComponent(song.albumAudioId || song.album_audio_id || '') + '&albumId=' + encodeURIComponent(song.albumId || song.album_id || '') + qualityParam + kugouQualityHashesParam(song))
       : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + qualityParam));
   if (!data || !data.url || data.trial) return null;
-  return '/api/audio?url=' + encodeURIComponent(data.url);
+  return { data: data, proxyUrl: '/api/audio?url=' + encodeURIComponent(data.url), local: false, trial: false };
 }
 function stopSmartCrossfadeAudio(state) {
   if (!state) return;
-  if (state.raf) {
-    cancelAnimationFrame(state.raf);
-    state.raf = 0;
-  }
   if (state.timer) {
     clearTimeout(state.timer);
     state.timer = null;
   }
-  if (state.audio) {
-    try { state.audio.pause(); } catch (e) {}
-    try { state.audio.removeAttribute('src'); state.audio.load(); } catch (e) {}
+  if (state.fallbackTimer) {
+    clearInterval(state.fallbackTimer);
+    state.fallbackTimer = null;
+  }
+  if (state.nextAudio && !state.handedOff) {
+    state.nextAudio.oncanplay = null;
+    state.nextAudio.onerror = null;
+    try { state.nextAudio.pause(); } catch (e) {}
+    try { state.nextAudio.removeAttribute('src'); state.nextAudio.load(); } catch (e) {}
+  }
+  if (!state.handedOff) {
+    try { if (state.nextSource) state.nextSource.disconnect(); } catch (e) {}
+    try { if (state.nextGain) state.nextGain.disconnect(); } catch (e) {}
   }
 }
 function cancelSmartCrossfade(reason) {
@@ -16637,9 +16685,12 @@ function cancelSmartCrossfade(reason) {
   }
   stopSmartCrossfadeAudio(state);
   smartCrossfadeState = null;
+  state.error = reason || '';
+  if (/empty|error|failed|timeout/.test(String(reason || ''))) smartCrossfadeBlockedSongKey = state.currentSongKey;
   hideSmartTransitionChip();
-  resetSmartCoverTransition();
+  if (!document.hidden) resetSmartCoverTransition();
   restorePlaybackGain();
+  updateSmartAudioDebugState(reason || 'cancelled');
 }
 function setCurrentAudioOutputGainForCrossfade(value) {
   value = normalizeAudioFadeTarget(value);
@@ -16651,96 +16702,194 @@ function setCurrentAudioOutputGainForCrossfade(value) {
   }
   if (audio) audio.volume = value;
 }
+function buildEqualPowerCurve(fadeIn) {
+  var curve = new Float32Array(64);
+  for (var i = 0; i < curve.length; i++) {
+    var t = i / (curve.length - 1);
+    curve[i] = fadeIn ? Math.sin(t * Math.PI * 0.5) : Math.cos(t * Math.PI * 0.5);
+  }
+  return curve;
+}
 function animateSmartCrossfadeVolumes(state) {
-  var started = performance.now();
   var duration = Math.max(1200, state.durationMs || SMART_CROSSFADE_DURATION_MS);
   var target = clampRange(targetVolume, 0, 1);
   audioFadeSerial++;
   clearAudioFadeTimers();
-  if (gainNode && audioCtx && gainNode.gain) {
+  if (gainNode && state.nextGain && audioCtx && gainNode.gain && state.nextGain.gain) {
     try {
       var now = audioCtx.currentTime || 0;
       holdAudioOutputGain(now);
       gainNode.gain.cancelScheduledValues(now);
-    } catch (e) {}
+      state.nextGain.gain.cancelScheduledValues(now);
+      state.nextGain.gain.setValueAtTime(0, now);
+      gainNode.gain.setValueCurveAtTime(buildEqualPowerCurve(false).map(function(v){ return v * target; }), now, duration / 1000);
+      state.nextGain.gain.setValueCurveAtTime(buildEqualPowerCurve(true).map(function(v){ return v * target; }), now, duration / 1000);
+      state.audioTimelineEnd = now + duration / 1000;
+      return;
+    } catch (e) { console.warn('[SmartCrossfadeTimeline]', e); }
   }
-  function tick(now) {
-    if (smartCrossfadeState !== state || !state.audio) return;
-    var t = clampRange((now - started) / duration, 0, 1);
-    var oldCurveT = Math.pow(t, 1.18);
-    var newCurveT = Math.pow(t, 1.34);
-    var oldGain = target * Math.cos(oldCurveT * Math.PI * 0.5);
-    var newGain = target * Math.sin(newCurveT * Math.PI * 0.5);
-    if (t < 0.18) newGain *= 0.72 + t * 1.55;
-    setCurrentAudioOutputGainForCrossfade(oldGain);
-    state.audio.volume = clampRange(newGain, 0, target);
-    if (t < 1) state.raf = requestAnimationFrame(tick);
-    else {
-      state.raf = 0;
-      setCurrentAudioOutputGainForCrossfade(0);
-      state.audio.volume = target;
-    }
-  }
-  state.raf = requestAnimationFrame(tick);
+  var started = Date.now();
+  state.fallbackTimer = setInterval(function(){
+    if (smartCrossfadeState !== state || !state.nextAudio) return clearInterval(state.fallbackTimer);
+    var t = clampRange((Date.now() - started) / duration, 0, 1);
+    setCurrentAudioOutputGainForCrossfade(target * Math.cos(t * Math.PI * 0.5));
+    state.nextAudio.volume = target * Math.sin(t * Math.PI * 0.5);
+    if (t >= 1) { clearInterval(state.fallbackTimer); state.fallbackTimer = null; }
+  }, 120);
 }
-async function startSmartCrossfadeAuto() {
+function smartCrossfadeStateIsCurrent(state) {
+  return !!(state && smartCrossfadeState === state && state.token === trackSwitchToken &&
+    state.currentSongKey === queueItemKey(playQueue[currentIdx]) && state.nextIdx >= 0 &&
+    state.nextSongKey === queueItemKey(playQueue[state.nextIdx]));
+}
+function updateSmartAudioDebugState(reason) {
+  var state = smartCrossfadeState;
+  window.__mineradioSmartAudioState = {
+    status: state ? state.status : 'idle',
+    currentSongKey: state ? state.currentSongKey : '',
+    nextSongKey: state ? state.nextSongKey : '',
+    nextAudioReadyState: state && state.nextAudio ? state.nextAudio.readyState : 0,
+    remainingSeconds: Math.max(0, getPlaybackDurationSeconds() - getPlaybackCurrentSeconds()),
+    hidden: document.hidden,
+    desktopRuntimeState: Object.assign({}, desktopRuntimeState),
+    lastReason: reason || (state && state.error) || ''
+  };
+}
+async function prepareSmartCrossfadeNext() {
   if (smartCrossfadeState || !audio || audio.paused || audio.ended) return;
   var idx = nextAutoQueueIndexForSmartCrossfade();
   if (idx < 0 || idx === currentIdx || !playQueue[idx]) return;
   var currentToken = trackSwitchToken;
   var currentSongKey = queueItemKey(playQueue[currentIdx]);
-  smartCrossfadeState = { preparing: true, nextIdx: idx, token: currentToken, currentSongKey: currentSongKey, audio: null, raf: 0, timer: null, durationMs: SMART_CROSSFADE_DURATION_MS };
+  if (smartCrossfadeBlockedSongKey === currentSongKey) return;
+  var song = hydrateCustomCover(playQueue[idx]);
+  var state = smartCrossfadeState = {
+    status: 'preparing', token: currentToken, currentSongKey: currentSongKey,
+    nextSongKey: queueItemKey(song), nextIdx: idx, nextAudio: null, nextSource: null,
+    nextGain: null, timer: null, fallbackTimer: null, durationMs: SMART_CROSSFADE_DURATION_MS,
+    playbackData: null, error: '', handedOff: false, previousOnended: audio && audio.onended
+  };
+  updateSmartAudioDebugState();
   try {
-    var song = hydrateCustomCover(playQueue[idx]);
-    var proxyAudioUrl = await fetchSmartCrossfadePlaybackUrl(song);
-    if (!smartCrossfadeState || smartCrossfadeState.token !== currentToken || !proxyAudioUrl) {
+    var playbackData = await fetchSmartCrossfadePlaybackUrl(song);
+    if (!smartCrossfadeStateIsCurrent(state) || !playbackData) {
       cancelSmartCrossfade('prefetch-empty');
       return;
     }
-    var durationSec = getPlaybackDurationSeconds();
-    var currentSec = getPlaybackCurrentSeconds();
-    var remaining = durationSec - currentSec;
-    if (!shouldStartSmartCrossfadeByLyrics(currentSec, durationSec) || remaining < SMART_CROSSFADE_MIN_REMAINING_SEC) {
-      cancelSmartCrossfade('late-or-lyrics');
-      return;
-    }
-    var mixMs = Math.max(3600, Math.min(SMART_CROSSFADE_DURATION_MS, (remaining - 0.20) * 1000));
     var nextAudio = new Audio();
     nextAudio.crossOrigin = 'anonymous';
     configurePlaybackAudioElement(nextAudio);
     nextAudio.preload = 'auto';
     nextAudio.volume = 0;
-    nextAudio.src = proxyAudioUrl;
-    smartCrossfadeState = { active: true, nextIdx: idx, token: currentToken, currentSongKey: currentSongKey, audio: nextAudio, raf: 0, timer: null, durationMs: mixMs, previousOnended: audio && audio.onended };
-    var state = smartCrossfadeState;
-    showSmartTransitionChip(mixMs + 1600);
-    startSmartCoverTransition(song, mixMs + 1200);
-    try { audio.onended = null; } catch (e) {}
+    nextAudio.muted = true;
+    nextAudio.src = playbackData.proxyUrl;
+    var nextSource = null;
+    var nextGain = null;
+    if (audioCtx && audioReady) {
+      nextSource = audioCtx.createMediaElementSource(nextAudio);
+      nextGain = audioCtx.createGain();
+      nextGain.gain.setValueAtTime(0, audioCtx.currentTime || 0);
+      nextSource.connect(nextGain);
+      nextGain.connect(audioCtx.destination);
+    }
+    state.nextAudio = nextAudio;
+    state.nextSource = nextSource;
+    state.nextGain = nextGain;
+    state.playbackData = playbackData;
+    nextAudio.oncanplay = function(){
+      if (!smartCrossfadeStateIsCurrent(state)) return;
+      state.status = 'ready';
+      updateSmartAudioDebugState();
+      checkSmartCrossfadeAudioState();
+    };
+    nextAudio.onerror = function(){ if (smartCrossfadeStateIsCurrent(state)) cancelSmartCrossfade('preload-media-error'); };
     nextAudio.load();
-    await nextAudio.play();
-    if (smartCrossfadeState !== state || state.token !== trackSwitchToken) return;
-    animateSmartCrossfadeVolumes(state);
-    state.timer = setTimeout(function(){
-      if (smartCrossfadeState !== state) return;
-      var resumeAt = state.audio && isFinite(state.audio.currentTime) ? state.audio.currentTime : 0;
-      var handoffAudio = state.audio;
-      currentIdx = state.nextIdx;
-      Promise.resolve(playQueueAt(state.nextIdx, {
-        preserveHomeState: true,
-        smartTransition: false,
-        smartTransitionHandoff: true,
-        crossfadeHandoffAudio: handoffAudio,
-        resumeAt: resumeAt,
-        fadeInMs: 1400
-      })).catch(function(e){
-        console.warn('[SmartCrossfadeHandoff]', e);
-        cancelSmartCrossfade('handoff-error');
-      });
-    }, mixMs);
   } catch (e) {
     console.warn('[SmartCrossfade]', e);
     cancelSmartCrossfade('error');
   }
+}
+function handoffSmartCrossfade(state, reason) {
+  if (!smartCrossfadeStateIsCurrent(state) || state.handedOff || !state.nextAudio) return;
+  state.status = 'handoff';
+  state.nextAudio.oncanplay = null;
+  state.nextAudio.onerror = null;
+  if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+  var resumeAt = isFinite(state.nextAudio.currentTime) ? state.nextAudio.currentTime : 0;
+  currentIdx = state.nextIdx;
+  updateSmartAudioDebugState(reason || 'handoff');
+  Promise.resolve(playQueueAt(state.nextIdx, {
+    preserveHomeState: true, smartTransition: false, smartTransitionHandoff: true,
+    crossfadeHandoffAudio: state.nextAudio, crossfadeHandoffSource: state.nextSource,
+    crossfadeHandoffOutput: state.nextGain, crossfadePlaybackData: state.playbackData,
+    crossfadeStateRef: state, resumeAt: resumeAt, fadeInMs: 1400
+  })).catch(function(e){
+    console.warn('[SmartCrossfadeHandoff]', e);
+    state.handedOff = false;
+    cancelSmartCrossfade('handoff-error');
+  });
+}
+async function startSmartCrossfadeAuto(forceEndedHandoff) {
+  var state = smartCrossfadeState;
+  if (!smartCrossfadeStateIsCurrent(state) || state.status !== 'ready' || !state.nextAudio) return;
+  var remaining = getPlaybackDurationSeconds() - getPlaybackCurrentSeconds();
+  if (!forceEndedHandoff && remaining < SMART_CROSSFADE_MIN_REMAINING_SEC) return;
+  state.durationMs = forceEndedHandoff ? 180 : Math.max(1200, Math.min(SMART_CROSSFADE_DURATION_MS, (remaining - 0.15) * 1000));
+  state.status = 'mixing';
+  state.nextAudio.muted = false;
+  state.nextAudio.volume = state.nextGain ? 1 : 0;
+  if (!document.hidden) try {
+    showSmartTransitionChip(state.durationMs + 1600);
+    startSmartCoverTransition(playQueue[state.nextIdx], state.durationMs + 1200);
+  } catch (visualError) { console.warn('[SmartCrossfadeVisual]', visualError); }
+  try { audio.onended = function(){ handoffSmartCrossfade(state, 'old-audio-ended'); }; } catch (e) {}
+  try {
+    await state.nextAudio.play();
+    if (!smartCrossfadeStateIsCurrent(state)) return;
+    animateSmartCrossfadeVolumes(state);
+    if (forceEndedHandoff) return handoffSmartCrossfade(state, 'ended-ready');
+    state.timer = setTimeout(function(){ handoffSmartCrossfade(state, 'mix-timer'); }, state.durationMs + 40);
+    updateSmartAudioDebugState();
+  } catch (e) {
+    state.status = 'ready';
+    cancelSmartCrossfade('next-play-failed');
+  }
+}
+function handleSmartCrossfadeEndedFallback(token) {
+  var state = smartCrossfadeState;
+  if (!state || state.token !== token || !smartCrossfadeStateIsCurrent(state)) return false;
+  if (state.status === 'mixing' || state.status === 'handoff') return true;
+  if (state.status === 'ready') {
+    startSmartCrossfadeAuto(true);
+    return true;
+  }
+  if (state.status === 'preparing') {
+    state.status = 'ended-wait';
+    setTimeout(function(){
+      if (!smartCrossfadeStateIsCurrent(state)) return;
+      if (state.nextAudio && state.nextAudio.readyState >= 3) {
+        state.status = 'ready';
+        startSmartCrossfadeAuto(true);
+      } else {
+        cancelSmartCrossfade('ended-preload-timeout');
+        nextTrack({ autoAdvance: true });
+      }
+    }, 700);
+    return true;
+  }
+  return false;
+}
+function checkSmartCrossfadeAudioState() {
+  if (!audio || audio.paused || audio.ended || currentIdx < 0) return;
+  var durationSec = getPlaybackDurationSeconds();
+  var currentSec = getPlaybackCurrentSeconds();
+  if (!isFinite(durationSec) || durationSec <= 12 || !isFinite(currentSec)) return;
+  var remaining = durationSec - currentSec;
+  if (!smartCrossfadeState && remaining <= SMART_CROSSFADE_PRELOAD_SEC && remaining > 0) prepareSmartCrossfadeNext();
+  var state = smartCrossfadeState;
+  if (state && !smartCrossfadeStateIsCurrent(state)) return cancelSmartCrossfade('queue-or-track-changed');
+  if (state && state.status === 'ready' && shouldStartSmartCrossfadeByLyrics(currentSec, durationSec)) startSmartCrossfadeAuto();
+  updateSmartAudioDebugState();
 }
 function setPlaybackQuality(value) {
   var next = normalizePlaybackQuality(value);
@@ -16915,8 +17064,11 @@ function listenSongSnapshot(song) {
     id: song.id || '',
     mid: song.mid || song.songmid || '',
     mediaMid: song.mediaMid || song.media_mid || '',
+    hash: song.hash || '',
+    albumAudioId: song.albumAudioId || song.album_audio_id || song.mixsongid || song.MixSongID || '',
+    mixSongId: song.mixSongId || song.mixsongid || song.MixSongID || '',
     type: song.type || 'song',
-    sourceKey: song.source || song.provider || '',
+    sourceKey: song.type === 'local' ? 'local' : songProviderKey(song),
     name: song.name || song.title || '未知歌曲',
     artist: song.artist || '',
     cover: songCoverSrc(song, 220) || song.cover || '',
@@ -16939,14 +17091,169 @@ function beginListenSession(song, context) {
     lastAudioTime: audio && isFinite(audio.currentTime) ? audio.currentTime : 0,
     listenMs: 0,
     maxProgress: 0,
+    platformReported: false,
   };
 }
-function updateListenStatsTick(force) {
+var neteaseListenScrobbleCache = {};
+function neteaseScrobbleSourceId(session, record) {
+  var ctx = session && session.context || record && record.context || null;
+  var raw = ctx && (ctx.playlistId || ctx.sourceid || ctx.sourceId);
+  raw = raw == null ? '' : String(raw);
+  if (/^\d+$/.test(raw)) return raw;
+  return '0';
+}
+function scrobbleNeteaseListen(session, record) {
+  if (!record || !record.id || !/^\d+$/.test(String(record.id))) return;
+  if (record.sourceKey && record.sourceKey !== 'netease') return;
+  if (record.type && record.type !== 'song') return;
+  var seconds = Math.max(1, Math.round((record.listenMs || 0) / 1000));
+  var sourceid = neteaseScrobbleSourceId(session, record);
+  var key = record.id + ':' + sourceid + ':' + Math.floor((record.playedAt || Date.now()) / 10000);
+  if (neteaseListenScrobbleCache[key]) return;
+  neteaseListenScrobbleCache[key] = Date.now();
+  Object.keys(neteaseListenScrobbleCache).forEach(function(k){
+    if (Date.now() - neteaseListenScrobbleCache[k] > 10 * 60 * 1000) delete neteaseListenScrobbleCache[k];
+  });
+  apiJson('/api/listen/scrobble', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: record.id, sourceid: sourceid, time: seconds })
+  }).then(function(r){
+    if (!r || r.error || r.success === false) console.warn('[NeteaseScrobble]', r && (r.error || r.code) || r);
+  }).catch(function(e){ console.warn('[NeteaseScrobble]', e); });
+}
+var kugouListenUploadCache = {};
+var kugouListenMixIdCache = {};
+function resolveKugouListenMixId(record) {
+  var direct = String(record && record.mixSongId || '').replace(/\D/g, '');
+  if (direct) return Promise.resolve(direct);
+  var hash = String(record && record.hash || '').toUpperCase();
+  if (!hash) return Promise.resolve('');
+  if (kugouListenMixIdCache[hash]) return Promise.resolve(kugouListenMixIdCache[hash]);
+  var query = [record.name, record.artist].filter(Boolean).join(' ');
+  return apiJson('/api/kugou/search?keywords=' + encodeURIComponent(query) + '&limit=18').then(function(data){
+    var match = ((data && data.songs) || []).find(function(song){ return String(song.hash || '').toUpperCase() === hash; });
+    var mxid = String(match && match.mixSongId || '').replace(/\D/g, '');
+    if (mxid) kugouListenMixIdCache[hash] = mxid;
+    return mxid;
+  }).catch(function(){ return ''; });
+}
+function uploadKugouListen(session, record) {
+  if (!record || record.sourceKey !== 'kugou') return;
+  resolveKugouListenMixId(record).then(function(mxid){
+    if (!mxid) return;
+    var key = mxid + ':' + Math.floor((record.playedAt || Date.now()) / 10000);
+    if (kugouListenUploadCache[key]) return;
+    kugouListenUploadCache[key] = Date.now();
+    Object.keys(kugouListenUploadCache).forEach(function(k){
+      if (Date.now() - kugouListenUploadCache[k] > 10 * 60 * 1000) delete kugouListenUploadCache[k];
+    });
+    return apiJson('/api/kugou/listen/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mxid: mxid, ot: Math.floor((record.playedAt || Date.now()) / 1000) })
+    });
+  }).then(function(r){
+    if (r && (r.error || r.success === false)) console.warn('[KugouListenUpload]', r.error || r.code || r);
+  }).catch(function(e){ console.warn('[KugouListenUpload]', e); });
+}
+var LOCAL_PLATFORM_MATCH_STORE_KEY = 'mineradio-local-platform-match-v1';
+var localPlatformMatchCache = (function(){
+  try { return JSON.parse(localStorage.getItem(LOCAL_PLATFORM_MATCH_STORE_KEY) || '{}') || {}; } catch (e) { return {}; }
+})();
+var localPlatformMatchPending = {};
+function saveLocalPlatformMatchCache() {
+  try { localStorage.setItem(LOCAL_PLATFORM_MATCH_STORE_KEY, JSON.stringify(localPlatformMatchCache)); } catch (e) {}
+}
+function localSongForListenSession(session) {
+  var key = session && session.key || '';
+  var stored = (localLibrarySongs || []).find(function(song){ return queueItemKey(song) === key; }) || null;
+  var snap = session && session.song || null;
+  if (!stored) return snap;
+  return Object.assign({}, snap || {}, stored, { duration:Number(stored.duration) || Number(snap && snap.duration) || 0 });
+}
+function normalizedDurationSeconds(value) {
+  value = Number(value) || 0;
+  return value > 1000 ? value / 1000 : value;
+}
+function strictLocalPlatformCandidate(localSong, candidate) {
+  if (!localSong || !candidate) return false;
+  if (simpleSearchNorm(localSong.name) !== simpleSearchNorm(candidate.name)) return false;
+  var localArtists = artistNameParts(localSong);
+  var candidateArtists = artistNameParts(candidate);
+  if (!localArtists.length || !candidateArtists.length || /^(本地文件|未知歌手)$/.test(String(localSong.artist || ''))) return false;
+  if (!localArtists.some(function(name){ return candidateArtists.indexOf(name) >= 0; })) return false;
+  var localDuration = normalizedDurationSeconds(localSong.duration);
+  var candidateDuration = normalizedDurationSeconds(candidate.duration);
+  return localDuration > 10 && candidateDuration > 10 && Math.abs(localDuration - candidateDuration) <= 4;
+}
+async function matchLocalSongForProvider(session, provider) {
+  var localSong = localSongForListenSession(session);
+  var cacheKey = session && session.key || '';
+  if (!localSong || !cacheKey) return null;
+  var cached = localPlatformMatchCache[cacheKey] && localPlatformMatchCache[cacheKey][provider];
+  if (cached) return cached;
+  var pendingKey = cacheKey + ':' + provider;
+  if (localPlatformMatchPending[pendingKey]) return localPlatformMatchPending[pendingKey];
+  localPlatformMatchPending[pendingKey] = (async function(){
+    var query = [localSong.name, localSong.artist].filter(function(value){ return value && value !== '本地文件'; }).join(' ');
+    if (!query) return null;
+    var candidates = await fetchMusicSearchResults(query, provider);
+    var matches = (candidates || []).filter(function(candidate){ return strictLocalPlatformCandidate(localSong, candidate); });
+    if (matches.length > 1 && localSong.album) {
+      var albumMatches = matches.filter(function(candidate){ return simpleSearchNorm(candidate.album) === simpleSearchNorm(localSong.album); });
+      if (albumMatches.length === 1) matches = albumMatches;
+    }
+    if (matches.length !== 1) return null;
+    var match = matches[0];
+    var compact = provider === 'kugou'
+      ? { sourceKey:'kugou', type:'kugou', id:match.id || '', albumAudioId:match.albumAudioId || '', mixSongId:match.mixSongId || '', hash:match.hash || '' }
+      : { sourceKey:'netease', type:'song', id:match.id || '' };
+    localPlatformMatchCache[cacheKey] = localPlatformMatchCache[cacheKey] || {};
+    localPlatformMatchCache[cacheKey][provider] = compact;
+    saveLocalPlatformMatchCache();
+    return compact;
+  })().catch(function(e){ console.warn('[LocalPlatformMatch]', provider, e); return null; }).finally(function(){ delete localPlatformMatchPending[pendingKey]; });
+  return localPlatformMatchPending[pendingKey];
+}
+function reportLocalListenToLoggedPlatforms(session, record) {
+  ['netease','kugou'].forEach(function(provider){
+    if (!hasPlatformLogin(provider)) return;
+    matchLocalSongForProvider(session, provider).then(function(match){
+      if (!match) return;
+      var matchedRecord = Object.assign({}, record, match);
+      if (provider === 'netease') scrobbleNeteaseListen(session, matchedRecord);
+      else uploadKugouListen(session, matchedRecord);
+    });
+  });
+}
+function reportPlatformListen(session, record) {
+  if (record && record.sourceKey === 'local') {
+    reportLocalListenToLoggedPlatforms(session, record);
+    return;
+  }
+  scrobbleNeteaseListen(session, record);
+  uploadKugouListen(session, record);
+}
+function reportActiveListenSession() {
+  if (!listenSession || listenSession.platformReported) return;
+  if (listenSession.listenMs < 45000 && listenSession.maxProgress < 0.5) return;
+  var snap = listenSession.song || {};
+  listenSession.platformReported = true;
+  reportPlatformListen(listenSession, {
+    key: listenSession.key, id: snap.id || '', type: snap.type || 'song', sourceKey: snap.sourceKey || '',
+    albumAudioId: snap.albumAudioId || '', mixSongId: snap.mixSongId || '', hash: snap.hash || '', listenMs: Math.round(listenSession.listenMs),
+    name: snap.name || '', artist: snap.artist || '', duration: snap.duration || 0,
+    playedAt: Date.now(), context: listenSession.context || null
+  });
+}
+function updateListenStatsTick(force, keepCurrentSession) {
   if (!audio || !audio.duration || audio.paused) return;
   var song = currentCoverSong();
   if (!song) return;
   var key = queueItemKey(song);
-  if (!listenSession || listenSession.key !== key) beginListenSession(song, activeRadioContext);
+  if (!listenSession) beginListenSession(song, activeRadioContext);
+  else if (listenSession.key !== key && !keepCurrentSession) beginListenSession(song, activeRadioContext);
   if (!listenSession) return;
   var now = Date.now();
   var audioTime = isFinite(audio.currentTime) ? audio.currentTime : 0;
@@ -16958,10 +17265,11 @@ function updateListenStatsTick(force) {
   listenSession.lastWallAt = now;
   listenSession.lastAudioTime = audioTime;
   listenSession.maxProgress = Math.max(listenSession.maxProgress || 0, audio.duration ? audioTime / audio.duration : 0);
+  reportActiveListenSession();
 }
 function finalizeListenSession(completed) {
   if (!listenSession) return;
-  updateListenStatsTick(true);
+  updateListenStatsTick(true, true);
   var session = listenSession;
   listenSession = null;
   var effective = completed || session.listenMs >= 45000 || session.maxProgress >= 0.5 || (!audio || !audio.duration ? session.listenMs >= 30000 : false);
@@ -16973,6 +17281,9 @@ function finalizeListenSession(completed) {
     id: snap.id || '',
     mid: snap.mid || '',
     mediaMid: snap.mediaMid || '',
+    hash: snap.hash || '',
+    albumAudioId: snap.albumAudioId || '',
+    mixSongId: snap.mixSongId || '',
     type: snap.type || 'song',
     sourceKey: snap.sourceKey || '',
     name: snap.name || '未知歌曲',
@@ -17005,6 +17316,7 @@ function finalizeListenSession(completed) {
     listenStatsState.artists[name] = artistStat;
   });
   saveListenStatsState();
+  if (!session.platformReported) reportPlatformListen(session, record);
   if (emptyHomeActive) renderHomeDiscover();
 }
 function mostPlayedSong() {
@@ -17023,6 +17335,123 @@ function homeListenSummary() {
   var topArtist = topListenArtist();
   var totalPlays = Object.keys(listenStatsState.songs || {}).reduce(function(sum, key){ return sum + ((listenStatsState.songs[key] && listenStatsState.songs[key].plays) || 0); }, 0);
   return { recent: recent, topSong: topSong, topArtist: topArtist, totalPlays: totalPlays };
+}
+var listenRankingMode = 'week';
+var listenRankingItems = [];
+var listenRankingLoadSeq = 0;
+function localListenRankingItems() {
+  return Object.keys(listenStatsState.songs || {}).map(function(key){
+    var stat = listenStatsState.songs[key] || {};
+    return { key:key, name:stat.name || '未知歌曲', artist:stat.artist || '', cover:stat.cover || '', plays:Number(stat.plays) || 0, listenMs:Number(stat.listenMs) || 0, lastPlayedAt:Number(stat.lastPlayedAt) || 0, local:true };
+  }).sort(function(a, b){ return (b.plays - a.plays) || (b.listenMs - a.listenMs) || (b.lastPlayedAt - a.lastPlayedAt); });
+}
+function renderListenRanking(items, mode) {
+  var list = document.getElementById('listen-ranking-list');
+  var note = document.getElementById('listen-ranking-note');
+  if (!list) return;
+  listenRankingItems = items || [];
+  if (note) note.textContent = mode === 'local'
+    ? '仅统计 Mineradio 内的有效播放，不会同步到其他设备。'
+    : (mode === 'kugou' ? '数据来自酷狗账号云端播放历史，按累计播放次数排序。' : '数据来自网易云账号，排行更新可能存在短暂延迟。');
+  if (!listenRankingItems.length) {
+    list.innerHTML = '<div class="detail-empty">还没有听歌排行数据</div>';
+    return;
+  }
+  list.innerHTML = listenRankingItems.map(function(item, index){
+    var cover = item.cover ? coverUrlWithSize(item.cover, 96) : '';
+    var count = mode === 'local'
+      ? (item.plays + ' 次 · ' + Math.max(1, Math.round(item.listenMs / 60000)) + ' 分钟')
+      : ((Number(item.playCount) || 0) + ' 次');
+    return '<div class="listen-ranking-item" onclick="playListenRankingItem(' + index + ')">' +
+      '<div class="listen-ranking-rank">' + (index + 1) + '</div>' +
+      (cover ? '<img class="listen-ranking-cover" src="' + escHtml(cover) + '" alt="">' : '<div class="listen-ranking-cover"></div>') +
+      '<div class="listen-ranking-main"><div class="listen-ranking-name">' + escHtml(item.name || '未知歌曲') + '</div><div class="listen-ranking-artist">' + escHtml(item.artist || (mode === 'local' ? '本地记录' : '未知歌手')) + '</div></div>' +
+      '<div class="listen-ranking-count">' + escHtml(count) + '</div></div>';
+  }).join('');
+}
+async function setListenRankingMode(mode) {
+  mode = mode === 'all' || mode === 'kugou' || mode === 'local' ? mode : 'week';
+  listenRankingMode = mode;
+  ['week','all','kugou','local'].forEach(function(key){
+    var button = document.getElementById('listen-ranking-' + key);
+    if (button) button.classList.toggle('active', key === mode);
+  });
+  var list = document.getElementById('listen-ranking-list');
+  if (mode === 'local') return renderListenRanking(localListenRankingItems(), mode);
+  if (mode === 'kugou') {
+    if (!hasPlatformLogin('kugou')) {
+      if (list) list.innerHTML = '<div class="detail-empty">登录小狗后可查看云端听歌排行</div>';
+      listenRankingItems = [];
+      return;
+    }
+    var kugouSeq = ++listenRankingLoadSeq;
+    if (list) list.innerHTML = '<div class="detail-loading">正在读取小狗听歌排行</div>';
+    try {
+      var kugouData = await apiJson('/api/kugou/listen/history');
+      if (kugouSeq !== listenRankingLoadSeq || listenRankingMode !== mode) return;
+      if (!kugouData || kugouData.error) throw new Error(kugouData && kugouData.error || '读取失败');
+      renderListenRanking(kugouData.songs || [], mode);
+    } catch (e) {
+      if (kugouSeq === listenRankingLoadSeq && list) list.innerHTML = '<div class="detail-empty">读取失败，请稍后重试</div>';
+    }
+    return;
+  }
+  if (!hasPlatformLogin('netease')) {
+    if (list) list.innerHTML = '<div class="detail-empty">登录小云后可查看平台听歌排行</div>';
+    listenRankingItems = [];
+    return;
+  }
+  var seq = ++listenRankingLoadSeq;
+  if (list) list.innerHTML = '<div class="detail-loading">正在读取听歌排行</div>';
+  try {
+    var data = await apiJson('/api/listen/ranking?type=' + mode);
+    if (seq !== listenRankingLoadSeq || listenRankingMode !== mode) return;
+    if (!data || data.error) throw new Error(data && data.error || '读取失败');
+    renderListenRanking(data.songs || [], mode);
+  } catch (e) {
+    if (seq === listenRankingLoadSeq && list) list.innerHTML = '<div class="detail-empty">读取失败，请稍后重试</div>';
+  }
+}
+function updateListenRankingTabVisibility() {
+  var hasNetease = hasPlatformLogin('netease');
+  var hasKugou = hasPlatformLogin('kugou');
+  ['week','all'].forEach(function(key){
+    var button = document.getElementById('listen-ranking-' + key);
+    if (button) button.style.display = hasNetease ? '' : 'none';
+  });
+  var kugouButton = document.getElementById('listen-ranking-kugou');
+  if (kugouButton) kugouButton.style.display = hasKugou ? '' : 'none';
+}
+function openListenRanking() {
+  var mode = hasPlatformLogin('netease') ? 'week' : (hasPlatformLogin('kugou') ? 'kugou' : 'local');
+  closeGsapModal(document.getElementById('user-modal'), function(){
+    updateListenRankingTabVisibility();
+    openGsapModal(document.getElementById('listen-ranking-modal'));
+    setListenRankingMode(mode);
+  });
+}
+function closeListenRanking() {
+  listenRankingLoadSeq++;
+  closeGsapModal(document.getElementById('listen-ranking-modal'));
+}
+function playListenRankingItem(index) {
+  var item = listenRankingItems[index];
+  if (!item) return;
+  var song = item;
+  if (item.local) {
+    song = localLibrarySongs.find(function(candidate){ return queueItemKey(candidate) === item.key; }) || null;
+    if (!song && item.key.indexOf('qq:') === 0) song = { provider:'qq', source:'qq', type:'qq', mid:item.key.slice(3), name:item.name, artist:item.artist, cover:item.cover };
+    if (!song && item.key.indexOf('song:') === 0) song = { provider:'netease', source:'netease', type:'song', id:item.key.slice(5), name:item.name, artist:item.artist, cover:item.cover };
+  }
+  if (!song) {
+    closeListenRanking();
+    runHomeSearch([item.name, item.artist].filter(Boolean).join(' '));
+    return;
+  }
+  playQueue = [cloneSong(song)];
+  currentIdx = 0;
+  closeListenRanking();
+  playQueueAt(0).catch(function(e){ console.warn('[ListenRankingPlay]', e); });
 }
 function homeResumeQueueItem() {
   if (!Array.isArray(playQueue) || !playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) return null;
@@ -19916,7 +20345,7 @@ async function fetchMusicSearchResults(q, mode) {
 function renderSongSearchResults(songs) {
   playlist = songs || [];
   $results.innerHTML = playlist.map(function(s, i){
-    var vipTag = (s.fee === 1) ? '<span class="tag-vip">VIP</span>' : '';
+    var vipTag = (s.fee === 1 || (songProviderKey(s) === 'kugou' && s.vipRequired === true)) ? '<span class="tag-vip">VIP</span>' : '';
     var sourceTag = songSourceTagHtml(s);
     var sourceClass = songProviderKey(s) + '-source';
     var thumb = songCoverSrc(s, 80);
@@ -20483,6 +20912,7 @@ function queueSong(song, opts) {
       }
     }
     if (existing === currentIdx) return currentIdx;
+    if (smartCrossfadeState) cancelSmartCrossfade('queue-next-change');
     if (existing >= 0) {
       cloned = playQueue.splice(existing, 1)[0];
       if (currentIdx >= 0 && existing < currentIdx) currentIdx -= 1;
@@ -20929,7 +21359,31 @@ async function playQueueAt(idx, opts) {
         return;
       }
       currentLocalSong = song;
-      if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
+      var localHandoffAudio = opts.crossfadeHandoffAudio || null;
+      var useLocalCrossfadeHandoff = !!(localHandoffAudio && localHandoffAudio.src && !localHandoffAudio.ended);
+      if (useLocalCrossfadeHandoff) {
+        var previousLocalAudio = audio;
+        if (previousLocalAudio && previousLocalAudio !== localHandoffAudio) {
+          try { previousLocalAudio.onended = null; } catch (e) {}
+          try { previousLocalAudio.pause(); } catch (e) {}
+        }
+        audioFadeSerial++;
+        clearAudioFadeTimers();
+        audio = localHandoffAudio;
+        if (opts.crossfadeHandoffSource && audioCtx && analyser && beatAnalyser) {
+          try { if (source) source.disconnect(); } catch (e) {}
+          source = opts.crossfadeHandoffSource;
+          source.connect(analyser);
+          source.connect(beatAnalyser);
+          try {
+            gainNode.gain.cancelScheduledValues(audioCtx.currentTime || 0);
+            gainNode.gain.setValueAtTime(targetVolume, audioCtx.currentTime || 0);
+          } catch (e) {}
+          try { if (opts.crossfadeHandoffOutput) opts.crossfadeHandoffOutput.disconnect(); } catch (e) {}
+        } else {
+          resetAudioGraphForCurrentElement();
+        }
+      } else if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
       else {
         audioFadeSerial++;
         clearAudioFadeTimers();
@@ -20938,7 +21392,7 @@ async function playQueueAt(idx, opts) {
       configurePlaybackAudioElement(audio);
       bindPlaybackProgressEvents(audio);
       applyVolumeToAudio();
-      audio.src = localAudioUrl;
+      if (!useLocalCrossfadeHandoff) audio.src = localAudioUrl;
       updatePlaybackProgressUi();
       audio.onloadedmetadata = function(){
         if (token !== trackSwitchToken || !currentLocalSong || currentLocalSong.localKey !== song.localKey) return;
@@ -20949,10 +21403,12 @@ async function playQueueAt(idx, opts) {
         if (token !== trackSwitchToken) return;
         finalizeListenSession(true);
         if (playMode === 'single') setTimeout(function(){ playQueueAt(currentIdx, { autoRepeat: true }); }, 0);
-        else setTimeout(function(){ nextTrack({ autoAdvance: true }); }, 0);
+        else if (!handleSmartCrossfadeEndedFallback(token)) setTimeout(function(){ nextTrack({ autoAdvance: true }); }, 0);
       };
-      scheduleAudioResumePosition(audio, opts.resumeAt, token);
-      audio.load();
+      if (!useLocalCrossfadeHandoff) {
+        scheduleAudioResumePosition(audio, opts.resumeAt, token);
+        audio.load();
+      }
       markPlayPhase('visual-prep');
       currentBeatMap = null;
       beatMapNextIdx = 0;
@@ -20963,8 +21419,15 @@ async function playQueueAt(idx, opts) {
       if (!audioReady) initAudio();
       await promiseWithTimeout(resumeAudioAnalysis(), opts.resumeTimeoutMs || 1800, 'AUDIO_CONTEXT_RESUME_TIMEOUT');
       markPlayPhase('audio-play');
-      var localStarted = await playAudio();
+      var localStarted = useLocalCrossfadeHandoff ? true : await playAudio();
       if (localStarted) {
+        playing = true;
+        setPlayIcon(true);
+        if (useLocalCrossfadeHandoff) {
+          if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = true;
+          smartCrossfadeState = null;
+          hideSmartTransitionChip();
+        }
         beginListenSession(song, null);
         prepareLocalBeatAnalysis(song, localAudioUrl);
       }
@@ -20982,11 +21445,13 @@ async function playQueueAt(idx, opts) {
       requestedQuality = qqPlaybackQualityCeiling;
     }
     var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
-    var data = isQQPlayback
+    var data = opts.crossfadePlaybackData && opts.crossfadePlaybackData.data
+      ? opts.crossfadePlaybackData.data
+      : (isQQPlayback
       ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
       : (isKugouPlayback
         ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&albumAudioId=' + encodeURIComponent(song.albumAudioId || song.album_audio_id || '') + '&albumId=' + encodeURIComponent(song.albumId || song.album_id || '') + qualityParam + kugouQualityHashesParam(song))
-        : await apiJson('/api/song/url?id=' + song.id + qualityParam));
+        : await apiJson('/api/song/url?id=' + song.id + qualityParam)));
     if (token !== trackSwitchToken) return;
     if (!data.url) {
       if (showSmartTransition) pauseCurrentAudioForTrackSwitch();
@@ -21038,7 +21503,19 @@ async function playQueueAt(idx, opts) {
       audio = handoffAudio;
       audio.crossOrigin = 'anonymous';
       configurePlaybackAudioElement(audio);
-      resetAudioGraphForCurrentElement();
+      if (opts.crossfadeHandoffSource && audioCtx && analyser && beatAnalyser) {
+        try { if (source) source.disconnect(); } catch (e) {}
+        source = opts.crossfadeHandoffSource;
+        source.connect(analyser);
+        source.connect(beatAnalyser);
+        try {
+          gainNode.gain.cancelScheduledValues(audioCtx.currentTime || 0);
+          gainNode.gain.setValueAtTime(targetVolume, audioCtx.currentTime || 0);
+        } catch (e) {}
+        try { if (opts.crossfadeHandoffOutput) opts.crossfadeHandoffOutput.disconnect(); } catch (e) {}
+      } else {
+        resetAudioGraphForCurrentElement();
+      }
     } else if (!audio) {
       audio = new Audio();
       audio.crossOrigin = 'anonymous';
@@ -21057,7 +21534,7 @@ async function playQueueAt(idx, opts) {
       if (token !== trackSwitchToken) return;
       finalizeListenSession(true);
       if (playMode === 'single') setTimeout(function(){ playQueueAt(currentIdx, { autoRepeat: true }); }, 0);
-      else setTimeout(function(){ nextTrack({ autoAdvance: true }); }, 0);
+      else if (!handleSmartCrossfadeEndedFallback(token)) setTimeout(function(){ nextTrack({ autoAdvance: true }); }, 0);
     };
     if (!useCrossfadeHandoff) {
       scheduleAudioResumePosition(audio, opts.resumeAt, token);
@@ -21070,8 +21547,10 @@ async function playQueueAt(idx, opts) {
     // 重置 beatmap 状态
     currentBeatMap = null;
     beatMapNextIdx = 0;
-    resetAudioVisualState();
-    resetBeatCameraSync(0);
+    if (!useCrossfadeHandoff) {
+      resetAudioVisualState();
+      resetBeatCameraSync(0);
+    }
     cancelBeatAnalysisTimer();
     beatMapToken++;
     var bmTok = beatMapToken;
@@ -21127,11 +21606,15 @@ async function playQueueAt(idx, opts) {
       safePlaybackStep('visual-prep-hide-chip', hideBeatChip);
     }
     markPlayPhase('audio-start');
-    var playbackStarted = await playAudio({
+    var playbackStarted = useCrossfadeHandoff ? true : await playAudio({
       silent: isQQPlayback,
-      fade: useCrossfadeHandoff ? false : true,
+      fade: true,
       fadeInMs: opts.fadeInMs || (showSmartTransition ? 900 : AUDIO_FADE_IN_MS)
     });
+    if (useCrossfadeHandoff) {
+      playing = true;
+      setPlayIcon(true);
+    }
     if (!playbackStarted) {
       if (opts.crossfadeHandoffAudio) {
         try { opts.crossfadeHandoffAudio.pause(); } catch (e) {}
@@ -21149,6 +21632,7 @@ async function playQueueAt(idx, opts) {
     }
     forcePlaybackControlsInteractive();
     if (useCrossfadeHandoff) {
+      if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = true;
       smartCrossfadeState = null;
       hideSmartTransitionChip();
       if (!opts.smartTransitionHandoff) resetSmartCoverTransition();
@@ -21170,6 +21654,10 @@ async function playQueueAt(idx, opts) {
     safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
   } catch (err) {
     console.error('Play failed:', { phase: playPhase, error: err }, err);
+    if (opts.crossfadeStateRef) {
+      opts.crossfadeStateRef.handedOff = false;
+      if (smartCrossfadeState === opts.crossfadeStateRef) cancelSmartCrossfade('handoff-error');
+    }
     hideSmartTransitionChip();
     resetSmartCoverTransition();
     hideLoading();
@@ -21182,6 +21670,10 @@ async function playQueueAt(idx, opts) {
   }
   } catch (setupErr) {
     console.error('Play setup failed:', { phase: playPhase, error: setupErr }, setupErr);
+    if (opts.crossfadeStateRef) {
+      opts.crossfadeStateRef.handedOff = false;
+      if (smartCrossfadeState === opts.crossfadeStateRef) cancelSmartCrossfade('handoff-setup-error');
+    }
     hideSmartTransitionChip();
     resetSmartCoverTransition();
     hideLoading();
@@ -21244,6 +21736,7 @@ async function togglePlay() {
     if (audio.paused || audio.ended) {
       await attemptAudioPlay({ manual: true });
     } else {
+      if (smartCrossfadeState) cancelSmartCrossfade('manual-pause');
       await fadeOutAndPauseAudio();
       playing = false;
       setPlayIcon(false);
@@ -21307,6 +21800,7 @@ function prevTrack(opts) {
   })).finally(forcePlaybackControlsInteractive);
 }
 function shuffleQueue() {
+  if (smartCrossfadeState) cancelSmartCrossfade('shuffle-queue');
   for (var i = playQueue.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1));
     var tmp = playQueue[i]; playQueue[i] = playQueue[j]; playQueue[j] = tmp;
@@ -21316,6 +21810,7 @@ function shuffleQueue() {
   safeShelfRebuild('shuffle-queue');
 }
 function clearQueue() {
+  if (smartCrossfadeState) cancelSmartCrossfade('clear-queue');
   playQueue = []; currentIdx = -1;
   safeRenderQueuePanel('clear-queue');
   safeShelfRebuild('clear-queue');
@@ -21325,6 +21820,7 @@ function clearQueue() {
 }
 function removeFromQueue(idx) {
   if (idx < 0 || idx >= playQueue.length) return;
+  if (smartCrossfadeState) cancelSmartCrossfade('remove-queue-item');
   playQueue.splice(idx, 1);
   if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;
   safeRenderQueuePanel('remove-queue-item');
@@ -21381,6 +21877,7 @@ function updatePlayModeButton(animate) {
 }
 
 function cyclePlayMode() {
+  if (smartCrossfadeState) cancelSmartCrossfade('play-mode-change');
   var modes = ['loop', 'shuffle', 'single'];
   var idx = modes.indexOf(playMode);
   playMode = modes[(idx + 1) % modes.length];
@@ -23278,7 +23775,6 @@ function updatePlaybackProgressUi() {
   setProgressVisual(durationSec > 0 ? (currentSec / durationSec * 100) : 0);
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
-  if (shouldStartSmartCrossfadeByLyrics(currentSec, durationSec)) startSmartCrossfadeAuto();
 }
 function bindPlaybackProgressEvents(audioEl) {
   if (!audioEl || audioEl._mineradioProgressBound) return;
@@ -23286,6 +23782,7 @@ function bindPlaybackProgressEvents(audioEl) {
   ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'play', 'pause', 'emptied'].forEach(function(name){
     audioEl.addEventListener(name, updatePlaybackProgressUi);
   });
+  audioEl.addEventListener('timeupdate', checkSmartCrossfadeAudioState);
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function(name){
     audioEl.addEventListener(name, function(){ syncPlaybackStateFromAudioEvent(name); });
   });
@@ -23321,6 +23818,7 @@ function seekFromProgressPointer(e, emitParticles) {
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function(e){
   if (!audio || !audio.duration) return;
+  if (smartCrossfadeState) cancelSmartCrossfade('progress-seek');
   progressDragState.active = true;
   progressBar.classList.add('is-dragging');
   try { progressBar.setPointerCapture(e.pointerId); } catch (err) {}
@@ -23345,6 +23843,9 @@ setInterval(function(){
   updatePlaybackProgressUi();
   if (audio.currentTime) updateLyricsHighlight();
 }, 200);
+smartCrossfadeSafetyTimer = setInterval(function(){
+  if (audio && !audio.paused && !audio.ended && playQueue.length > 1) checkSmartCrossfadeAudioState();
+}, SMART_CROSSFADE_CHECK_MS);
 
 // ============================================================
 //  文件拖放
@@ -26802,6 +27303,7 @@ function closeGsapModal(mask, afterClose) {
 function bindModalBackdropClose() {
   [
     ['track-detail-modal', closeTrackDetailModal],
+    ['listen-ranking-modal', closeListenRanking],
     ['login-modal', closeLoginModal],
     ['user-modal', closeUserModal],
     ['custom-lyric-modal', closeCustomLyricModal],
@@ -27119,6 +27621,8 @@ function setLoginProvider(provider, silent) {
 function updateLoginProviderUi() {
   var meta = platformMeta(loginProvider);
   var is小Q = loginProvider === 'qq';
+  var providerLogin = platformStatus(loginProvider);
+  var isLoggedIn = !!(providerLogin && providerLogin.loggedIn);
   var title = document.getElementById('login-modal-title');
   var desc = document.getElementById('login-modal-desc');
   var shell = document.getElementById('qr-shell');
@@ -27135,19 +27639,22 @@ function updateLoginProviderUi() {
   var canOpenNeteaseWeb = !!(window.desktopWindow && typeof window.desktopWindow.openNeteaseMusicLogin === 'function');
   var isKugou = loginProvider === 'kugou';
   if (neteaseBtn) neteaseBtn.classList.toggle('active', loginProvider === 'netease');
-  if (qqBtn) qqBtn.classList.toggle('active', isQQ);
+  if (qqBtn) qqBtn.classList.toggle('active', is小Q);
   if (kugouBtn) kugouBtn.classList.toggle('active', isKugou);
-  if (title) title.textContent = '扫码登录' + meta.label;
-  if (desc) desc.innerHTML = isKugou
+  if (title) title.textContent = isLoggedIn ? (meta.label + '已登录') : ('扫码登录' + meta.label);
+  if (desc) desc.innerHTML = isLoggedIn
+    ? '当前已保持 <b>' + meta.label + '</b> 登录会话，切换平台不会退出账号。'
+    : isKugou
     ? '打开 <b>小狗官方网页窗口</b> 登录，成功后会保存网页登录会话，方便后续接入小狗接口。'
-    : isQQ
+    : is小Q
     ? '打开 <b>小Q官方网页登录窗口</b> 扫码，成功后会自动同步账号会话。'
     : (canOpenNeteaseWeb
       ? '打开 <b>小云官方网页登录窗口</b> 扫码，避开接口二维码风控；成功后会自动同步账号会话。'
       : '使用 <b>小云 App</b> 扫码，可同步歌单、红心与播客。');
   if (shell) {
+    shell.classList.toggle('logged-in', isLoggedIn);
     shell.classList.toggle('web-login-preview', is小Q || isKugou || canOpenNeteaseWeb);
-    shell.classList.toggle('qq-preview', isQQ);
+    shell.classList.toggle('qq-preview', is小Q);
     shell.classList.toggle('netease-preview', !is小Q && !isKugou && canOpenNeteaseWeb);
   }
   if (qqPanel) qqPanel.classList.toggle('show', (is小Q || isKugou) && qqManualCookieOpen);
@@ -27162,23 +27669,25 @@ function updateLoginProviderUi() {
     var cardMark = qqCard.querySelector('b');
     var cardLabel = qqCard.querySelector('span');
     if (cardMark) cardMark.textContent = isKugou ? 'KG' : (is小Q ? '小Q' : 'NE');
-    if (cardLabel) cardLabel.textContent = isKugou
+    if (cardLabel) cardLabel.textContent = isLoggedIn
+      ? ('已登录 · ' + (providerLogin.nickname || meta.label))
+      : isKugou
       ? (kugouWebLoginBusy ? '等待网页登录确认' : '打开小狗官方窗口')
-      : isQQ
+      : is小Q
       ? (qqWebLoginBusy ? '等待扫码确认' : '打开官方扫码窗口')
       : (neteaseWebLoginBusy ? '等待扫码确认' : '打开官方登录窗口');
   }
   if (st) {
-    st.className = (is小Q || isKugou) ? 'preview' : '';
+    st.className = isLoggedIn ? 'scan' : ((is小Q || isKugou) ? 'preview' : '');
     st.textContent = isKugou
       ? (kugouLoginStatus.loggedIn ? ('已保存小狗会话 · ' + (kugouLoginStatus.nickname || '')) : '点击“网页登录”打开小狗官方窗口')
-      : isQQ
+      : is小Q
       ? (qqLoginStatus.loggedIn ? ('已保存小Q会话 · ' + (qqLoginStatus.nickname || '')) : '点击“扫码登录”打开小Q官方窗口')
       : (canOpenNeteaseWeb ? '点击“网页登录”打开小云官方窗口' : '正在生成二维码…');
   }
   if (refreshBtn) {
     refreshBtn.disabled = isKugou ? !!kugouWebLoginBusy : (is小Q ? !!qqWebLoginBusy : !!neteaseWebLoginBusy);
-    refreshBtn.textContent = isKugou ? (kugouWebLoginBusy ? '等待登录…' : '网页登录') : (is小Q ? (qqWebLoginBusy ? '等待扫码…' : '扫码登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码'));
+    refreshBtn.textContent = isLoggedIn ? '重新登录' : (isKugou ? (kugouWebLoginBusy ? '等待登录…' : '网页登录') : (is小Q ? (qqWebLoginBusy ? '等待扫码…' : '扫码登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码')));
     refreshBtn.onclick = isKugou ? openKugouWebLogin : (is小Q ? openQQWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr));
   }
 }
@@ -27193,7 +27702,7 @@ async function refreshQr() {
     var info = await refreshQQLoginStatus();
     if (qqStatus) {
       qqStatus.textContent = info && info.loggedIn ? ('已保存小Q会话 · ' + (info.nickname || '')) : '点击“扫码登录”打开小Q官方窗口';
-      qqStatus.className = 'preview';
+      qqStatus.className = info && info.loggedIn ? 'scan' : 'preview';
     }
     return;
   }
@@ -27256,14 +27765,16 @@ updateLoginProviderUi = function() {
   }
   if (img) img.style.display = '';
   if (qqCard) qqCard.style.display = 'none';
-  if (desc) desc.innerHTML = '使用 <b>小狗 App</b> 扫码登录，成功后 Mineradio 会同步账号信息和小狗歌单。';
+  if (desc) desc.innerHTML = kugouLoginStatus.loggedIn
+    ? '当前已保持 <b>小狗</b> 登录会话，切换平台不会退出账号。'
+    : '使用 <b>小狗 App</b> 扫码登录，成功后 Mineradio 会同步账号信息和小狗歌单。';
   if (st && !qrKey) {
     st.textContent = kugouLoginStatus.loggedIn ? ('小狗已登录 · ' + (kugouLoginStatus.nickname || kugouLoginStatus.userId || '')) : '正在生成小狗登录二维码...';
-    st.className = 'preview';
+    st.className = kugouLoginStatus.loggedIn ? 'scan' : 'preview';
   }
   if (refreshBtn) {
     refreshBtn.disabled = !!kugouWebLoginBusy;
-    refreshBtn.textContent = kugouWebLoginBusy ? '等待登录...' : '刷新二维码';
+    refreshBtn.textContent = kugouWebLoginBusy ? '等待登录...' : (kugouLoginStatus.loggedIn ? '重新登录' : '刷新二维码');
     refreshBtn.onclick = refreshQr;
   }
   if (qqCard) {
@@ -27276,10 +27787,11 @@ updateLoginProviderUi = function() {
   }
 };
 var baseRefreshQr = refreshQr;
-refreshQr = async function() {
+refreshQr = async function(event) {
   if (loginProvider !== 'kugou') return baseRefreshQr();
   stopQrPoll();
   updateLoginProviderUi();
+  if (kugouLoginStatus.loggedIn && !event) return;
   qrKey = null;
   var kgImg = document.getElementById('qr-img');
   var kgStatus = document.getElementById('qr-status');
@@ -27362,7 +27874,7 @@ async function openNeteaseWebLogin() {
   } catch (e) {
     neteaseWebLoginBusy = false;
     updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : '小云登录失败'; statusEl.className = 'fail'; }
+    if (loginProvider === 'netease' && statusEl) { statusEl.textContent = e && e.message ? e.message : '小云登录失败'; statusEl.className = 'fail'; }
   } finally {
     if (neteaseWebLoginBusy) {
       neteaseWebLoginBusy = false;
@@ -27410,7 +27922,7 @@ async function openQQWebLogin() {
   } catch (e) {
     qqWebLoginBusy = false;
     updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : '小Q登录失败'; statusEl.className = 'fail'; }
+    if (loginProvider === 'qq' && statusEl) { statusEl.textContent = e && e.message ? e.message : '小Q登录失败'; statusEl.className = 'fail'; }
   } finally {
     if (qqWebLoginBusy) {
       qqWebLoginBusy = false;
@@ -27472,7 +27984,7 @@ async function openKugouWebLogin() {
   } catch (e) {
     kugouWebLoginBusy = false;
     updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : '小狗登录失败'; statusEl.className = 'fail'; }
+    if (loginProvider === 'kugou' && statusEl) { statusEl.textContent = e && e.message ? e.message : '小狗登录失败'; statusEl.className = 'fail'; }
   } finally {
     if (kugouWebLoginBusy) {
       kugouWebLoginBusy = false;
@@ -27599,7 +28111,7 @@ function updateUserModalUi() {
   var hint = document.getElementById('account-hint');
   var logoutBtn = document.getElementById('account-logout-btn');
   var addNetease = document.getElementById('account-add-netease');
-  var add小Q = document.getElementById('account-add-qq');
+  var addQQ = document.getElementById('account-add-qq');
   var addKugou = document.getElementById('account-add-kugou');
   if (chip) {
     chip.className = 'account-provider-chip ' + activeAccountProvider;
@@ -30560,12 +31072,16 @@ var renderPerfState = {
 };
 window.__mineradioPerf = renderPerfState;
 var splashWarmRenderLast = 0;
+var lastAudioAnalysisAt = 0;
+var AUDIO_ANALYSIS_INTERVAL_MS = 1000 / 30;
+var lastThumbCoverScale = '';
 function isMainSceneCoveredBySplash() {
   return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
 }
 function getAdaptiveRenderFps() {
   if (isDeepBackgroundMode()) return 1;
   if (isVisibleBackgroundMode()) return 24;
+  if ((!playing || !audio || audio.paused) && !isRenderInteractionActive()) return 15;
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
   if (quality === 'ultra' && RENDER_VISIBLE_VSYNC) return 0;
   var baseFps = quality === 'eco' ? 30 : (quality === 'balanced' ? 45 : 60);
@@ -30629,7 +31145,10 @@ function animate() {
   // 真正的 mid 乐器/和声: 3000-6000Hz → bin 140-280
   // treble: 6000Hz+ → bin 280+
   beatOnsetFlag = false;
-  if (analyser && playing && audio && !audio.paused) {
+  var audioAnalysisActive = !!(analyser && playing && audio && !audio.paused);
+  var shouldSampleAudio = audioAnalysisActive && now - lastAudioAnalysisAt >= AUDIO_ANALYSIS_INTERVAL_MS;
+  if (shouldSampleAudio) {
+    lastAudioAnalysisAt = now;
     if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
     analyser.getByteFrequencyData(frequencyData);
     analyser.getByteTimeDomainData(timeDomainData);
@@ -30756,7 +31275,7 @@ function animate() {
     lyricSunHold += (sunGate - lyricSunHold) * (sunGate > lyricSunHold ? 0.035 : 0.014);
     lyricSunTarget = lyricSunHold > 0.16 ? clamp01((lyricSunHold - 0.16) / 0.84) : 0;
     lyricSunEnergy += (lyricSunTarget - lyricSunEnergy) * (lyricSunTarget > lyricSunEnergy ? 0.075 : 0.030);
-  } else {
+  } else if (!audioAnalysisActive) {
     smoothBass *= 0.91; smoothMid *= 0.91; smoothTreb *= 0.91; smoothEnergy *= 0.91; beatPulse *= 0.82;
     liveCamAvg *= 0.94;
     liveCamPeak = Math.max(0.28, liveCamPeak * 0.98);
@@ -30856,7 +31375,11 @@ function animate() {
   if (currentIdx >= 0) {
     var s = 1 + bass * 0.08;
     var thumbCoverEl = document.getElementById('thumb-cover');
-    if (thumbCoverEl) thumbCoverEl.style.transform = 'scale(' + s + ')';
+    var thumbCoverScale = 'scale(' + s.toFixed(4) + ')';
+    if (thumbCoverEl && thumbCoverScale !== lastThumbCoverScale) {
+      thumbCoverEl.style.transform = thumbCoverScale;
+      lastThumbCoverScale = thumbCoverScale;
+    }
   }
 
   renderer.render(scene, camera);

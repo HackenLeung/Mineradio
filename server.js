@@ -43,7 +43,9 @@ const {
   sati_resource_sub_list,
   lyric,
   lyric_new,
+  user_record,
 } = require('NeteaseCloudMusicApi');
+const { scrobble } = require('@neteasecloudmusicapienhanced/api');
 const http = require('http');
 const https = require('https');
 const fs   = require('fs');
@@ -3008,6 +3010,7 @@ function mapKugouTrack(raw) {
     jymaster: raw.masterhash || raw.jymaster_hash || raw.hrhash || raw.sqhash || raw.SQFileHash || raw.hash || raw.Hash || raw.file_hash || '',
   };
   const albumAudioId = raw.album_audio_id || raw.albumAudioId || raw.audio_id || raw.audioid || raw.Audioid || raw.mixsongid || raw.MixSongID || raw.songid || raw.id || raw.ID || '';
+  const mixSongId = raw.mixsongid || raw.MixSongID || raw.mix_song_id || raw.ID || '';
   const filename = cleanKugouTrackText(raw.filename || raw.FileName || '');
   let name = cleanKugouTrackText(raw.songname || raw.song_name || raw.SongName || raw.name || raw.title || '');
   let artist = cleanKugouTrackText(raw.singername || raw.singer_name || raw.SingerName || raw.author_name || raw.singer || raw.artist || '');
@@ -3047,6 +3050,7 @@ function mapKugouTrack(raw) {
     hash: String(hash || ''),
     qualityHashes,
     albumAudioId: String(albumAudioId || ''),
+    mixSongId: String(mixSongId || ''),
     albumId: String(albumId || ''),
     name: cleanKugouTrackText(name).replace(/\s*-\s*$/, ''),
     artist: String(artist || ''),
@@ -3055,6 +3059,7 @@ function mapKugouTrack(raw) {
     cover: String(cover || '').replace(/\{size\}/g, '300'),
     duration: durationMs * (durationMs > 1000 ? 1 : 1000),
     fee: Number(raw.privilege || raw.Privilege || raw.media_privilege || raw.media_pay_type || raw.pay_type || raw.PayType || 0) || 0,
+    vipRequired: Number(trans.musicpack_advance || 0) > 0,
     fsort,
     position: fsort,
     sort: fsort,
@@ -3345,6 +3350,76 @@ async function handleKugouSongUrl(hash, albumAudioId, albumId, qualityPreference
     restriction,
     kugouCode: code,
   };
+}
+
+async function handleKugouListenUpload(mxid, playedAt, playCount) {
+  const info = getKugouLoginInfo();
+  if (!info.loggedIn || !info.userId) return { provider: 'kugou', loggedIn: false, error: 'LOGIN_REQUIRED' };
+  const songId = String(mxid || '').replace(/\D/g, '');
+  if (!songId) return { provider: 'kugou', loggedIn: true, error: 'Missing Kugou mxid' };
+  const obj = kugouCookieObject();
+  const token = kugouCookieToken(obj);
+  const userId = kugouCookieUserId(obj);
+  let cloudPlayCount = 0;
+  try {
+    const history = await handleKugouListenHistory();
+    const rows = history && history.body && history.body.data && history.body.data.songs || [];
+    const current = rows.find(item => String(item && item.mxid || '') === songId);
+    cloudPlayCount = Number(current && current.pc) || 0;
+  } catch (_) {}
+  const payload = {
+    songs: [{
+      mxid: Number(songId),
+      op: 1,
+      ot: Math.max(1, Math.round(Number(playedAt) || Math.floor(Date.now() / 1000))),
+      pc: Math.max(1, cloudPlayCount + 1, Number(playCount) || 0),
+    }],
+    token,
+    userid: Number(userId) || userId,
+  };
+  const data = await kugouGatewayRequest('/playhistory/v1/upload_songs', {
+    method: 'POST',
+    params: { plat: 3 },
+    data: payload,
+  });
+  const code = data && (data.status || data.error_code || data.errcode || data.code);
+  return { provider: 'kugou', loggedIn: true, success: code === 1 || code === 0 || code === 200, mxid: songId, code, body: data };
+}
+
+async function handleKugouListenHistory() {
+  const info = getKugouLoginInfo();
+  if (!info.loggedIn || !info.userId) return { provider: 'kugou', loggedIn: false, error: 'LOGIN_REQUIRED' };
+  const obj = kugouCookieObject();
+  const data = await kugouGatewayRequest('/playhistory/v1/get_songs', {
+    method: 'POST',
+    params: { plat: 3 },
+    data: { userid: Number(kugouCookieUserId(obj)) || kugouCookieUserId(obj), token: kugouCookieToken(obj), page: 1, pagesize: 100 },
+  });
+  return { provider: 'kugou', loggedIn: true, body: data };
+}
+
+function normalizeKugouListenHistory(result) {
+  const data = result && result.body && result.body.data || {};
+  const songs = (data.songs || []).map(item => {
+    const info = item.info || {};
+    return {
+      provider: 'kugou',
+      source: 'kugou',
+      type: 'kugou',
+      id: String(item.mxid || info.mixsongid || ''),
+      albumAudioId: String(item.mxid || info.mixsongid || ''),
+      mixSongId: String(item.mxid || info.mixsongid || ''),
+      hash: info.hash || '',
+      albumId: info.album_id || info.albuminfo && info.albuminfo.id || '',
+      name: info.name || '未知歌曲',
+      artist: info.singername || '',
+      cover: String(info.cover || '').replace('{size}', '240'),
+      duration: Number(info.timelen) || 0,
+      playCount: Number(item.pc) || 0,
+      playedAt: (Number(item.ot) || 0) * 1000,
+    };
+  }).filter(item => item.id && item.name !== '未知歌曲').sort((a, b) => (b.playCount - a.playCount) || (b.playedAt - a.playedAt));
+  return { provider: 'kugou', loggedIn: true, success: true, songs, hasMore: !!data.has_more };
 }
 
 function qqAlbumCover(albumMid, size) {
@@ -4561,6 +4636,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/kugou/listen/upload') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const mxid = body.mxid || body.albumAudioId || body.album_audio_id || url.searchParams.get('mxid') || url.searchParams.get('albumAudioId') || url.searchParams.get('album_audio_id') || '';
+      const playedAt = body.ot || body.playedAt || url.searchParams.get('ot') || url.searchParams.get('playedAt') || Math.floor(Date.now() / 1000);
+      const data = await handleKugouListenUpload(mxid, playedAt, 1);
+      sendJSON(res, data, data && data.loggedIn === false ? 401 : 200);
+    } catch (err) {
+      console.error('[KugouListenUpload]', err);
+      sendJSON(res, { provider: 'kugou', error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/listen/history') {
+    try {
+      const data = await handleKugouListenHistory();
+      sendJSON(res, data && data.loggedIn === false ? data : normalizeKugouListenHistory(data), data && data.loggedIn === false ? 401 : 200);
+    } catch (err) {
+      console.error('[KugouListenHistory]', err);
+      sendJSON(res, { provider: 'kugou', error: err.message }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/kugou/lyric') {
     try {
       const hash = url.searchParams.get('hash') || url.searchParams.get('id') || '';
@@ -4902,6 +5002,51 @@ const server = http.createServer(async (req, res) => {
     try { await logout({ cookie: userCookie }); } catch (e) {}
     saveCookie('');
     sendJSON(res, { ok: true });
+    return;
+  }
+
+  // ---------- 网易云听歌排行上报 ----------
+  if (pn === '/api/listen/scrobble') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = String(body.id || url.searchParams.get('id') || '').trim();
+      const sourceid = String(body.sourceid || body.sourceId || url.searchParams.get('sourceid') || url.searchParams.get('sourceId') || id).trim();
+      const time = Math.max(1, Math.min(24 * 60 * 60, Math.round(Number(body.time || url.searchParams.get('time')) || 0)));
+      if (!id || !/^\d+$/.test(id)) { sendJSON(res, { error: 'Missing song id' }, 400); return; }
+      if (!time) { sendJSON(res, { error: 'Missing listen time' }, 400); return; }
+      const r = await scrobble({ id, sourceid: sourceid || id, time, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(r);
+      const bodyOut = r.body || r;
+      sendJSON(res, { loggedIn: true, success: code === 200, id, sourceid: sourceid || id, time, code, body: bodyOut }, code === 401 ? 401 : 200);
+    } catch (err) {
+      console.error('[Scrobble]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
+  // ---------- 网易云听歌排行 ----------
+  if (pn === '/api/listen/ranking') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const type = String(url.searchParams.get('type') || 'week') === 'all' ? 0 : 1;
+      const r = await user_record({ uid: info.userId, type, cookie: userCookie, timestamp: Date.now() });
+      const body = r.body || r;
+      const rows = (type === 0 ? body.allData : body.weekData) || [];
+      const songs = rows.map((item, index) => ({
+        ...mapSongRecord(item.song || {}),
+        rank: index + 1,
+        playCount: Number(item.playCount) || 0,
+        score: Number(item.score) || 0,
+      })).filter(item => item.id);
+      sendJSON(res, { loggedIn: true, type: type === 0 ? 'all' : 'week', songs, code: normalizeApiCode(r) || 200 });
+    } catch (err) {
+      console.error('[ListenRanking]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
     return;
   }
 
