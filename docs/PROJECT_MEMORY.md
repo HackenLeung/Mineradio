@@ -183,6 +183,13 @@
 
 ## Memory Entries
 
+### 2026-07-12 - 本地歌曲在线匹配与单平台体验边界
+
+- 用户要求保留：界面只围绕当前切换的平台展示账号、搜索、歌单和排行；本地排行保留；本地歌曲可以手动搜索并绑定在线歌曲，用于封面、歌词、评论入口和自然听歌上报。
+- 涉及文件：`public/index.html`、`server.js`、`desktop/main.js`、`desktop/preload.js`、`platform-playlist-import.js`、README、RELEASE、交接文档。
+- 关键参数/实现：`local-match-modal` 从本地歌曲详情或评论空状态打开，默认按 `activeAccountProvider` 优先搜索小狗或小云，可手动切换平台；选中候选后写入 `mineradio-local-metadata-v1`，标记 `manualMatched`，并同步 `onlineMetadata`、封面、歌词、评论按钮和 `mineradio-local-platform-match-v1` 听歌上报缓存。小狗匹配需要保留 `hash`、`albumAudioId`、`mixSongId` 等字段，避免只匹配到封面歌词但无法上报。
+- 当前边界：评论接口目前只接入小云；本地歌匹配到小云后可显示匹配评论，匹配到小狗时只用于封面、歌词和听歌上报，评论区提示小狗评论接口未接入。
+
 ### 2026-07-11 - v1.1.5 平台展示与性能优化
 
 - 用户要求保留：平台展示名统一为小云、小Q、小狗；优化播放画面和安装完成后的首次启动占用，同时保持 GPU 渲染和现有视觉质感。

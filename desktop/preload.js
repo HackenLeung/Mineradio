@@ -10,8 +10,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   close: () => ipcRenderer.invoke('desktop-window-close'),
   openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
-  openQQMusicLogin: () => ipcRenderer.invoke('qq-music-open-login'),
-  clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
   clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
@@ -31,6 +29,10 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   chooseLocalMusicFolder: () => ipcRenderer.invoke('mineradio-local-music-choose-folder'),
   scanLocalMusicFolder: (folderPath) => ipcRenderer.invoke('mineradio-local-music-scan-folder', folderPath),
   resolveLocalMusicFile: (filePath) => ipcRenderer.invoke('mineradio-local-music-resolve-file', filePath),
+  openDownloadDir: () => ipcRenderer.invoke('mineradio-download-open-dir'),
+  getDownloadDir: () => ipcRenderer.invoke('mineradio-download-get-dir'),
+  setDownloadDir: () => ipcRenderer.invoke('mineradio-download-set-dir'),
+  resetDownloadDir: () => ipcRenderer.invoke('mineradio-download-reset-dir'),
   onGlobalHotkey: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});

@@ -38,10 +38,9 @@ const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const DESKTOP_BEHAVIOR_FILE = 'desktop-behavior.json';
+const DOWNLOAD_SETTINGS_FILE = 'download-settings.json';
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
-const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
-const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
 const LOCAL_LIBRARY_AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.opus', '.m4a', '.mp4', '.aac', '.webm']);
@@ -76,27 +75,6 @@ for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
 }
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
-const QQ_LOGIN_COOKIE_PRIORITY = [
-  'uin',
-  'qqmusic_uin',
-  'wxuin',
-  'login_type',
-  'qm_keyst',
-  'qqmusic_key',
-  'p_skey',
-  'skey',
-  'psrf_qqopenid',
-  'psrf_qqunionid',
-  'psrf_qqaccess_token',
-  'psrf_qqrefresh_token',
-  'wxopenid',
-  'wxunionid',
-  'wxrefresh_token',
-  'wxskey',
-  'p_uin',
-  'ptcz',
-  'RK',
-];
 const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'MUSIC_U',
   '__csrf',
@@ -541,27 +519,6 @@ function parseCookieHeader(cookieText) {
   return out;
 }
 
-function qqCookieHasLogin(cookieText) {
-  const obj = parseCookieHeader(cookieText);
-  const rawUin = Number(obj.login_type) === 2
-    ? (obj.wxuin || obj.uin || obj.p_uin || '')
-    : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin || '');
-  const uin = String(rawUin).replace(/\D/g, '');
-  const musicKey = obj.qm_keyst || obj.qqmusic_key || obj.music_key || obj.p_skey || obj.skey ||
-    obj.psrf_qqaccess_token || obj.psrf_qqrefresh_token || obj.wxrefresh_token || obj.wxskey || '';
-  return !!(uin && musicKey);
-}
-
-function qqCookieHasPlaybackLogin(cookieText) {
-  const obj = parseCookieHeader(cookieText);
-  const rawUin = Number(obj.login_type) === 2
-    ? (obj.wxuin || obj.uin || obj.p_uin || '')
-    : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin || '');
-  const uin = String(rawUin).replace(/\D/g, '');
-  const playbackKey = obj.qm_keyst || obj.qqmusic_key || obj.music_key || obj.wxskey || '';
-  return !!(uin && playbackKey);
-}
-
 function neteaseCookieHasLogin(cookieText) {
   const obj = parseCookieHeader(cookieText);
   return !!obj.MUSIC_U;
@@ -572,11 +529,6 @@ function kugouCookieHasLogin(cookieText) {
   const userId = String(obj.userid || obj.KugooID || obj.kugou_id || '').replace(/\D/g, '');
   const authToken = obj.token || obj.KuGoo || obj.t || '';
   return !!(userId && authToken);
-}
-
-function isQQCookieDomain(domain) {
-  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
-  return normalized === 'qq.com' || normalized.endsWith('.qq.com') || normalized.endsWith('qqmusic.qq.com');
 }
 
 function isNeteaseCookieDomain(domain) {
@@ -612,15 +564,6 @@ function buildCookieHeaderFor(cookies, isAllowedDomain, priority) {
     .filter(([name, value]) => name && value != null && String(value) !== '')
     .map(([name, value]) => `${name}=${value}`)
     .join('; ');
-}
-
-function buildCookieHeader(cookies) {
-  return buildCookieHeaderFor(cookies, isQQCookieDomain, QQ_LOGIN_COOKIE_PRIORITY);
-}
-
-async function readQQLoginCookieHeader(cookieSession) {
-  const cookies = await cookieSession.cookies.get({});
-  return buildCookieHeader(cookies);
 }
 
 async function readNeteaseLoginCookieHeader(cookieSession) {
@@ -722,7 +665,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       try {
         const cookie = await readNeteaseLoginCookieHeader(cookieSession);
         resolve(neteaseCookieHasLogin(cookie)
-          ? { ok: true, cookie, partial: !qqCookieHasPlaybackLogin(cookie) }
+          ? { ok: true, cookie }
           : { ok: false, cancelled: true, message: '小云登录窗口已关闭' });
       } catch (e) {
         resolve({ ok: false, error: e.message || '小云登录窗口已关闭' });
@@ -731,108 +674,6 @@ async function openNeteaseMusicLoginWindow(owner) {
 
     pollTimer = setInterval(checkCookies, 1200);
     loginWindow.loadURL(NETEASE_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
-  });
-}
-
-async function openQQMusicLoginWindow(owner) {
-  const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
-  const initialCookie = await readQQLoginCookieHeader(cookieSession);
-  if (qqCookieHasPlaybackLogin(initialCookie)) return { ok: true, cookie: initialCookie, reused: true };
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let pollTimer = null;
-    let warmupStarted = false;
-
-    const loginWindow = new BrowserWindow({
-      width: 900,
-      height: 720,
-      minWidth: 760,
-      minHeight: 560,
-      parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: '小Q登录',
-      backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: QQ_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const finish = async (result) => {
-      if (settled) return;
-      settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      if (loginWindow && !loginWindow.isDestroyed()) {
-        loginWindow.close();
-      }
-      resolve(result);
-    };
-
-    const checkCookies = async () => {
-      try {
-        const cookie = await readQQLoginCookieHeader(cookieSession);
-        if (qqCookieHasPlaybackLogin(cookie)) {
-          finish({ ok: true, cookie });
-        } else if (qqCookieHasLogin(cookie) && !warmupStarted) {
-          warmupStarted = true;
-          setTimeout(() => {
-            if (!settled && loginWindow && !loginWindow.isDestroyed()) {
-              loginWindow.loadURL('https://y.qq.com/n/ryqq/player').catch((e) => console.warn('小Q login warmup navigation failed:', e.message));
-            }
-          }, 900);
-        }
-      } catch (e) {
-        console.warn('小Q login cookie check failed:', e.message);
-      }
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
-        loginWindow.loadURL(url).catch((e) => console.warn('小Q login popup navigation failed:', e.message));
-      } else {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('did-finish-load', () => {
-      checkCookies();
-      loginWindow.webContents.executeJavaScript(`
-        setTimeout(() => {
-          const nodes = Array.from(document.querySelectorAll('a, button, span, div'));
-          const loginNode = nodes.find((node) => {
-            const text = (node.textContent || '').trim();
-            if (!/登录|登陆/.test(text)) return false;
-            const rect = node.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          });
-          if (loginNode) loginNode.click();
-        }, 700);
-      `, true).catch(() => {});
-    });
-
-    loginWindow.on('ready-to-show', () => loginWindow.show());
-    loginWindow.on('closed', async () => {
-      if (settled) return;
-      if (pollTimer) clearInterval(pollTimer);
-      try {
-        const cookie = await readQQLoginCookieHeader(cookieSession);
-        resolve(qqCookieHasLogin(cookie)
-          ? { ok: true, cookie }
-          : { ok: false, cancelled: true, message: '小Q登录窗口已关闭' });
-      } catch (e) {
-        resolve({ ok: false, error: e.message || '小Q登录窗口已关闭' });
-      }
-    });
-
-    pollTimer = setInterval(checkCookies, 1200);
-    loginWindow.loadURL(QQ_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
   });
 }
 
@@ -978,14 +819,6 @@ async function openKugouMusicLoginWindow(owner) {
 
     startKugouQrLogin();
   });
-}
-
-async function clearQQMusicLoginSession() {
-  const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
-  await cookieSession.clearStorageData({
-    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
-  });
-  return { ok: true };
 }
 
 async function clearNeteaseMusicLoginSession() {
@@ -1587,6 +1420,81 @@ ipcMain.handle('mineradio-local-music-choose-folder', async (event) => {
   }
 });
 
+function downloadSettingsPath() {
+  return path.join(app.getPath('userData'), DOWNLOAD_SETTINGS_FILE);
+}
+
+function defaultDownloadDir() {
+  return path.join(app.getPath('music'), 'Mineradio');
+}
+
+function readSavedDownloadDir() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(downloadSettingsPath(), 'utf8')) || {};
+    const dir = String(raw.dir || '').trim();
+    return dir || '';
+  } catch (_e) {
+    return '';
+  }
+}
+
+function saveDownloadDir(dir) {
+  try {
+    fs.writeFileSync(downloadSettingsPath(), JSON.stringify({ dir: String(dir || '') }, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Download dir save failed:', e.message);
+  }
+}
+
+
+function currentDownloadDir() {
+  return process.env.MINERADIO_DOWNLOAD_DIR || defaultDownloadDir();
+}
+
+ipcMain.handle('mineradio-download-open-dir', async () => {
+  try {
+    const dir = currentDownloadDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return error ? { ok: false, error } : { ok: true, dir };
+  } catch (e) {
+    return { ok: false, error: e.message || 'OPEN_DIR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-download-get-dir', () => {
+  return { dir: currentDownloadDir(), isDefault: !readSavedDownloadDir() };
+});
+
+ipcMain.handle('mineradio-download-set-dir', async (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    const result = await dialog.showOpenDialog(owner, {
+      title: '选择下载文件夹',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: currentDownloadDir(),
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: false, canceled: true };
+    const dir = result.filePaths[0];
+    process.env.MINERADIO_DOWNLOAD_DIR = dir;
+    saveDownloadDir(dir);
+    return { ok: true, dir };
+  } catch (e) {
+    return { ok: false, error: e.message || 'SET_DIR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-download-reset-dir', async () => {
+  try {
+    const dir = defaultDownloadDir();
+    process.env.MINERADIO_DOWNLOAD_DIR = dir;
+    saveDownloadDir('');
+    return { ok: true, dir, isDefault: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'RESET_DIR_FAILED' };
+  }
+});
+
 ipcMain.handle('mineradio-local-music-scan-folder', async (_event, folderPath) => {
   try {
     if (!folderPath) return { ok: false, error: 'LOCAL_LIBRARY_PATH_EMPTY' };
@@ -1613,14 +1521,6 @@ ipcMain.handle('netease-music-open-login', async (event) => {
 
 ipcMain.handle('netease-music-clear-login', async () => {
   return clearNeteaseMusicLoginSession();
-});
-
-ipcMain.handle('qq-music-open-login', async (event) => {
-  return openQQMusicLoginWindow(getSenderWindow(event));
-});
-
-ipcMain.handle('qq-music-clear-login', async () => {
-  return clearQQMusicLoginSession();
 });
 
 ipcMain.handle('kugou-music-open-login', async (event) => {
@@ -1783,21 +1683,9 @@ async function createWindow() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
-  process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.KUGOU_COOKIE_FILE = path.join(app.getPath('userData'), '.kugou-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
-  try {
-    const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
-    if (fs.existsSync(legacyQQCookie)) {
-      if (!fs.existsSync(process.env.QQ_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQQCookie, process.env.QQ_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQQCookie);
-    }
-  } catch (e) {
-    console.warn('小Q cookie migration skipped:', e.message);
-  }
-
+  process.env.MINERADIO_DOWNLOAD_DIR = readSavedDownloadDir() || defaultDownloadDir();
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
 

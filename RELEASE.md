@@ -5,7 +5,7 @@
 - 版本号：`1.1.5`。
 - 更新内容：三平台展示名统一、前台分档限帧、失焦与后台降载、启动重任务错峰，以及 v1.1.4 的三平台账号、本地库和 Home 功能。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目与原作者署名见 README。
-- 构建前必须确认 `.cookie`、`.qq-cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
+- 构建前必须确认 `.cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 本地提交应包含 `platform-playlist-import.js`，它是运行和打包所需源码。
 - 构建命令：`npm run build:win`。
 - 预期资产：`dist/Mineradio-1.1.5-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
@@ -26,7 +26,7 @@
 
 - 确认 `package.json` 和 `package-lock.json` 版本号正确。
 - 确认 `mineradio.update.owner/repo` 指向正式仓库。
-- 确认 `.cookie`、`.qq-cookie`、`updates/`、`node_modules/`、旧 `dist/` 没有进入 git。
+- 确认 `.cookie`、`.kugou-cookie`、`updates/`、`node_modules/`、旧 `dist/` 没有进入 git。
 - 确认 README/SECURITY/CHANGELOG/Release 正文包含 `v1.0.10` 旧安装包隔离说明。
 - 运行语法检查：`git diff --check`、`node --check server.js`、前端内联脚本解析。
 - 运行 Git 跟踪风险残留检查，确认没有跟踪 `.exe/.dll/.scr/.bat/.cmd/.ps1/.vbs/.jse/.wsf/.hta/.xlsm` 等可执行/脚本残留。

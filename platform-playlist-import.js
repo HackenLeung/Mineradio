@@ -167,7 +167,7 @@ function ensureImportSongId(song, prefix, index) {
   if (!song) return song;
   const existing = String(song.songmid || song.id || '').trim();
   if (existing) {
-    if (/^(?:tx|wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i.test(existing)) song.importFallbackId = true;
+    if (/^(?:wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i.test(existing)) song.importFallbackId = true;
     song.id = song.id || existing;
     song.songmid = song.songmid || existing;
     return song;
@@ -241,7 +241,6 @@ function parseAssignedObject(html, marker) {
 }
 
 const SOURCE_ALIASES = {
-  tx:'tx', qq:'tx', '小秋':'tx',
   wy:'wy', '163':'wy', netease:'wy', '小芸':'wy',
   kw:'kw', kuwo:'kw', '小蜗':'kw',
   kg:'kg', kugou:'kg', '小枸':'kg', '小狗':'kg',
@@ -457,7 +456,7 @@ function detect(input, preferredSource) {
   if (preferredAlbumId) return { source, kind:'album', id:preferredAlbumId, input:text };
   const albumLike = /(?:\/|[?&#])album(?:Detail|_detail)?(?:[/?&#=_-]|$)|(?:albumId|albumid|albumMid|albummid)\s*=/i.test(text);
   if (source && albumLike) {
-    if (['tx', 'wy', 'kw'].includes(source)) throw new Error('已识别为专辑链接，但没有取得专辑编号；请重新复制专辑分享链接');
+    if (['wy', 'kw'].includes(source)) throw new Error('已识别为专辑链接，但没有取得专辑编号；请重新复制专辑分享链接');
     throw new Error('当前平台暂不支持专辑导入，请使用歌单分享链接');
   }
 
@@ -481,10 +480,8 @@ function detect(input, preferredSource) {
   if (kugouId && (/kugou\.(?:com|cn)/i.test(text) || source === 'kg')) return { source:'kg', id:kugouId, input:text };
 
   const rules = [
-    ['tx', 'album', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:album(?:Detail)?[/?]|[?&#](?:albumId|albumid|albumMid|albummid)=)([a-z0-9_-]+)/i],
     ['wy', 'album', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:album(?:\?id=|\/)|[?&#]albumId=)(\d+)/i],
     ['kw', 'album', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:album(?:_detail)?[/?_-]|[?&#](?:albumId|albumid)=)(\d+)/i],
-    ['tx', 'playlist', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:playlist(?:\.html)?[/?]|[?&#](?:id|disstid)=)(\d+)/i],
     ['wy', 'playlist', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:playlist(?:\?id=|\/)|[?&#](?:playlistId|id)=)(\d+)/i],
     ['kw', 'playlist', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:playlist(?:_detail)?[/?_-]|[?&#](?:pid|playlistId|id)=)(\d+)/i],
   ];
@@ -492,7 +489,7 @@ function detect(input, preferredSource) {
     const match = text.match(rx);
     if (match) return { source:ruleSource, kind:ruleKind, id:match[1], input:text };
   }
-  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|小狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
+  const prefixed = text.match(/^(wy|163|kw|kg|kgc|kglite|mg|小芸|小蜗|小枸|小狗|小菇|小枸概念版|小狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
   if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
   if (source && /^\d+$/.test(text)) return { source, id:text, input:text };
   if (source === 'kg' && /^gcid_[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
@@ -507,10 +504,6 @@ function detect(input, preferredSource) {
 function extractPlatformAlbumId(source, value) {
   const text = decodeHtmlEntities(String(value || ''));
   const sourcePatterns = {
-    tx: [
-      /(?:albumMid|albummid|albumId|albumid)["'\s:=/&?#-]+([a-z0-9_-]{4,})/i,
-      /\/album(?:Detail)?\/([a-z0-9_-]{4,})/i,
-    ],
     wy: [
       /\/album\/(\d{4,})/i,
       /album[^"'<>]*[?&#]id=(\d{4,})/i,
@@ -531,11 +524,6 @@ function extractPlatformAlbumId(source, value) {
 function extractPlatformPlaylistId(source, value) {
   const text = decodeHtmlEntities(String(value || ''));
   const sourcePatterns = {
-    tx: [
-      /(?:disstid|playlistId|playlist_id|tid)["'\s:=/&?#-]+(\d{4,})/i,
-      /\/playlist\/(\d{4,})/i,
-      /\/playlist\.html[^"'<>]*[?&#](?:id|disstid)=(\d{4,})/i,
-    ],
     wy: [
       /(?:playlistId|playlist_id|resourceId)["'\s:=/&?#-]+(\d{4,})/i,
       /\/playlist\/(\d{4,})/i,
@@ -700,181 +688,6 @@ async function expandShareLinkDetailed(input) {
 async function expandShareLink(input) {
   const result = await expandShareLinkDetailed(input);
   return result.url || String(input || '');
-}
-
-async function importQQ(id) {
-  const headers = { Origin:'https://y.qq.com', Referer:`https://y.qq.com/n/ryqq/playlist/${id}` };
-  const rowKey = item => String(item && (item.mid || item.songmid || item.id || item.songid || item.songId) || '').trim()
-    || stableImportKey([item?.title || item?.name || item?.songname, singerText(item?.singer), item?.album?.name || item?.albumname, item?.interval], 'tx');
-  const normalizeRows = rows => (rows || []).map(item => item?.songInfo || item?.songinfo || item).filter(Boolean);
-  const legacyPage = async (begin, count) => {
-    const query = `type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(id)}&song_begin=${encodeURIComponent(begin)}&song_num=${encodeURIComponent(count)}&loginUin=0&hostUin=0&format=json&platform=yqq.json&needNewCode=0`;
-    const urls = [
-      `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
-      `https://c6.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
-      `https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
-    ];
-    for (const url of urls) {
-      try {
-        const data = await fetchJson(url, { headers, retryAttempts:1 });
-        const list = data?.cdlist?.[0];
-        if (list) {
-          return {
-            info:list,
-            rows:normalizeRows(list.songlist || list.songList || []),
-            total:Number(list.songnum || list.songNum || data.total_song_num || data.total || 0),
-          };
-        }
-      } catch (_error) {}
-    }
-    return null;
-  };
-  const musicuPage = async (begin, count) => {
-    const body = {
-      comm:{ ct:24, cv:0 },
-      req_0:{
-        module:'music.srfDissInfo.aiDissInfo',
-        method:'uniform_get_Dissinfo',
-        param:{ disstid:Number(id), enc_host_uin:'', tag:1, userinfo:1, song_begin:begin, song_num:count },
-      },
-    };
-    const data = await fetchJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-      method:'POST',
-      retryAttempts:1,
-      headers:{ ...headers, 'content-type':'application/json' },
-      body:JSON.stringify(body),
-    });
-    const payload = data?.req_0?.data || {};
-    const info = payload.dirinfo || payload.dissinfo || {};
-    const rows = normalizeRows(payload.songlist || payload.songList || []);
-    return { info, rows, total:Number(info.songnum || info.songNum || payload.total_song_num || payload.total || rows.length) };
-  };
-
-  const firstResults = await Promise.allSettled([legacyPage(0, 200), musicuPage(0, 200)]);
-  const legacyFirst = firstResults[0].status === 'fulfilled' ? firstResults[0].value : null;
-  const modernFirst = firstResults[1].status === 'fulfilled' ? firstResults[1].value : null;
-  const baseInfo = legacyFirst?.info || modernFirst?.info || null;
-  if (!baseInfo && !(legacyFirst?.rows?.length || modernFirst?.rows?.length)) throw new Error('小秋歌单读取失败');
-
-  const rows = [];
-  const seen = new Set();
-  const addRows = pageRows => {
-    let added = 0;
-    for (const item of pageRows || []) {
-      const key = rowKey(item);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      rows.push(item);
-      added += 1;
-    }
-    return added;
-  };
-  addRows(legacyFirst && legacyFirst.rows);
-  addRows(modernFirst && modernFirst.rows);
-
-  let total = Math.max(
-    Number(legacyFirst && legacyFirst.total || 0),
-    Number(modernFirst && modernFirst.total || 0),
-    Number(baseInfo && (baseInfo.songnum || baseInfo.songNum) || 0),
-    rows.length
-  );
-  // Older 小Q endpoints often expose only the first 120 songs unless song_begin
-  // and song_num are requested explicitly. Continue paging through both modern
-  // and legacy endpoints and stop only after repeated stagnant pages or total is reached.
-  let stagnantPages = 0;
-  for (let begin = rows.length; begin < 30000 && (!total || seen.size < total); begin += 200) {
-    const pageResults = await Promise.allSettled([
-      musicuPage(begin, 200),
-      legacyPage(begin, 200),
-    ]);
-    let added = 0;
-    for (const result of pageResults) {
-      if (result.status !== 'fulfilled' || !result.value) continue;
-      total = Math.max(total, Number(result.value.total || 0));
-      added += addRows(result.value.rows);
-    }
-    stagnantPages = added ? 0 : stagnantPages + 1;
-    if (stagnantPages >= 2) break;
-    // Some endpoints return fewer rows than requested near the end; if there is
-    // no trustworthy total, one stagnant page is enough to stop.
-    if (!total && !added) break;
-  }
-
-  return {
-    name:baseInfo.dissname || baseInfo.title || baseInfo.name || `小秋歌单 ${id}`,
-    cover:baseInfo.logo || baseInfo.picurl || baseInfo.cover || '',
-    songs:finalizeImportedSongs(rows.map(item => ({
-      id:item.id || item.songid || item.songId,
-      songmid:item.mid || item.songmid,
-      name:item.title || item.name || item.songname || '',
-      singer:singerText(item.singer),
-      albumName:item.album?.name || item.albumname || '',
-      albumId:item.album?.mid || item.albummid || '',
-      albumMid:item.album?.mid || item.albummid || '',
-      strMediaMid:item.file?.media_mid || item.strMediaMid || item.mid || item.songmid || '',
-      picUrl:(item.album?.mid || item.albummid) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${item.album?.mid || item.albummid}.jpg` : '',
-      interval:durationText(item.interval),
-      source:'tx',
-      types:['flac','320k','128k'],
-    })), 'tx'),
-  };
-}
-
-async function importQQAlbum(id) {
-  const albumId = String(id || '').trim();
-  const headers = { Origin:'https://y.qq.com', Referer:`https://y.qq.com/n/ryqq/albumDetail/${albumId}` };
-  const rows = [];
-  let info = {};
-  for (let begin = 0; begin < 3000; begin += 200) {
-    const isNumeric = /^\d+$/.test(albumId);
-    const body = {
-      comm:{ ct:24, cv:0 },
-      req_0:{
-        module:'music.musichallAlbum.AlbumSongList',
-        method:'GetAlbumSongList',
-        param:{
-          albumMid:isNumeric ? '' : albumId,
-          albumID:isNumeric ? Number(albumId) : 0,
-          begin,
-          num:200,
-          order:2,
-        },
-      },
-    };
-    const data = await fetchJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-      method:'POST',
-      retryAttempts:2,
-      headers:{ ...headers, 'content-type':'application/json' },
-      body:JSON.stringify(body),
-    });
-    const payload = data?.req_0?.data || {};
-    info = info && Object.keys(info).length ? info : (payload.album || payload.albumInfo || payload.info || {});
-    const pageRows = (payload.songList || payload.songlist || payload.list || [])
-      .map(item => item?.songInfo || item?.songinfo || item)
-      .filter(Boolean);
-    rows.push(...pageRows);
-    const total = Number(payload.totalNum || payload.total || info.total || rows.length);
-    if (!pageRows.length || (total && rows.length >= total)) break;
-  }
-  if (!rows.length) throw new Error('小Q album import failed');
-  return {
-    name:info.name || info.title || info.Falbum_name || `小Q Album ${albumId}`,
-    cover:(info.mid || info.albumMid || albumId) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${info.mid || info.albumMid || albumId}.jpg` : '',
-    songs:finalizeImportedSongs(rows.map(item => ({
-      id:item.id || item.songid || item.songId,
-      songmid:item.mid || item.songmid,
-      name:item.title || item.name || item.songname || '',
-      singer:singerText(item.singer),
-      albumName:item.album?.name || item.albumname || info.name || info.title || '',
-      albumId:item.album?.mid || item.albummid || info.mid || info.albumMid || albumId,
-      albumMid:item.album?.mid || item.albummid || info.mid || info.albumMid || albumId,
-      strMediaMid:item.file?.media_mid || item.strMediaMid || item.mid || item.songmid || '',
-      picUrl:(item.album?.mid || item.albummid || info.mid || info.albumMid || albumId) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${item.album?.mid || item.albummid || info.mid || info.albumMid || albumId}.jpg` : '',
-      interval:durationText(item.interval),
-      source:'tx',
-      types:['flac','320k','128k'],
-    })), 'tx'),
-  };
 }
 
 async function importWY(id) {
@@ -1860,8 +1673,8 @@ async function importMG(id, originalInput, context = {}) {
   };
 }
 
-const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG };
-const ALBUM_IMPORTERS = { tx:importQQAlbum, wy:importWYAlbum, kw:importKWAlbum };
+const IMPORTERS = { wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG };
+const ALBUM_IMPORTERS = { wy:importWYAlbum, kw:importKWAlbum };
 async function importPlaylist(input, preferredSource) {
   const originalInput = String(input || '').trim();
   const firstUrl = extractFirstUrl(originalInput);
@@ -1890,7 +1703,7 @@ async function importPlaylist(input, preferredSource) {
     } else if (source === 'kgc') {
       const id = extractKugouConceptIdentity(`${resolution.url}\n${resolution.html}`);
       if (id) parsed = { source:'kgc', id, input:resolution.url };
-    } else if (['tx', 'wy', 'kw'].includes(source)) {
+    } else if (['wy', 'kw'].includes(source)) {
       const playlistId = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
       const albumId = playlistId ? '' : extractPlatformAlbumId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
       const id = playlistId || albumId;
@@ -1899,7 +1712,7 @@ async function importPlaylist(input, preferredSource) {
   }
   if (!parsed) {
     const source = normalizeSource(preferredSource);
-    if (['tx', 'wy', 'kw'].includes(source)) {
+    if (['wy', 'kw'].includes(source)) {
       const playlistId = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
       const albumId = playlistId ? '' : extractPlatformAlbumId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
       const id = playlistId || albumId;
