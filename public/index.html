@@ -13695,22 +13695,11 @@ function loadCoverFromUrl(directUrl, opts) {
   opts = opts || {};
   if (!directUrl || typeof directUrl !== 'string' || !/^https?:\/\//i.test(directUrl)) {
     if (!coverApplyStillCurrent(opts)) return;
-    currentCoverSource = null;
-    coverProcessToken++;
-    uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
-    resetFloatColorsToIdle();
-    document.getElementById('album-bg').classList.remove('visible');
-    document.getElementById('thumb-cover').removeAttribute('src');
-    setControlCoverSrc('');
+    // Keep the last successfully decoded cover visible until a replacement is ready.
     return;
   }
-  document.getElementById('album-bg').style.backgroundImage = "url(" + directUrl + ")";
-  document.getElementById('album-bg').classList.add('visible');
   var proxiedUrl = coverProxySrc(directUrl);
   if (!proxiedUrl) {
-    uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
-    resetFloatColorsToIdle();
-    setControlCoverSrc('');
     return;
   }
   var img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async';
@@ -13721,6 +13710,7 @@ function loadCoverFromUrl(directUrl, opts) {
     var cx = cv.getContext('2d');
     var iw = img.naturalWidth, ih = img.naturalHeight, s = Math.min(iw, ih);
     cx.drawImage(img, (iw-s)/2, (ih-s)/2, s, s, 0, 0, size, size);
+    setAlbumBackground(directUrl);
     applyCoverCanvas(cv, proxiedUrl || directUrl, Object.assign({}, opts, { coverKey: directUrl || proxiedUrl || '', coverSourceKind: 'url', coverSource: directUrl }));
   };
   img.onerror = function() {
@@ -13730,14 +13720,11 @@ function loadCoverFromUrl(directUrl, opts) {
       var size = coverTextureSizeForResolution(fx.coverResolution);
       var cv = document.createElement('canvas'); cv.width = cv.height = size;
       cv.getContext('2d').drawImage(img2, 0, 0, size, size);
+      setAlbumBackground(directUrl);
       applyCoverCanvas(cv, directUrl, Object.assign({}, opts, { coverKey: directUrl || '', coverSourceKind: 'url', coverSource: directUrl }));
     };
     img2.onerror = function() {
-      if (!coverApplyStillCurrent(opts)) return;
-      currentCoverSource = null;
-      uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
-      resetFloatColorsToIdle();
-      setControlCoverSrc('');
+      // A transient cover/CDN failure must not create a blank-cover frame.
     };
     img2.src = directUrl;
   };
@@ -16522,6 +16509,40 @@ function setSmartCoverTextureFromImage(img) {
     ctx.drawImage(img, (iw - s) / 2, (ih - s) / 2, s, s, 0, 0, size, size);
     smartCoverTex.image = cv;
     smartCoverTex.needsUpdate = true;
+    if (smartCoverTransition) {
+      smartCoverTransition.coverCanvas = cv;
+      smartCoverTransition.edgeCanvas = buildEdgeAndDepth(cv);
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function commitSmartCoverTextureForHandoff(song) {
+  if (!smartCoverTransition || !smartCoverTransition.ready || !smartCoverTex.image) return false;
+  try {
+    var committedCover = smartCoverTransition.coverCanvas || smartCoverTex.image;
+    coverTex.image = committedCover;
+    coverTex.needsUpdate = true;
+    uniforms.uHasCover.value = 1;
+    coverPickerCanvas = committedCover;
+    if (smartCoverTransition.edgeCanvas) {
+      coverEdgeTex.image = smartCoverTransition.edgeCanvas;
+      coverEdgeTex.needsUpdate = true;
+      setCoverDepthState(1, 0.55, 1);
+      if (floatGroup) refreshFloatColorsFromCover(committedCover);
+      if (backCoverGroup) refreshBackCoverColorsFromCanvas(committedCover);
+      updateLyricPaletteFromCover(committedCover);
+    }
+    song = hydrateCustomCover(song || {});
+    var src = songCoverSrc(song, 512) || song.cover || '';
+    if (src) {
+      document.getElementById('thumb-cover').src = src;
+      setControlCoverSrc(src);
+      setAlbumBackground(src);
+      currentCoverSource = { kind: isInlineCoverSrc(src) ? 'data' : 'url', src: src };
+      if (shelfManager) shelfManager.onCoverChange(src);
+    }
     return true;
   } catch (e) {
     return false;
@@ -16555,6 +16576,8 @@ function startSmartCoverTransition(song, durationMs) {
     startedAt: performance.now(),
     durationMs: duration,
     ready: false,
+    coverCanvas: null,
+    edgeCanvas: null,
     mode: smartTransitionStyleMode(runStyle)
   };
   uniforms.uSmartCoverT.value = 0;
@@ -16567,7 +16590,9 @@ function tickSmartCoverTransition(now) {
   var t = clamp01((now - smartCoverTransition.startedAt) / Math.max(1, smartCoverTransition.durationMs));
   var readyGate = smartCoverTransition.ready ? 1 : 0;
   uniforms.uSmartCoverT.value = visualEase(t) * readyGate;
-  if (t >= 1) resetSmartCoverTransition();
+  var audioHandoffPending = smartCrossfadeState &&
+    (smartCrossfadeState.status === 'mixing' || smartCrossfadeState.status === 'handoff');
+  if (t >= 1 && !audioHandoffPending) resetSmartCoverTransition();
 }
 function hideSmartTransitionChip(serial) {
   if (serial && serial !== smartTransitionChipSerial) return;
@@ -16842,6 +16867,9 @@ function handoffSmartCrossfade(state, reason) {
   state.nextAudio.onerror = null;
   if (state.timer) { clearTimeout(state.timer); state.timer = null; }
   var resumeAt = isFinite(state.nextAudio.currentTime) ? state.nextAudio.currentTime : 0;
+  // The next cover was already decoded for the visual transition. Commit it
+  // before the async track setup starts so the particle field never blanks.
+  commitSmartCoverTextureForHandoff(playQueue[state.nextIdx]);
   currentIdx = state.nextIdx;
   updateSmartAudioDebugState(reason || 'handoff');
   Promise.resolve(playQueueAt(state.nextIdx, {
@@ -16854,6 +16882,31 @@ function handoffSmartCrossfade(state, reason) {
     state.handedOff = false;
     cancelSmartCrossfade('handoff-error');
   });
+}
+function connectSmartCrossfadeHandoffSource(opts) {
+  if (!opts.crossfadeHandoffSource || !audioCtx || !analyser || !beatAnalyser) return false;
+  try { if (source) source.disconnect(); } catch (e) {}
+  source = opts.crossfadeHandoffSource;
+  source.connect(analyser);
+  source.connect(beatAnalyser);
+  var handoffOutput = opts.crossfadeHandoffOutput;
+  var now = audioCtx.currentTime || 0;
+  var settleSeconds = 0.28;
+  try {
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(targetVolume, now + settleSeconds);
+    if (handoffOutput && handoffOutput.gain) {
+      handoffOutput.gain.cancelScheduledValues(now);
+      handoffOutput.gain.setValueAtTime(targetVolume, now);
+      handoffOutput.gain.linearRampToValueAtTime(0, now + settleSeconds);
+      setTimeout(function(){ try { handoffOutput.disconnect(); } catch (e) {} }, settleSeconds * 1000 + 40);
+    }
+  } catch (e) {
+    try { gainNode.gain.setValueAtTime(targetVolume, now); } catch (ignored) {}
+    try { if (handoffOutput) handoffOutput.disconnect(); } catch (ignored) {}
+  }
+  return true;
 }
 async function startSmartCrossfadeAuto(forceEndedHandoff) {
   var state = smartCrossfadeState;
@@ -21738,6 +21791,10 @@ async function playQueueAt(idx, opts) {
 
   markPlayPhase('cover-load');
   safePlaybackStep('cover-load', function(){
+    // Smart crossfade has already decoded and displayed the next cover. Keep
+    // that exact texture through handoff; reloading it here creates the brief
+    // blank/old-cover frame seen when the second audio element takes control.
+    if (opts.smartTransitionHandoff) return;
     var customCover = getCustomCoverForSong(song);
     var coverOpts = { trackToken: token, deferHeavy: true, delay: firstVisualPlay ? 380 : 680, timeout: firstVisualPlay ? 1400 : 1900 };
     if (opts.smartTransitionHandoff) coverOpts.smartTransitionHandoff = true;
@@ -21746,7 +21803,8 @@ async function playQueueAt(idx, opts) {
     else loadCoverFromUrl(song.cover ? coverUrlWithSize(song.cover, 400) : '', coverOpts);
   });
   safePlaybackStep('trial-banner-reset', function(){ document.getElementById('trial-banner').classList.remove('show'); });
-  safePlaybackStep('show-loading', showLoading);
+  if (!opts.crossfadeHandoffAudio) safePlaybackStep('show-loading', showLoading);
+  else safePlaybackStep('handoff-loading-clear', function(){ forceLoadingSettled('smart-crossfade-handoff'); });
   lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
 
   // 首次播放: 粒子从暗处浮出 (Apple 风格)
@@ -21778,17 +21836,7 @@ async function playQueueAt(idx, opts) {
         audioFadeSerial++;
         clearAudioFadeTimers();
         audio = localHandoffAudio;
-        if (opts.crossfadeHandoffSource && audioCtx && analyser && beatAnalyser) {
-          try { if (source) source.disconnect(); } catch (e) {}
-          source = opts.crossfadeHandoffSource;
-          source.connect(analyser);
-          source.connect(beatAnalyser);
-          try {
-            gainNode.gain.cancelScheduledValues(audioCtx.currentTime || 0);
-            gainNode.gain.setValueAtTime(targetVolume, audioCtx.currentTime || 0);
-          } catch (e) {}
-          try { if (opts.crossfadeHandoffOutput) opts.crossfadeHandoffOutput.disconnect(); } catch (e) {}
-        } else {
+        if (!connectSmartCrossfadeHandoffSource(opts)) {
           resetAudioGraphForCurrentElement();
         }
       } else if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
@@ -21905,17 +21953,7 @@ async function playQueueAt(idx, opts) {
       audio = handoffAudio;
       audio.crossOrigin = 'anonymous';
       configurePlaybackAudioElement(audio);
-      if (opts.crossfadeHandoffSource && audioCtx && analyser && beatAnalyser) {
-        try { if (source) source.disconnect(); } catch (e) {}
-        source = opts.crossfadeHandoffSource;
-        source.connect(analyser);
-        source.connect(beatAnalyser);
-        try {
-          gainNode.gain.cancelScheduledValues(audioCtx.currentTime || 0);
-          gainNode.gain.setValueAtTime(targetVolume, audioCtx.currentTime || 0);
-        } catch (e) {}
-        try { if (opts.crossfadeHandoffOutput) opts.crossfadeHandoffOutput.disconnect(); } catch (e) {}
-      } else {
+      if (!connectSmartCrossfadeHandoffSource(opts)) {
         resetAudioGraphForCurrentElement();
       }
     } else if (!audio) {
@@ -22016,6 +22054,7 @@ async function playQueueAt(idx, opts) {
     if (useCrossfadeHandoff) {
       playing = true;
       setPlayIcon(true);
+      forceLoadingSettled('smart-crossfade-playing');
     }
     if (!playbackStarted) {
       if (opts.crossfadeHandoffAudio) {
