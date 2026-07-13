@@ -1164,6 +1164,13 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .dl-center-actions{padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap}
 .dl-open-folder{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.85);border-radius:8px;padding:6px 12px;font-size:11.5px;cursor:pointer;transition:background .15s}
 .dl-open-folder:hover{background:rgba(255,255,255,.12)}
+.dl-quality{padding:4px 16px 10px;display:flex;flex-direction:column;gap:6px}
+.dl-quality-label{font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.4px;display:flex;align-items:center;justify-content:space-between}
+.dl-quality-label b{font-size:10.5px;font-weight:700;color:rgba(157,184,207,.9);letter-spacing:.2px}
+.dl-quality-opts{display:flex;flex-wrap:wrap;gap:5px}
+.dl-quality-opt{flex:0 0 auto;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:rgba(255,255,255,.66);border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;letter-spacing:.1px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.dl-quality-opt:hover{background:rgba(255,255,255,.09);color:#fff}
+.dl-quality-opt.active{color:#eaf2ff;border-color:rgba(157,184,207,.46);background:rgba(157,184,207,.16)}
 .dl-center-empty{padding:32px 16px;text-align:center;color:rgba(255,255,255,.4);font-size:12px}
 .dl-center-list{overflow-y:auto;max-height:min(380px,55vh);padding:6px 12px 12px}
 .dl-center-item{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 10px;padding:8px 10px;border-radius:10px;margin-bottom:4px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06);position:relative}
@@ -3112,6 +3119,7 @@ var CUSTOM_LYRIC_PREF_STORE_KEY = 'mineradio-custom-lyric-prefs-v1';
 var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
 var PLAYBACK_QUALITY_STORE_KEY = 'mineradio-playback-quality-v1';
+var DOWNLOAD_QUALITY_STORE_KEY = 'mineradio-download-quality-v1';
 var PLAYBACK_TUNING_STORE_KEY = 'mineradio-playback-tuning-v1';
 var AUDIO_EFFECTS_STORE_KEY = 'mineradio-audio-effects-v1';
 var PLAYBACK_SESSION_STORE_KEY = 'mineradio-playback-session-v1';
@@ -3150,6 +3158,7 @@ var customLyricPrefs = readCustomLyricPrefs();
 var localBeatMapCache = readLocalBeatMapCache();
 var localBeatMapPrefs = readLocalBeatPrefs();
 var playbackQuality = readPlaybackQualityPreference();
+var downloadQuality = readDownloadQualityPreference();
 var coverCropState = null, coverCropBound = false;
 var currentLocalSong = null;
 var lyricSourceMode = 'original';
@@ -16457,6 +16466,41 @@ function readPlaybackQualityPreference() {
 function savePlaybackQualityPreference() {
   try { localStorage.setItem(PLAYBACK_QUALITY_STORE_KEY, playbackQuality); } catch (e) {}
 }
+// 下载音质：'follow' 表示跟随当前播放音质，其余复用播放音质档位
+function normalizeDownloadQuality(value) {
+  value = String(value || '').toLowerCase();
+  if (value === 'follow' || value === '' || value === 'auto') return 'follow';
+  return normalizePlaybackQuality(value);
+}
+function readDownloadQualityPreference() {
+  try {
+    return normalizeDownloadQuality(localStorage.getItem(DOWNLOAD_QUALITY_STORE_KEY) || 'follow');
+  } catch (e) {
+    return 'follow';
+  }
+}
+function saveDownloadQualityPreference() {
+  try { localStorage.setItem(DOWNLOAD_QUALITY_STORE_KEY, downloadQuality); } catch (e) {}
+}
+// 实际下载时使用的音质：跟随模式则回落到当前播放音质
+function effectiveDownloadQuality() {
+  var q = normalizeDownloadQuality(downloadQuality);
+  if (q === 'follow') return normalizePlaybackQuality(playbackQuality);
+  return q;
+}
+function downloadQualityShortLabel(value) {
+  value = normalizeDownloadQuality(value);
+  if (value === 'follow') return '跟随播放';
+  return playbackQualityLabel(value);
+}
+function setDownloadQuality(value) {
+  var next = normalizeDownloadQuality(value);
+  if (next === downloadQuality) return;
+  downloadQuality = next;
+  saveDownloadQualityPreference();
+  if (downloadCenterOpen) renderDownloadCenter();
+  showToast('下载音质: ' + downloadQualityShortLabel(next));
+}
 function currentPlaybackQualityProvider() {
   var song = currentIdx >= 0 && playQueue && playQueue[currentIdx] ? playQueue[currentIdx] : null;
   return songProviderKey(song);
@@ -19789,7 +19833,7 @@ function isLocalSong(song) {
 async function downloadSingleSong(song, opts) {
   if (!song || (!song.id && !song.hash)) { showToast('无法下载: 歌曲信息不完整'); return; }
   if (isLocalSong(song)) { showToast('本地歌曲无需下载'); return; }
-  var quality = normalizePlaybackQuality(playbackQuality);
+  var quality = effectiveDownloadQuality();
   var payload = { songs: [song], quality: quality };
   if (opts && opts.playlistName) payload.playlistName = opts.playlistName;
   try {
@@ -19807,7 +19851,7 @@ async function downloadMultipleSongs(songs, playlistName) {
   if (!songs || !songs.length) { showToast('没有选中歌曲'); return; }
   var cloud = songs.filter(function(s){ return s && s.type !== 'local' && s.source !== 'local' && !s.localUrl && !s.localPath && (s.id || s.hash); });
   if (!cloud.length) { showToast('没有可下载的在线歌曲'); return; }
-  var quality = normalizePlaybackQuality(playbackQuality);
+  var quality = effectiveDownloadQuality();
   var payload = { songs: cloud, quality: quality };
   if (playlistName) payload.playlistName = playlistName;
   try {
@@ -19915,6 +19959,26 @@ function updateDownloadBadge() {
     badge.style.display = active > 0 ? '' : 'none';
   }
 }
+var DOWNLOAD_QUALITY_CHOICES = [
+  { value: 'follow',   label: '跟随播放' },
+  { value: 'jymaster', label: '母带' },
+  { value: 'hires',    label: '臻音' },
+  { value: 'lossless', label: '无损' },
+  { value: 'exhigh',   label: '极高' },
+  { value: 'standard', label: '标准' }
+];
+function renderDownloadQualityPicker() {
+  var cur = normalizeDownloadQuality(downloadQuality);
+  var hint = cur === 'follow' ? '当前 ' + playbackQualityLabel(effectiveDownloadQuality()) : '';
+  var html = '<div class="dl-quality"><div class="dl-quality-label"><span>下载音质</span><b>' + escHtml(downloadQualityShortLabel(cur) + (hint ? ' · ' + hint : '')) + '</b></div>';
+  html += '<div class="dl-quality-opts">';
+  for (var i = 0; i < DOWNLOAD_QUALITY_CHOICES.length; i++) {
+    var c = DOWNLOAD_QUALITY_CHOICES[i];
+    html += '<button class="dl-quality-opt' + (c.value === cur ? ' active' : '') + '" onclick="setDownloadQuality(\'' + c.value + '\')">' + escHtml(c.label) + '</button>';
+  }
+  html += '</div></div>';
+  return html;
+}
 function renderDownloadCenter() {
   var el = document.getElementById('download-center');
   if (!el) return;
@@ -19931,6 +19995,7 @@ function renderDownloadCenter() {
     html += '<button class="dl-open-folder" onclick="resetDownloadFolder()">恢复默认</button>';
   }
   html += '</div>';
+  html += renderDownloadQualityPicker();
   if (!jobs.length) {
     html += '<div class="dl-center-empty">暂无下载任务</div>';
   } else {
