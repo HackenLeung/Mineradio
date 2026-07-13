@@ -4636,6 +4636,54 @@ renderer.domElement.style.height = '100%';
 renderer.domElement.tabIndex = 0;
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+// GPU 能力检测 — 识别软件渲染和低端集显，用于自动画质分级
+function detectGpuCapability() {
+  var result = { tier: 'high', renderer: '', swiftshader: false, intel: false };
+  try {
+    var gl = renderer.getContext();
+    var ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext) {
+      result.renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '';
+    }
+    var r = result.renderer.toLowerCase();
+    if (r.indexOf('swiftshader') !== -1 || r.indexOf('llvmpipe') !== -1 || r.indexOf('microsoft basic') !== -1) {
+      result.swiftshader = true;
+      result.tier = 'eco';
+    } else if (r.indexOf('intel') !== -1 && (r.indexOf('hd') !== -1 || r.indexOf('uhd') !== -1) && !r.match(/iris|xe|arc/i)) {
+      result.intel = true;
+      result.tier = 'balanced';
+    }
+  } catch (e) {}
+  return result;
+}
+var gpuInfo = detectGpuCapability();
+window.__mineradioGpuInfo = gpuInfo;
+
+// 首次启动或未手动设置画质时，根据 GPU 能力自动分级
+(function applyGpuAutoQuality() {
+  if (gpuInfo.tier === 'high') return;
+  try {
+    var saved = localStorage.getItem(LYRIC_LAYOUT_STORE_KEY);
+    var parsed = saved ? JSON.parse(saved) : null;
+    if (parsed && parsed.performanceQuality && parsed.performanceQuality !== fxDefaults.performanceQuality) return;
+  } catch (e) {}
+  fx.performanceQuality = gpuInfo.tier;
+  setTimeout(function() {
+    showToast('检测到' + (gpuInfo.swiftshader ? '软件渲染' : '集成显卡') + '，已自动调整画质为' + (gpuInfo.tier === 'eco' ? '低' : '中'));
+  }, 2000);
+})();
+
+// 运行时自适应降级状态
+var adaptiveDowngradeState = {
+  lastCheckAt: 0,
+  checkInterval: 5000,
+  longFramesAtLastCheck: 0,
+  framesRenderedAtLastCheck: 0,
+  downgradeCount: 0,
+  maxDowngrades: 2,
+  userLocked: false
+};
+
 // ============================================================
 //  相机系统 v7.1 — 分离 user offset / cinema offset
 //   - userOrbit: 用户拖拽的目标 (永久保留, 不会被电影模式覆盖)
@@ -25996,12 +26044,24 @@ function setPerformanceBackgroundMode(mode, silent) {
 function setPerformanceQualityMode(mode, silent) {
   var next = normalizePerformanceQuality(mode);
   fx.performanceQuality = next;
+  if (!silent && typeof adaptiveDowngradeState !== 'undefined') {
+    adaptiveDowngradeState.userLocked = true;
+  }
   updatePerformanceControls();
   applyRendererPowerMode();
+  enforceQualityParticleBudget();
   saveLyricLayout();
   if (!silent) {
     var label = next === 'eco' ? '低' : (next === 'balanced' ? '中' : (next === 'ultra' ? '超高' : '高'));
     showToast('画质档位: ' + label);
+  }
+}
+// eco 档位限制封面粒子数，避免软件渲染下 CPU 过载
+function enforceQualityParticleBudget() {
+  if (typeof applyCoverParticleResolution !== 'function') return;
+  var quality = normalizePerformanceQuality(fx.performanceQuality);
+  if (quality === 'eco' && fx.coverResolution > 0.85) {
+    applyCoverParticleResolution(0.85);
   }
 }
 function updateFxInputs() {
@@ -31372,6 +31432,7 @@ var renderPerfState = {
   mode: 'vsync',
   fps: 0,
   frames: 0,
+  totalRendered: 0,
   skipped: 0,
   longFrames: 0,
   lastRenderAt: 0,
@@ -31433,14 +31494,42 @@ function shouldSkipAdaptiveRenderFrame(now) {
     : now;
   return false;
 }
+function maybeAdaptiveDowngrade(now) {
+  if (adaptiveDowngradeState.userLocked) return;
+  if (adaptiveDowngradeState.downgradeCount >= adaptiveDowngradeState.maxDowngrades) return;
+  if (now - adaptiveDowngradeState.lastCheckAt < adaptiveDowngradeState.checkInterval) return;
+  // totalRendered 是永不重置的累计渲染帧数, longFrames 同样累计, 用增量算掉帧率
+  var longDelta = renderPerfState.longFrames - adaptiveDowngradeState.longFramesAtLastCheck;
+  var frameDelta = renderPerfState.totalRendered - adaptiveDowngradeState.framesRenderedAtLastCheck;
+  adaptiveDowngradeState.longFramesAtLastCheck = renderPerfState.longFrames;
+  adaptiveDowngradeState.framesRenderedAtLastCheck = renderPerfState.totalRendered;
+  if (adaptiveDowngradeState.lastCheckAt === 0) {
+    adaptiveDowngradeState.lastCheckAt = now;
+    return;
+  }
+  adaptiveDowngradeState.lastCheckAt = now;
+  if (frameDelta < 30) return;
+  var dropRate = longDelta / frameDelta;
+  if (dropRate > 0.4) {
+    var current = normalizePerformanceQuality(fx.performanceQuality);
+    var next = current === 'ultra' ? 'high' : (current === 'high' ? 'balanced' : (current === 'balanced' ? 'eco' : null));
+    if (next) {
+      adaptiveDowngradeState.downgradeCount++;
+      setPerformanceQualityMode(next, true);
+      showToast('检测到画面卡顿，已自动降低画质为 ' + (next === 'eco' ? '低' : (next === 'balanced' ? '中' : '高')));
+    }
+  }
+}
 function sampleRenderPerf(now, dt) {
   renderPerfState.frames += 1;
+  renderPerfState.totalRendered += 1;
   if (dt > 0.034) renderPerfState.longFrames += 1;
   if (now - renderPerfState.lastSampleAt >= 1000) {
     renderPerfState.fps = Math.round(renderPerfState.frames * 1000 / Math.max(1, now - renderPerfState.lastSampleAt));
     renderPerfState.frames = 0;
     renderPerfState.lastSampleAt = now;
   }
+  maybeAdaptiveDowngrade(now);
   maybeTrimRuntimeCaches(now);
 }
 function animate() {
