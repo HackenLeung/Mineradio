@@ -16938,11 +16938,16 @@ function handoffSmartCrossfade(state, reason) {
   var resumeAt = isFinite(state.nextAudio.currentTime) ? state.nextAudio.currentTime : 0;
   // The next cover was already decoded for the visual transition. Commit it
   // before the async track setup starts so the particle field never blanks.
-  commitSmartCoverTextureForHandoff(playQueue[state.nextIdx]);
+  // When the app was backgrounded the visual transition never started (see the
+  // document.hidden guard in startSmartCrossfadeAuto), so the commit returns
+  // false and playQueueAt must fall back to a normal cover load instead of
+  // skipping it — otherwise the cover stays stuck on the previous track.
+  var coverCommitted = commitSmartCoverTextureForHandoff(playQueue[state.nextIdx]);
   currentIdx = state.nextIdx;
   updateSmartAudioDebugState(reason || 'handoff');
   Promise.resolve(playQueueAt(state.nextIdx, {
     preserveHomeState: true, smartTransition: false, smartTransitionHandoff: true,
+    coverCommitted: coverCommitted,
     crossfadeHandoffAudio: state.nextAudio, crossfadeHandoffSource: state.nextSource,
     crossfadeHandoffOutput: state.nextGain, crossfadePlaybackData: state.playbackData,
     crossfadeStateRef: state, resumeAt: resumeAt, fadeInMs: 1400
@@ -21884,7 +21889,10 @@ async function playQueueAt(idx, opts) {
     // Smart crossfade has already decoded and displayed the next cover. Keep
     // that exact texture through handoff; reloading it here creates the brief
     // blank/old-cover frame seen when the second audio element takes control.
-    if (opts.smartTransitionHandoff) return;
+    // But only skip when the commit actually succeeded — a backgrounded
+    // crossfade never builds the smart-cover texture, so we must still load
+    // the cover normally or it stays stuck on the previous track.
+    if (opts.smartTransitionHandoff && opts.coverCommitted) return;
     var customCover = getCustomCoverForSong(song);
     var coverOpts = { trackToken: token, deferHeavy: true, delay: firstVisualPlay ? 380 : 680, timeout: firstVisualPlay ? 1400 : 1900 };
     if (opts.smartTransitionHandoff) coverOpts.smartTransitionHandoff = true;
