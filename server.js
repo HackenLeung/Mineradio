@@ -4896,12 +4896,26 @@ const server = http.createServer(async (req, res) => {
 
   // ---------- 音频代理 (支持 Range) ----------
   if (pn === '/api/audio') {
+    const controller = new AbortController();
+    let streamTimer = null;
+    const armStreamTimeout = (ms = 15000) => {
+      if (streamTimer) clearTimeout(streamTimer);
+      streamTimer = setTimeout(() => controller.abort(new Error('Audio upstream timeout')), ms);
+    };
+    const stopAudioProxy = () => {
+      if (streamTimer) clearTimeout(streamTimer);
+      streamTimer = null;
+      if (!controller.signal.aborted) controller.abort();
+    };
+    res.once('close', stopAudioProxy);
     try {
       const audioUrl = url.searchParams.get('url');
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
       const hdr = audioProxyHeadersFor(audioUrl, range);
-      const up = await fetch(audioUrl, { headers: hdr });
+      armStreamTimeout(12000);
+      const up = await fetch(audioUrl, { headers: hdr, signal: controller.signal });
+      if (!up.ok && up.status !== 206) throw new Error('Audio upstream HTTP ' + up.status);
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Access-Control-Allow-Origin': '*',
@@ -4911,9 +4925,32 @@ const server = http.createServer(async (req, res) => {
       const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;
       res.writeHead(up.status, out);
       const reader = up.body.getReader();
-      while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
+      while (true) {
+        armStreamTimeout();
+        const c = await reader.read();
+        if (c.done) break;
+        if (!res.write(c.value)) {
+          await new Promise(resolve => {
+            const done = () => {
+              res.off('drain', done);
+              res.off('close', done);
+              resolve();
+            };
+            res.once('drain', done);
+            res.once('close', done);
+          });
+        }
+      }
+      if (streamTimer) clearTimeout(streamTimer);
+      streamTimer = null;
       res.end();
-    } catch (err) { console.error('[Audio]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      if (streamTimer) clearTimeout(streamTimer);
+      streamTimer = null;
+      console.error('[Audio]', err);
+      if (!res.headersSent) { res.writeHead(502); res.end(); }
+      else res.destroy(err);
+    }
     return;
   }
 

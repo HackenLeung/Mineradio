@@ -3099,6 +3099,8 @@ var AUDIO_FADE_IN_MS = 460;
 var AUDIO_FADE_OUT_MS = 420;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var AUDIO_PLAY_TIMEOUT_MS = 3600;
+var AUDIO_STALL_TIMEOUT_MS = 7000;
+var playbackStallWatchdog = { timer: null, media: null, token: 0, startTime: 0 };
 var smartTransitionChipTimer = null, smartTransitionChipSerial = 0;
 var SMART_TRANSITION_CHIP_MS = 2800;
 var SMART_TRANSITION_VISUAL_MS = 30000;
@@ -21128,6 +21130,63 @@ async function recoverStaleAudioForResume() {
   return true;
 }
 
+function clearPlaybackStallWatchdog(media) {
+  if (media && playbackStallWatchdog.media && playbackStallWatchdog.media !== media) return;
+  if (playbackStallWatchdog.timer) clearTimeout(playbackStallWatchdog.timer);
+  playbackStallWatchdog.timer = null;
+  playbackStallWatchdog.media = null;
+  playbackStallWatchdog.token = 0;
+  playbackStallWatchdog.startTime = 0;
+}
+function resetPlaybackAudioElementAfterStall() {
+  clearPlaybackStallWatchdog();
+  if (smartCrossfadeState) cancelSmartCrossfade('audio-stall-recovery');
+  var staleAudio = audio;
+  if (staleAudio) {
+    try { staleAudio.onended = null; staleAudio.onloadedmetadata = null; } catch (e) {}
+    try { staleAudio.pause(); } catch (e) {}
+    try { staleAudio.removeAttribute('src'); staleAudio.load(); } catch (e) {}
+  }
+  resetAudioGraphForCurrentElement();
+  audio = new Audio();
+  audio.crossOrigin = 'anonymous';
+  configurePlaybackAudioElement(audio);
+  bindPlaybackProgressEvents(audio);
+  return audio;
+}
+function schedulePlaybackStallRecovery(media, reason) {
+  var mediaErrored = reason === 'error';
+  if (!media || media !== audio || !media.src || media.ended || (media.paused && !mediaErrored)) return;
+  clearPlaybackStallWatchdog();
+  var token = trackSwitchToken;
+  var startTime = isFinite(media.currentTime) ? media.currentTime : 0;
+  playbackStallWatchdog.media = media;
+  playbackStallWatchdog.token = token;
+  playbackStallWatchdog.startTime = startTime;
+  playbackStallWatchdog.timer = setTimeout(function(){
+    clearPlaybackStallWatchdog(media);
+    if (media !== audio || token !== trackSwitchToken || media.ended || (media.paused && !mediaErrored)) return;
+    var nowTime = isFinite(media.currentTime) ? media.currentTime : 0;
+    if (nowTime > startTime + 0.35) return;
+    var recoveries = Number(media._mineradioStallRecoveries) || 0;
+    console.warn('[AudioStall]', reason || 'waiting', { currentTime: nowTime, readyState: media.readyState, networkState: media.networkState, recoveries: recoveries });
+    if (recoveries < 1) {
+      showSourceFallbackNotice('播放连接卡住', '正在重新连接当前歌曲。');
+      Promise.resolve(playQueueAt(currentIdx, {
+        preserveHomeState: true,
+        resumeAt: nowTime,
+        forceNewAudioElement: true,
+        stallRecoveryCount: recoveries + 1
+      })).catch(function(err){ console.warn('[AudioStallRecovery]', err); });
+      return;
+    }
+    try { media.pause(); } catch (e) {}
+    playing = false;
+    setPlayIcon(false);
+    skipFailedQueueItem(currentIdx, token, '当前音频连接连续卡住，正在播放下一首。');
+  }, mediaErrored ? 800 : AUDIO_STALL_TIMEOUT_MS);
+}
+
 function ensureUiSfxContext() {
   var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
@@ -21858,6 +21917,7 @@ async function playQueueAt(idx, opts) {
   else if (audio) {
     try { audio.onended = null; } catch (e) {}
   }
+  if (opts.forceNewAudioElement) resetPlaybackAudioElementAfterStall();
   var bmKey = safePlaybackStep('beatmap-key', function(){ return beatMapSongKey(song); }) || '';
   var podcastDjMode = !!safePlaybackStep('podcast-mode', function(){ return isPodcastSong(song); });
   safePlaybackStep('dj-mode', function(){ setDjModeActive(podcastDjMode, song); });
@@ -21945,6 +22005,7 @@ async function playQueueAt(idx, opts) {
       }
       configurePlaybackAudioElement(audio);
       bindPlaybackProgressEvents(audio);
+      audio._mineradioStallRecoveries = Number(opts.stallRecoveryCount) || 0;
       applyVolumeToAudio();
       if (!useLocalCrossfadeHandoff) audio.src = localAudioUrl;
       updatePlaybackProgressUi();
@@ -22065,6 +22126,7 @@ async function playQueueAt(idx, opts) {
       configurePlaybackAudioElement(audio);
     }
     bindPlaybackProgressEvents(audio);
+    audio._mineradioStallRecoveries = Number(opts.stallRecoveryCount) || 0;
     applyVolumeToAudio();
     if (!useCrossfadeHandoff) audio.src = proxyAudioUrl;
     updatePlaybackProgressUi();
@@ -24334,6 +24396,18 @@ function bindPlaybackProgressEvents(audioEl) {
   });
   audioEl.addEventListener('timeupdate', function(){ updateListenStatsTick(false); });
   audioEl.addEventListener('timeupdate', checkSmartCrossfadeAudioState);
+  audioEl.addEventListener('timeupdate', function(){
+    var current = isFinite(audioEl.currentTime) ? audioEl.currentTime : 0;
+    if (current > 2 && audioEl._mineradioStallRecoveries) audioEl._mineradioStallRecoveries = 0;
+    if (playbackStallWatchdog.media !== audioEl) return;
+    if (current > playbackStallWatchdog.startTime + 0.35) clearPlaybackStallWatchdog(audioEl);
+  });
+  ['waiting', 'stalled', 'error'].forEach(function(name){
+    audioEl.addEventListener(name, function(){ schedulePlaybackStallRecovery(audioEl, name); });
+  });
+  ['canplay', 'playing', 'pause', 'ended', 'emptied', 'abort'].forEach(function(name){
+    audioEl.addEventListener(name, function(){ clearPlaybackStallWatchdog(audioEl); });
+  });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function(name){
     audioEl.addEventListener(name, function(){ syncPlaybackStateFromAudioEvent(name); });
   });
