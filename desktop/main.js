@@ -59,6 +59,19 @@ const LOCAL_LIBRARY_MIME = {
   '.webm': 'audio/webm',
 };
 
+function configureMineradioUserDataPath() {
+  const configuredPath = String(process.env.MINERADIO_USER_DATA || '').trim();
+  const userDataPath = configuredPath
+    || (app.isPackaged ? path.join(path.dirname(process.execPath), 'user-data') : '');
+  if (!userDataPath) return;
+
+  const resolvedPath = path.resolve(userDataPath);
+  app.setPath('userData', resolvedPath);
+  app.setPath('sessionData', resolvedPath);
+}
+
+configureMineradioUserDataPath();
+
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
   ['ignore-gpu-blocklist'],

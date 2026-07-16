@@ -1,14 +1,14 @@
 # 发布流程
 
-## v1.1.7 当前构建
+## v1.1.8 当前构建
 
-- 版本号：`1.1.7`。
-- 更新内容：修复智能过渡进入第二首时封面粒子短暂消失，并保持预加载封面、深度纹理和加载状态连续。
+- 版本号：`1.1.8`。
+- 更新内容：用户数据默认迁到安装目录 `user-data`；安装器路径/栈校验加固；卸载可选清理用户数据并补全残留清理。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目与原作者署名见 README。
 - 构建前必须确认 `.cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 本地提交应包含 `platform-playlist-import.js`，它是运行和打包所需源码。
 - 构建命令：`npm run build:win`。
-- 预期资产：`dist/Mineradio-1.1.7-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
+- 预期资产：`dist/Mineradio-1.1.8-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - npm 审计现有 `NeteaseCloudMusicApi` 依赖链仍报告 2 个 high、1 个 moderate；上游暂无兼容修复，禁止直接执行会降级到 3.x 的 `npm audit fix --force`。
 
 以下 `v1.1.0` 内容为历史发布边界。
