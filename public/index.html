@@ -55,16 +55,69 @@ body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-mode-btn.on::before{background:#ff5367;box-shadow:0 0 16px rgba(255,83,103,.56)}
 body.desktop-shell #desktop-titlebar #visual-guide-btn,
 body.desktop-shell #desktop-titlebar #dl-center-btn,
-body.desktop-shell #desktop-titlebar #update-entry{width:30px;height:30px;border-radius:10px;box-shadow:none;background:rgba(4,8,10,.42);border-color:rgba(255,255,255,.08);color:rgba(224,250,255,.70);backdrop-filter:none;-webkit-backdrop-filter:none}
-body.desktop-shell #desktop-titlebar #visual-guide-btn{font-size:14px}
-body.desktop-shell #desktop-titlebar #dl-center-btn svg{width:16px;height:16px}
-body.desktop-shell #desktop-titlebar #update-entry.available{display:flex}
-body.desktop-shell #desktop-titlebar #update-entry svg{width:18px;height:18px}
-body.desktop-shell #desktop-titlebar #update-entry::before,
-body.desktop-shell #desktop-titlebar #update-entry::after{display:none}
+body.desktop-shell #desktop-titlebar #update-entry{
+  width:30px!important;
+  height:30px!important;
+  min-width:30px!important;
+  min-height:30px!important;
+  flex:0 0 30px;
+  padding:0!important;
+  border-radius:10px!important;
+  border:1px solid rgba(255,255,255,.08)!important;
+  background:rgba(4,8,10,.42)!important;
+  color:rgba(224,250,255,.70)!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  display:flex!important;
+  align-items:center;
+  justify-content:center;
+  transform:none!important;
+  overflow:visible;
+}
+body.desktop-shell #desktop-titlebar #visual-guide-btn{
+  font-size:13px!important;
+  font-weight:780;
+  line-height:1;
+}
+body.desktop-shell #desktop-titlebar #dl-center-btn svg,
+body.desktop-shell #desktop-titlebar #update-entry svg{
+  width:15px!important;
+  height:15px!important;
+  display:block;
+}
+body.desktop-shell #desktop-titlebar #update-entry.available{display:flex!important}
+body.desktop-shell #desktop-titlebar #update-entry::before{display:none!important}
+body.desktop-shell #desktop-titlebar #update-entry::after{
+  display:block!important;
+  right:-2px;
+  top:-2px;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#ff3b55;
+  box-shadow:0 0 0 1px rgba(8,10,12,.55),0 0 10px rgba(255,59,85,.45);
+  pointer-events:none;
+}
+body.desktop-shell #desktop-titlebar #dl-center-btn .dl-badge{
+  top:-3px;
+  right:-3px;
+  min-width:14px;
+  height:14px;
+  line-height:14px;
+  font-size:9px;
+  border-radius:8px;
+  padding:0 3px;
+}
 body.desktop-shell #desktop-titlebar #visual-guide-btn:hover,
 body.desktop-shell #desktop-titlebar #dl-center-btn:hover,
-body.desktop-shell #desktop-titlebar #update-entry:hover{background:rgba(255,83,103,.10);border-color:rgba(255,83,103,.32);color:#fff;transform:translateY(-1px)}
+body.desktop-shell #desktop-titlebar #update-entry:hover{
+  background:rgba(255,83,103,.10)!important;
+  border-color:rgba(255,83,103,.32)!important;
+  color:#fff!important;
+  transform:translateY(-1px)!important;
+  box-shadow:none!important;
+}
 body.desktop-shell #search-area{top:-92px}
 body.desktop-shell #search-area.peek{top:34px}
 body.desktop-shell #search-area.stage-mode.peek{top:32px}
@@ -1990,7 +2043,6 @@ html.control-glass-svg-ok .search-history-chip:hover{
   stroke:currentColor!important;
 }
 #visual-guide-btn,
-body.desktop-shell #desktop-titlebar #visual-guide-btn,
 html.control-glass-svg-ok #visual-guide-btn{
   color:rgba(184,188,196,.58)!important;
   border-color:rgba(255,255,255,.08)!important;
@@ -2000,7 +2052,6 @@ html.control-glass-svg-ok #visual-guide-btn{
   -webkit-backdrop-filter:none!important;
 }
 #visual-guide-btn:hover,
-body.desktop-shell #desktop-titlebar #visual-guide-btn:hover,
 html.control-glass-svg-ok #visual-guide-btn:hover{
   color:#fff!important;
   border-color:rgba(255,255,255,.24)!important;
@@ -2046,6 +2097,120 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 .fx-tab-page{display:none}
 .fx-tab-page.active{display:block}
 .fx-tab-page>.fx-section-label:first-child{margin-top:0}
+/* --- 控制页：音乐遥控器 --- */
+.remote-skin-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin:0 0 10px;
+}
+.remote-skin-item{
+  position:relative;
+  min-height:108px;
+  display:flex;
+  flex-direction:column;
+  padding:0;
+  border-radius:11px;
+  border:1.5px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.025);
+  color:rgba(255,255,255,.72);
+  text-align:left;
+  overflow:hidden;
+  cursor:pointer;
+  transition:border-color .22s ease,background .22s ease,box-shadow .22s ease,transform .18s ease,color .18s ease;
+}
+.remote-skin-item:hover:not(:disabled){
+  color:#fff;
+  border-color:rgba(255,255,255,.2);
+  background:rgba(255,255,255,.05);
+  transform:translateY(-1px);
+}
+.remote-skin-item[aria-selected="true"],
+.remote-skin-item.active{
+  color:#fff;
+  border-color:rgba(0,245,212,.54);
+  background:rgba(0,245,212,.075);
+  box-shadow:0 0 0 1px rgba(0,245,212,.22),0 16px 46px rgba(0,245,212,.055);
+}
+.remote-skin-item.is-soon{
+  opacity:.62;
+  cursor:default;
+  transform:none!important;
+}
+.remote-skin-item.is-soon:hover{
+  border-color:rgba(255,255,255,.08);
+  background:rgba(255,255,255,.025);
+  color:rgba(255,255,255,.72);
+}
+.remote-skin-badge{
+  position:absolute;
+  top:8px;
+  right:8px;
+  z-index:2;
+  height:18px;
+  padding:0 7px;
+  border-radius:999px;
+  border:1px solid rgba(var(--fc-accent-rgb),.28);
+  background:rgba(var(--fc-accent-rgb),.12);
+  color:rgba(232,255,250,.92);
+  font-size:9px;
+  font-weight:800;
+  line-height:16px;
+  letter-spacing:.04em;
+}
+.remote-skin-preview{
+  position:relative;
+  width:100%;
+  height:72px;
+  border:0;
+  border-bottom:1px solid rgba(255,255,255,.05);
+  background:linear-gradient(160deg,rgba(30,34,42,.72),rgba(10,12,16,.82));
+  overflow:hidden;
+}
+.remote-skin-name{
+  display:block;
+  padding:10px 11px 4px;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.2px;
+  color:rgba(255,255,255,.9);
+}
+.remote-skin-item.active .remote-skin-name{color:#fff}
+.remote-skin-soon{
+  display:block;
+  padding:0 11px 11px;
+  color:rgba(255,255,255,.38);
+  font-size:10px;
+  line-height:1.35;
+}
+.skin-preview-cube{display:grid;place-items:center}
+.skin-preview-cube .preview-diamond{position:relative;width:46px;height:46px;transform:rotate(45deg)}
+.skin-preview-cube .preview-pad{position:absolute;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.12)}
+.skin-preview-cube .preview-pad.up{top:0;left:50%;width:14px;height:16px;transform:translateX(-50%);border-radius:4px 4px 2px 2px}
+.skin-preview-cube .preview-pad.left{left:0;top:50%;width:16px;height:14px;transform:translateY(-50%);border-radius:4px 2px 2px 4px}
+.skin-preview-cube .preview-pad.right{right:0;top:50%;width:16px;height:14px;transform:translateY(-50%);border-radius:2px 4px 4px 2px}
+.skin-preview-cube .preview-pad.down{bottom:0;left:50%;width:14px;height:16px;transform:translateX(-50%);border-radius:2px 2px 4px 4px}
+.skin-preview-cube .preview-pad.center{width:18px;height:18px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:5px;background:linear-gradient(145deg,rgba(255,255,255,.28),rgba(18,20,26,.95));box-shadow:0 0 12px rgba(255,255,255,.08)}
+.skin-preview-bar{display:flex;align-items:center;gap:8px;padding:0 16px}
+.skin-preview-bar .preview-cover{width:24px;height:24px;border-radius:7px;background:linear-gradient(145deg,rgba(0,245,212,.35),rgba(255,255,255,.08))}
+.skin-preview-bar .preview-lines{flex:1;height:14px;border-radius:6px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.04))}
+.skin-preview-bar .preview-dots{width:34px;height:8px;border-radius:999px;background:rgba(255,255,255,.12)}
+.skin-preview-moon{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;background:radial-gradient(circle at 78% 18%,rgba(190,220,255,.22),transparent 30%),linear-gradient(160deg,rgba(40,54,78,.78),rgba(10,14,24,.9))}
+.skin-preview-moon .preview-disc{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 30% 28%,rgba(255,255,255,.5),rgba(160,190,230,.2) 42%,rgba(20,28,42,.9));box-shadow:0 0 16px rgba(160,200,255,.16)}
+.skin-preview-moon .preview-text{width:46%;height:6px;border-radius:999px;background:rgba(255,255,255,.16)}
+.skin-preview-soon{background:linear-gradient(145deg,rgba(255,255,255,.06),rgba(255,255,255,.015))}
+.skin-preview-soon.alt{background:linear-gradient(145deg,rgba(244,210,138,.1),rgba(255,255,255,.02))}
+.fx-control-note{
+  margin:2px 2px 0;
+  color:rgba(255,255,255,.38);
+  font-size:10.5px;
+  line-height:1.55;
+}
+.fx-control-note b{
+  color:rgba(255,255,255,.72);
+  font-weight:700;
+}
+#fx-control-toggle-grid{margin-bottom:2px}
 #fx-panel .fx-fold{margin-top:10px}
 #fx-panel .fx-fold.open{background:rgba(255,255,255,.026)}
 .lyric-color-row.bg-cover-mode #bg-color-picker{
@@ -2100,7 +2265,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   #top-right{right:12px}
 }
 @media (max-width:520px){
-  .preset-grid,.fx-toggle-grid{grid-template-columns:1fr}
+  .preset-grid,.fx-toggle-grid,.remote-skin-grid{grid-template-columns:1fr}
   .fx-slider{grid-template-columns:74px minmax(0,1fr) 40px 28px;gap:8px;padding:8px}
   .lyric-color-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
@@ -2114,7 +2279,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     <div class="desktop-app-title" aria-hidden="true"></div>
   </div>
   <div class="desktop-window-controls">
-    <button id="dl-center-btn" class="icon-btn" type="button" onclick="toggleDownloadCenter()" title="下载中心" aria-label="下载中心"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4"/><path d="M17 8l-5 5-5-5"/><path d="M12 4.5v8.5"/></svg><span id="dl-center-badge" class="dl-badge" style="display:none"></span></button>
+    <button id="dl-center-btn" class="icon-btn" type="button" onclick="toggleDownloadCenter()" title="下载中心" aria-label="下载中心"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4"/><path d="M17 8l-5 5-5-5"/><path d="M12 4.5v8.5"/></svg><span id="dl-center-badge" class="dl-badge" style="display:none"></span></button>
     <button id="visual-guide-btn" class="icon-btn" type="button" onclick="startVisualGuide({ manual: true })" title="查看使用引导" aria-label="查看使用引导">?</button>
     <button id="update-entry" class="update-entry" type="button" onclick="openUpdatePanel()" title="发现新版本" aria-label="发现新版本">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2570,6 +2735,54 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <div class="fx-slider"><label>背景压缩</label><input id="fx-bgfade" type="range" min="0" max="1.2" step="0.01"><output></output></div>
     </div>
   </div>
+
+  <div class="fx-section-label" id="fx-control-label">音乐遥控器</div>
+  <div class="fx-toggle-grid" id="fx-control-toggle-grid">
+    <div class="fx-toggle" id="t-cubeRemote" onclick="toggleCubeRemote()" title="开启后显示悬浮遥控器，托盘会隐藏"><span>悬浮遥控器</span><span class="dot"></span></div>
+  </div>
+  <div class="fx-section-label" id="fx-control-skin-label">选择样式</div>
+  <div id="fx-control-remote" class="remote-skin-grid" role="listbox" aria-label="遥控器样式">
+    <button type="button" class="remote-skin-item" data-remote-skin="cube" role="option" aria-selected="true">
+      <div class="remote-skin-preview skin-preview-cube" aria-hidden="true">
+        <span class="preview-diamond">
+          <span class="preview-pad up"></span>
+          <span class="preview-pad left"></span>
+          <span class="preview-pad center"></span>
+          <span class="preview-pad right"></span>
+          <span class="preview-pad down"></span>
+        </span>
+      </div>
+      <span class="remote-skin-name">魔方遥控器</span>
+    </button>
+    <button type="button" class="remote-skin-item" data-remote-skin="bar" role="option" aria-selected="false">
+      <div class="remote-skin-preview skin-preview-bar" aria-hidden="true">
+        <span class="preview-cover"></span>
+        <span class="preview-lines"></span>
+        <span class="preview-dots"></span>
+      </div>
+      <span class="remote-skin-name">条形遥控器</span>
+    </button>
+    <button type="button" class="remote-skin-item" data-remote-skin="moon" role="option" aria-selected="false">
+      <div class="remote-skin-preview skin-preview-moon" aria-hidden="true">
+        <span class="preview-disc"></span>
+        <span class="preview-text"></span>
+      </div>
+      <span class="remote-skin-name">星稀月白</span>
+    </button>
+    <button type="button" class="remote-skin-item is-soon" data-remote-skin="azure" role="option" aria-selected="false" disabled>
+      <span class="remote-skin-badge">NEW</span>
+      <div class="remote-skin-preview skin-preview-soon" aria-hidden="true"></div>
+      <span class="remote-skin-name">远山蓝黛</span>
+      <span class="remote-skin-soon">敬请期待</span>
+    </button>
+    <button type="button" class="remote-skin-item is-soon" data-remote-skin="gramo" role="option" aria-selected="false" disabled>
+      <span class="remote-skin-badge">NEW</span>
+      <div class="remote-skin-preview skin-preview-soon alt" aria-hidden="true"></div>
+      <span class="remote-skin-name">复古留声机</span>
+      <span class="remote-skin-soon">敬请期待</span>
+    </button>
+  </div>
+  <p class="fx-control-note" id="fx-control-note">可切换多种悬浮遥控器外观。开启后托盘会隐藏，可用遥控器打开主程序。当前：<b id="setting-remote-skin-label">魔方遥控器</b></p>
 
   <div class="fx-actions">
     <button class="fx-mini-btn" onclick="resetFx()">恢复默认</button>
@@ -3225,6 +3438,7 @@ function installStartupLongTaskObserver() {
 }
 installStartupLongTaskObserver();
 var queueViewTab = 'queue', playMode = 'loop', miniQueueOpen = false, commentPanelOpen = false;
+var shufflePlayHistory = [];
 var miniQueueRenderSeq = 0, queueRenderSeq = 0, playlistRenderSeq = 0, commentPanelSeq = 0;
 var commentCountCache = {};
 var queuePanelDirty = false;
@@ -16696,12 +16910,7 @@ function nextAutoQueueIndexForSmartCrossfade() {
   if (!playQueue.length || currentIdx < 0) return -1;
   if (playMode === 'single') return -1;
   if (playQueue.length < 2) return -1;
-  if (playMode === 'shuffle') {
-    var nextShuffle = currentIdx;
-    for (var i = 0; i < 5 && nextShuffle === currentIdx; i++) nextShuffle = Math.floor(Math.random() * playQueue.length);
-    return nextShuffle === currentIdx ? ((currentIdx + 1) % playQueue.length) : nextShuffle;
-  }
-  return (currentIdx + 1) % playQueue.length;
+  return pickNextQueueIndex(currentIdx);
 }
 function lyricEndForSmartCrossfade(line, nextLine) {
   if (!line) return 0;
@@ -16945,6 +17154,7 @@ function handoffSmartCrossfade(state, reason) {
   // false and playQueueAt must fall back to a normal cover load instead of
   // skipping it — otherwise the cover stays stuck on the previous track.
   var coverCommitted = commitSmartCoverTextureForHandoff(playQueue[state.nextIdx]);
+  if (playMode === 'shuffle') rememberShufflePlayHistory(currentIdx);
   currentIdx = state.nextIdx;
   updateSmartAudioDebugState(reason || 'handoff');
   Promise.resolve(playQueueAt(state.nextIdx, {
@@ -22370,14 +22580,58 @@ function allowSmartTransitionForManualTrackSwitch(opts) {
   resetSmartCoverTransition();
   return false;
 }
+function clearShufflePlayHistory() {
+  shufflePlayHistory = [];
+}
+function rememberShufflePlayHistory(fromIdx) {
+  var n = playQueue.length;
+  fromIdx = Number(fromIdx);
+  if (!n || !Number.isFinite(fromIdx) || fromIdx < 0 || fromIdx >= n) return;
+  if (shufflePlayHistory.length && shufflePlayHistory[shufflePlayHistory.length - 1] === fromIdx) return;
+  shufflePlayHistory.push(fromIdx);
+  if (shufflePlayHistory.length > 200) shufflePlayHistory.splice(0, shufflePlayHistory.length - 200);
+}
+function pickNextQueueIndex(fromIdx) {
+  var n = playQueue.length;
+  if (!n) return -1;
+  fromIdx = Number(fromIdx);
+  if (!Number.isFinite(fromIdx) || fromIdx < 0) fromIdx = currentIdx;
+  // 随机模式只决定“下一首”；避免抽到当前曲
+  if (playMode === 'shuffle') {
+    if (n === 1) return 0;
+    var nextShuffle = fromIdx;
+    for (var i = 0; i < 8 && nextShuffle === fromIdx; i++) {
+      nextShuffle = Math.floor(Math.random() * n);
+    }
+    if (nextShuffle === fromIdx) nextShuffle = (fromIdx + 1) % n;
+    return nextShuffle;
+  }
+  // 单曲循环手动点下一首时仍按队列前进；自动连播由 ended 分支处理
+  return (Math.max(0, fromIdx) + 1) % n;
+}
+function pickPrevQueueIndex(fromIdx) {
+  var n = playQueue.length;
+  if (!n) return -1;
+  fromIdx = Number(fromIdx);
+  if (!Number.isFinite(fromIdx) || fromIdx < 0) fromIdx = currentIdx;
+  // 随机模式：优先回到刚听过的上一首；没有历史时再回退队列顺序
+  if (playMode === 'shuffle' && shufflePlayHistory.length) {
+    while (shufflePlayHistory.length) {
+      var hist = Number(shufflePlayHistory.pop());
+      if (Number.isFinite(hist) && hist >= 0 && hist < n && hist !== fromIdx) return hist;
+    }
+  }
+  return (Math.max(0, fromIdx) - 1 + n) % n;
+}
 function nextTrack(opts) {
   opts = opts || {};
   if (!playQueue.length) return;
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
   var fromIdx = currentIdx;
-  if (playMode === 'shuffle') currentIdx = Math.floor(Math.random() * playQueue.length);
-  else currentIdx = (currentIdx + 1) % playQueue.length;
+  if (playMode === 'shuffle') rememberShufflePlayHistory(fromIdx);
+  currentIdx = pickNextQueueIndex(fromIdx);
+  if (currentIdx < 0) return;
   var allowSmartTransition = allowSmartTransitionForManualTrackSwitch(opts);
   Promise.resolve(playQueueAt(currentIdx, {
     smartTransition: allowSmartTransition && opts.autoAdvance === true && fromIdx >= 0 && playQueue.length > 1,
@@ -22391,7 +22645,8 @@ function prevTrack(opts) {
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
   var fromIdx = currentIdx;
-  currentIdx = (currentIdx - 1 + playQueue.length) % playQueue.length;
+  currentIdx = pickPrevQueueIndex(fromIdx);
+  if (currentIdx < 0) return;
   var allowSmartTransition = allowSmartTransitionForManualTrackSwitch(opts);
   Promise.resolve(playQueueAt(currentIdx, {
     smartTransition: allowSmartTransition && opts.autoAdvance === true && fromIdx >= 0 && playQueue.length > 1,
@@ -22405,6 +22660,7 @@ function shuffleQueue() {
     var j = Math.floor(Math.random() * (i + 1));
     var tmp = playQueue[i]; playQueue[i] = playQueue[j]; playQueue[j] = tmp;
   }
+  clearShufflePlayHistory();
   currentIdx = 0; safeRenderQueuePanel('shuffle-queue');
   showToast('队列已随机');
   safeShelfRebuild('shuffle-queue');
@@ -22412,6 +22668,7 @@ function shuffleQueue() {
 function clearQueue() {
   if (smartCrossfadeState) cancelSmartCrossfade('clear-queue');
   playQueue = []; currentIdx = -1;
+  clearShufflePlayHistory();
   safeRenderQueuePanel('clear-queue');
   safeShelfRebuild('clear-queue');
   updateCustomCoverButton();
@@ -22481,6 +22738,7 @@ function cyclePlayMode() {
   var modes = ['loop', 'shuffle', 'single'];
   var idx = modes.indexOf(playMode);
   playMode = modes[(idx + 1) % modes.length];
+  clearShufflePlayHistory();
   updatePlayModeButton(true);
   savePlaybackSession('play-mode');
   showToast('播放模式: ' + playModeLabel(playMode));
@@ -23450,13 +23708,33 @@ async function ensureFreshLocalPlaybackUrl(song) {
   return song;
 }
 function playLocalLibrarySong(index) {
-  var songs = localLibraryPlaybackSongs();
-  if (!songs.length || !songs[index]) return;
+  index = Number(index);
+  var songs = [];
+  var playIndex = -1;
+  var hadSearch = !!localLibrarySearchQuery;
+  // 本地库搜索态：播放队列应与当前搜索结果一致，而不是整库
+  if (hadSearch) {
+    var entries = localLibrarySearchEntries();
+    songs = entries.map(function(entry){ return cloneSong(entry.song); });
+    playIndex = entries.findIndex(function(entry){ return entry.index === index; });
+    if (playIndex < 0 && songs[index]) playIndex = index;
+  } else {
+    songs = localLibraryPlaybackSongs();
+    playIndex = index;
+  }
+  if (!songs.length || playIndex < 0 || !songs[playIndex]) return;
   playQueue = songs;
-  currentIdx = index;
+  currentIdx = playIndex;
+  // 点播放后清空本地库搜索，回到文件夹视图
+  if (hadSearch) {
+    localLibrarySearchQuery = '';
+    var searchInput = document.getElementById('local-library-search-input');
+    if (searchInput) searchInput.value = '';
+    renderLocalLibraryPanel();
+  }
   safeRenderQueuePanel('local-library-play', { scrollCurrent: true, resetLimit: true });
   safeSwitchPlaylistTab('queue', 'local-library-play');
-  playQueueAt(index).catch(function(e){ console.warn('[LocalLibraryPlay]', e); });
+  playQueueAt(playIndex).catch(function(e){ console.warn('[LocalLibraryPlay]', e); });
 }
 function playLocalFolderPlaylist(folderIndex, trackIndex) {
   var folder = localFolderPlaylists[Number(folderIndex) || 0];
@@ -26288,7 +26566,7 @@ function ensureFxSliderResetButton(id, key) {
 }
 var fxPanelTab = 'presets';
 function setFxPanelTab(tab) {
-  var allowed = { presets:1, appearance:1, lyrics:1, motion:1, sound:1, advanced:1 };
+  var allowed = { presets:1, appearance:1, lyrics:1, motion:1, sound:1, advanced:1, control:1 };
   fxPanelTab = allowed[tab] ? tab : 'presets';
   var panel = document.getElementById('fx-panel');
   if (panel) panel.setAttribute('data-active-tab', fxPanelTab);
@@ -26313,6 +26591,8 @@ function fxPanelTargetForNode(node, current) {
   if (id === 'fx-audio-fold' || id === 'audio-preset-seg' || id === 'audio-eq-grid') return 'sound';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
   if (id === 'fx-advanced' || node.classList.contains('fx-actions')) return 'advanced';
+  if (id === 'fx-control-remote' || id === 'fx-control-label' || id === 'fx-control-skin-label' || id === 'fx-control-toggle-grid' || id === 'fx-control-note' || id === 't-cubeRemote') return 'control';
+  if (node.classList && (node.classList.contains('remote-skin-grid') || node.classList.contains('fx-control-note'))) return 'control';
   if (id === 'wallpaper-appearance-grid') return 'appearance';
   if (node.classList.contains('lyric-color-row') || node.classList.contains('cover-color-pop') || node.classList.contains('color-lab-pop') || node.classList.contains('cover-color-loupe')) return 'appearance';
   if (inputId === 'fx-bgopacity' || inputId === 'fx-wallpaperopacity' || inputId === 'fx-glassaberration') return 'appearance';
@@ -26335,7 +26615,8 @@ function organizeFxPanel() {
     ['lyrics', '\u6b4c\u8bcd'],
     ['motion', '\u52a8\u6001'],
     ['sound', '\u58f0\u97f3'],
-    ['advanced', '\u9ad8\u7ea7']
+    ['advanced', '\u9ad8\u7ea7'],
+    ['control', '\u63a7\u5236']
   ];
   var tabs = document.createElement('div');
   tabs.className = 'fx-panel-tabs';
@@ -31051,10 +31332,213 @@ function pushTrayPlaybackState() {
     api.updateTrayPlayback({
       title: meta.title || '未播放',
       artist: meta.artist || '',
+      cover: (typeof overlaySafeCoverUrl === 'function' ? overlaySafeCoverUrl(meta.cover, 160) : (meta.cover || '')),
       playing: !!playing,
-      volume: clampRange(Number(targetVolume) || 0, 0, 1)
+      volume: clampRange(Number(targetVolume) || 0, 0, 1),
+      muted: Number(targetVolume) <= 0.001
     }).catch(function(e){ console.warn('tray playback update failed:', e); });
+    pushCubeRemoteState();
   }, 80);
+}
+var cubeRemoteEnabled = false;
+var cubeRemoteSkin = 'cube';
+var cubeRemoteOperationToken = 0;
+var CUBE_REMOTE_SKINS = [
+  { key: 'cube', label: '魔方遥控器' },
+  { key: 'bar', label: '条形遥控器' },
+  { key: 'moon', label: '星稀月白' }
+];
+function clampCubeRemoteSkin(value) {
+  var next = String(value || 'cube');
+  return CUBE_REMOTE_SKINS.some(function(item){ return item.key === next; }) ? next : 'cube';
+}
+function cubeRemoteSkinLabel(value) {
+  var key = clampCubeRemoteSkin(value == null ? cubeRemoteSkin : value);
+  var found = CUBE_REMOTE_SKINS.find(function(item){ return item.key === key; });
+  return found ? found.label : CUBE_REMOTE_SKINS[0].label;
+}
+function overlaySafeCoverUrl(url, size) {
+  var raw = String(url || '').trim();
+  if (!raw) return '';
+  // 给外链封面补尺寸，再走本机代理；遥控器 CSP 只允许 127.0.0.1 / self / data / blob
+  if (size && typeof coverUrlWithSize === 'function' && /^https?:\/\//i.test(raw) && !/^https?:\/\/127\.0\.0\.1(?::\d+)?\//i.test(raw)) {
+    raw = coverUrlWithSize(raw, size) || raw;
+  }
+  if (typeof isInlineCoverSrc === 'function' && isInlineCoverSrc(raw)) return raw;
+  if (/^\/api\//i.test(raw) || /^https?:\/\/127\.0\.0\.1(?::\d+)?\//i.test(raw)) return raw;
+  if (typeof coverProxySrc === 'function') {
+    var proxied = coverProxySrc(raw);
+    if (proxied) return proxied;
+  }
+  return '';
+}
+function cubeRemotePlaybackPayload() {
+  var meta = currentDesktopSongMeta();
+  var cover = '';
+  try {
+    var song = playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
+    song = song || (typeof currentLyricSong === 'function' ? currentLyricSong() : null) || null;
+    if (song && typeof songCoverSrc === 'function') cover = songCoverSrc(song, 160) || song.cover || '';
+    else cover = meta.cover || '';
+  } catch (_e) {
+    cover = meta.cover || '';
+  }
+  return {
+    enabled: cubeRemoteEnabled,
+    skin: cubeRemoteSkin,
+    title: meta.title || '未播放',
+    artist: meta.artist || '',
+    cover: overlaySafeCoverUrl(cover, 160),
+    playing: !!playing,
+    volume: clampRange(Number(targetVolume) || 0, 0, 1),
+    muted: Number(targetVolume) <= 0.001,
+    lyricsEnabled: !!(fx && fx.desktopLyrics)
+  };
+}
+function syncCubeRemoteControls() {
+  var toggle = document.getElementById('t-cubeRemote');
+  if (toggle) toggle.classList.toggle('on', !!cubeRemoteEnabled);
+  var label = document.getElementById('setting-remote-skin-label');
+  if (label) label.textContent = cubeRemoteSkinLabel();
+  document.querySelectorAll('[data-remote-skin]').forEach(function(button){
+    var selected = button.dataset.remoteSkin === cubeRemoteSkin && !button.disabled;
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+    button.classList.toggle('active', selected);
+  });
+}
+function toggleCubeRemote() {
+  setCubeRemoteEnabled(!cubeRemoteEnabled);
+}
+// 主进程 desktop-behavior.json 是唯一真源；前端只镜像，不再写 localStorage 开关
+function mirrorCubeRemoteState(state) {
+  state = state || {};
+  if (Object.prototype.hasOwnProperty.call(state, 'enabled')) {
+    cubeRemoteEnabled = !!state.enabled;
+  }
+  if (state.skin != null) {
+    cubeRemoteSkin = clampCubeRemoteSkin(state.skin);
+  }
+  syncCubeRemoteControls();
+  if (cubeRemoteEnabled) pushCubeRemoteState();
+}
+function pushCubeRemoteState() {
+  if (!cubeRemoteEnabled) return;
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.updateCubeRemote !== 'function') return;
+  api.updateCubeRemote(cubeRemotePlaybackPayload()).catch(function(e){
+    console.warn('cube remote update failed:', e);
+  });
+}
+async function setCubeRemoteEnabled(next, opts) {
+  opts = opts || {};
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.setCubeRemoteEnabled !== 'function') {
+    cubeRemoteEnabled = false;
+    syncCubeRemoteControls();
+    if (!opts.quiet) showToast('音乐遥控器仅在桌面端可用');
+    return;
+  }
+  var value = !!next;
+  var token = ++cubeRemoteOperationToken;
+  // 乐观更新 UI，最终以主进程回执/广播为准
+  cubeRemoteEnabled = value;
+  syncCubeRemoteControls();
+  try {
+    var result = await api.setCubeRemoteEnabled(value, cubeRemotePlaybackPayload());
+    if (token !== cubeRemoteOperationToken) return;
+    if (result && result.ok === false) throw new Error(result.error || 'CUBE_REMOTE_FAILED');
+    if (result && result.skin) cubeRemoteSkin = clampCubeRemoteSkin(result.skin);
+    cubeRemoteEnabled = !!(result && Object.prototype.hasOwnProperty.call(result, 'enabled') ? result.enabled : value);
+    syncCubeRemoteControls();
+    if (cubeRemoteEnabled) pushCubeRemoteState();
+    if (!opts.quiet) showToast(cubeRemoteEnabled ? (cubeRemoteSkinLabel() + '已开启（托盘已隐藏）') : '音乐遥控器已关闭');
+  } catch (error) {
+    if (token !== cubeRemoteOperationToken) return;
+    cubeRemoteEnabled = false;
+    syncCubeRemoteControls();
+    if (!opts.quiet) showToast(error && error.message ? error.message : '音乐遥控器切换失败');
+  }
+}
+async function setCubeRemoteSkin(next, opts) {
+  opts = opts || {};
+  var value = clampCubeRemoteSkin(next);
+  if (value === cubeRemoteSkin) {
+    syncCubeRemoteControls();
+    return;
+  }
+  var prev = cubeRemoteSkin;
+  cubeRemoteSkin = value;
+  syncCubeRemoteControls();
+  var api = getDesktopWindowApi();
+  if (!api) return;
+  try {
+    if (cubeRemoteEnabled && typeof api.updateCubeRemote === 'function') {
+      var result = await api.updateCubeRemote(cubeRemotePlaybackPayload());
+      if (result && result.ok === false) throw new Error(result.error || 'CUBE_SKIN_FAILED');
+      if (result && result.skin) cubeRemoteSkin = clampCubeRemoteSkin(result.skin);
+    } else if (typeof api.setDesktopBehavior === 'function') {
+      var saved = await api.setDesktopBehavior({ cubeRemoteSkin: cubeRemoteSkin });
+      if (saved && saved.cubeRemoteSkin) cubeRemoteSkin = clampCubeRemoteSkin(saved.cubeRemoteSkin);
+    }
+    syncCubeRemoteControls();
+    if (!opts.quiet) showToast('已切换为' + cubeRemoteSkinLabel());
+  } catch (error) {
+    cubeRemoteSkin = prev;
+    syncCubeRemoteControls();
+    if (!opts.quiet) showToast(error && error.message ? error.message : '切换样式失败');
+  }
+}
+function handleCubeRemoteCommand(payload) {
+  payload = payload || {};
+  var cmd = payload.command;
+  if (cmd === 'toggle-play') togglePlay();
+  else if (cmd === 'next') nextTrack();
+  else if (cmd === 'previous') prevTrack();
+  else if (cmd === 'set-volume') setVolume(Number(payload.value) || 0, false);
+  else if (cmd === 'mute') toggleMute();
+  else if (cmd === 'toggle-lyrics') {
+    if (typeof toggleFx === 'function') toggleFx('desktopLyrics');
+  }
+}
+async function hydrateCubeRemoteFromMain() {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.getDesktopBehavior !== 'function') {
+    cubeRemoteEnabled = false;
+    syncCubeRemoteControls();
+    return;
+  }
+  try {
+    var behavior = await api.getDesktopBehavior();
+    cubeRemoteEnabled = !!(behavior && behavior.cubeRemote);
+    cubeRemoteSkin = clampCubeRemoteSkin(behavior && behavior.cubeRemoteSkin);
+    if (behavior && typeof behavior === 'object') {
+      desktopBehavior = Object.assign(desktopBehavior || {}, behavior);
+    }
+  } catch (e) {
+    console.warn('cube remote hydrate failed:', e);
+    cubeRemoteEnabled = false;
+  }
+  syncCubeRemoteControls();
+  if (cubeRemoteEnabled) pushCubeRemoteState();
+}
+function bindCubeRemoteController() {
+  if (bindCubeRemoteController.bound) return;
+  bindCubeRemoteController.bound = true;
+  document.querySelectorAll('[data-remote-skin]').forEach(function(button){
+    button.addEventListener('click', function(){
+      if (button.disabled) return;
+      setCubeRemoteSkin(button.dataset.remoteSkin);
+    });
+  });
+  var api = getDesktopWindowApi();
+  if (api && typeof api.onCubeRemoteCommand === 'function') api.onCubeRemoteCommand(handleCubeRemoteCommand);
+  if (api && typeof api.onCubeRemoteEnabledState === 'function') {
+    api.onCubeRemoteEnabledState(function(state){
+      // 只镜像主进程状态，不再反向 set-enabled，避免双开
+      mirrorCubeRemoteState(state || {});
+    });
+  }
+  hydrateCubeRemoteFromMain();
 }
 function bindTrayCommands() {
   var api = getDesktopWindowApi();
@@ -31271,6 +31755,7 @@ function applyDesktopLyricsState(force) {
     api.setDesktopLyricsEnabled(!!payload.enabled, payload).catch(function(e){ console.warn('desktop lyrics state failed:', e); });
   }
   pushDesktopLyricsState(!!force);
+  if (typeof pushCubeRemoteState === 'function') pushCubeRemoteState();
 }
 function pushWallpaperState(force) {
   var api = getDesktopWindowApi();
@@ -31435,6 +31920,7 @@ bindVolumeControls();
 bindPlaybackTuningControls();
 loadDesktopBehaviorSettings();
 bindTrayCommands();
+bindCubeRemoteController();
 pushTrayPlaybackState();
 initControlGlassSurface();
 bindPlayerControlAnimations();

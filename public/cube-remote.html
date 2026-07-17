@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>音乐遥控器</title>
+  <link rel="stylesheet" href="/cube-remote.css" />
+</head>
+<body data-skin="cube">
+  <!-- 皮肤：魔方遥控器 -->
+  <div id="skin-cube" class="skin skin-cube" hidden>
+    <div class="cube diamond-cube" aria-label="魔方遥控器">
+      <div class="cube-stage">
+        <button type="button" class="pad pad-up" data-cmd="toggle-main" title="打开/隐藏主程序" aria-label="打开/隐藏主程序">
+          <svg class="main-show brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9h16M7 7h.1M10 7h.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <svg class="main-hide brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 13h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="pad pad-left" data-cmd="previous" title="上一首" aria-label="上一首">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2.4v12H6zm3.9 6 8.1 5.8V6.2Z"/></svg>
+        </button>
+        <button type="button" class="pad pad-right" data-cmd="next" title="下一首" aria-label="下一首">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 17.8 8.1-5.8L6 6.2zm9.6-11.8H18v12h-2.4z"/></svg>
+        </button>
+        <button type="button" class="pad pad-down" data-cmd="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 20 3-3.5 3 3.5z"/></svg>
+        </button>
+        <div class="pad-center center-panel">
+          <button type="button" class="center-media play-btn" data-cmd="toggle-play" title="播放/暂停" aria-label="播放/暂停">
+            <img class="cover" alt="" draggable="false" />
+            <span class="play-veil"></span>
+            <svg class="symbol play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>
+            <svg class="symbol pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+          </button>
+          <div class="center-volume">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5l4.5 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14.5 8.5a5 5 0 0 1 0 7M17 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <input class="cube-volume" type="range" min="0" max="1" step="0.01" value="0.85" aria-label="音量" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 皮肤：条形遥控器 -->
+  <div id="skin-bar" class="skin skin-bar" hidden>
+    <div class="bar" aria-label="条形遥控器">
+      <button type="button" class="bar-cover play-btn" data-cmd="toggle-play" title="播放/暂停" aria-label="播放/暂停">
+        <img class="cover" alt="" draggable="false" />
+        <span class="play-veil"></span>
+        <svg class="symbol play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>
+        <svg class="symbol pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+      </button>
+      <div class="bar-meta" data-drag-handle="1">
+        <div class="bar-title" data-field="title">未播放</div>
+        <div class="bar-artist" data-field="artist"></div>
+      </div>
+      <div class="bar-actions">
+        <button type="button" class="bar-btn" data-cmd="previous" title="上一首" aria-label="上一首">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6Z"/></svg>
+        </button>
+        <button type="button" class="bar-btn" data-cmd="next" title="下一首" aria-label="下一首">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 18 8.5-6L6 6zm10-12h2v12h-2z"/></svg>
+        </button>
+        <button type="button" class="bar-btn lyrics-btn" data-cmd="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词">
+          <span class="lyrics-glyph" aria-hidden="true">词</span>
+        </button>
+        <button type="button" class="bar-btn open-btn" data-cmd="toggle-main" title="打开/隐藏主程序" aria-label="打开/隐藏主程序">
+          <svg class="main-show" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><path d="M8 9h8M8 12h5"/></svg>
+          <svg class="main-hide" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><path d="M9 12h6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 皮肤：星稀月白 -->
+  <div id="skin-moon" class="skin skin-moon" hidden>
+    <div class="moon" aria-label="星稀月白">
+      <div class="moon-glow" aria-hidden="true"></div>
+      <button type="button" class="moon-cover play-btn" data-cmd="toggle-play" title="播放/暂停" aria-label="播放/暂停">
+        <img class="cover" alt="" draggable="false" />
+        <span class="play-veil"></span>
+        <svg class="symbol play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>
+        <svg class="symbol pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+      </button>
+      <div class="moon-body" data-drag-handle="1">
+        <div class="moon-title" data-field="title">未播放</div>
+        <div class="moon-artist" data-field="artist"></div>
+        <div class="moon-actions">
+          <button type="button" class="moon-btn" data-cmd="previous" title="上一首" aria-label="上一首">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6Z"/></svg>
+          </button>
+          <button type="button" class="moon-btn open-btn" data-cmd="toggle-main" title="打开/隐藏主程序" aria-label="打开/隐藏主程序">
+            <svg class="main-show" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><path d="M8 9h8M8 12h5"/></svg>
+            <svg class="main-hide" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><path d="M9 12h6"/></svg>
+          </button>
+          <button type="button" class="moon-btn" data-cmd="next" title="下一首" aria-label="下一首">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 18 8.5-6L6 6zm10-12h2v12h-2z"/></svg>
+          </button>
+          <button type="button" class="moon-btn lyrics-btn" data-cmd="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词">
+            <span class="lyrics-glyph" aria-hidden="true">词</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/cube-remote.js"></script>
+</body>
+</html>
+

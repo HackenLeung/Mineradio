@@ -18,6 +18,20 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getDesktopBehavior: () => ipcRenderer.invoke('mineradio-desktop-behavior-get'),
   setDesktopBehavior: (payload) => ipcRenderer.invoke('mineradio-desktop-behavior-set', payload || {}),
   updateTrayPlayback: (payload) => ipcRenderer.invoke('mineradio-tray-playback-update', payload || {}),
+  setCubeRemoteEnabled: (enabled, payload) => ipcRenderer.invoke('mineradio-cube-remote-set-enabled', !!enabled, payload || {}),
+  updateCubeRemote: (payload) => ipcRenderer.invoke('mineradio-cube-remote-update', payload || {}),
+  onCubeRemoteCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-cube-remote-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-cube-remote-command', listener);
+  },
+  onCubeRemoteEnabledState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-cube-remote-enabled-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-cube-remote-enabled-state', listener);
+  },
   onTrayCommand: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});

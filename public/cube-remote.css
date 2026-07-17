@@ -1,0 +1,413 @@
+/* 音乐遥控器 · 多皮肤（cube / bar / moon） */
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Inter, Arial, sans-serif;
+  color: #f3f6fb;
+}
+
+body {
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: opacity .18s cubic-bezier(.16,1,.3,1);
+}
+body.show { opacity: 1; }
+
+.skin { display: none; }
+body[data-skin="cube"] #skin-cube,
+body[data-skin="bar"] #skin-bar,
+body[data-skin="moon"] #skin-moon {
+  display: block;
+}
+
+button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+/* ========== 共用播放按钮状态 ========== */
+.play-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.play-btn .cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .22s ease, transform .22s ease;
+}
+.play-btn.has-cover .cover { opacity: 1; }
+.play-btn:hover.has-cover .cover { transform: scale(1.05); }
+.play-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.46)),
+    radial-gradient(circle at 50% 40%, transparent 18%, rgba(0,0,0,.18) 100%);
+}
+.play-btn .symbol {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  fill: #fff;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.35));
+}
+.play-btn .pause { display: none; }
+.play-btn.is-playing .play { display: none; }
+.play-btn.is-playing .pause { display: block; }
+
+.main-hide { display: none; }
+.open-btn.main-visible .main-show,
+.pad-up.main-visible .main-show { display: none; }
+.open-btn.main-visible .main-hide,
+.pad-up.main-visible .main-hide { display: block; }
+
+.lyrics-glyph {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.lyrics-btn.active,
+.pad-down.active {
+  color: #82fff0;
+}
+
+/* ========== 魔方（菱形十字） ========== */
+.cube.diamond-cube {
+  --cube: 132px;
+  --pad: 43px;
+  --center: 54px;
+  position: relative;
+  width: var(--cube);
+  height: var(--cube);
+  box-sizing: border-box;
+  filter: drop-shadow(0 5px 8px rgba(0,0,0,.18));
+}
+.cube-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.pad {
+  position: absolute;
+  width: var(--pad);
+  height: var(--pad);
+  border: 1px solid rgba(255,255,255,.08);
+  color: rgba(235,240,242,.72);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(145deg, rgba(49,56,59,.88), rgba(29,35,38,.82));
+  box-shadow: inset 0 1px rgba(255,255,255,.06);
+  backdrop-filter: blur(12px) saturate(.8);
+  -webkit-backdrop-filter: blur(12px) saturate(.8);
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity .15s ease, background .14s ease, color .14s ease, transform .14s ease;
+}
+.cube:hover .pad,
+.cube:focus-within .pad { opacity: 1; }
+.pad:hover {
+  color: rgba(255,255,255,.92);
+  background: linear-gradient(145deg, rgba(64,72,75,.92), rgba(36,42,45,.88));
+}
+.pad:active { transform: rotate(45deg) scale(.96); }
+.pad svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  transform: rotate(-45deg);
+}
+.pad .brand-mark { width: 15px; height: 15px; }
+
+.pad-up {
+  top: 9px;
+  left: 50%;
+  margin-left: calc(var(--pad) / -2);
+  z-index: 1;
+}
+
+.pad-left {
+  top: 50%;
+  left: 9px;
+  margin-top: calc(var(--pad) / -2);
+  z-index: 1;
+}
+
+.pad-right {
+  top: 50%;
+  right: 9px;
+  margin-top: calc(var(--pad) / -2);
+  z-index: 1;
+}
+
+.pad-down {
+  left: 50%;
+  bottom: 9px;
+  margin-left: calc(var(--pad) / -2);
+  z-index: 1;
+}
+.pad-down.active {
+  color: rgba(255,255,255,.95);
+  background: linear-gradient(145deg, rgba(66,75,78,.94), rgba(39,46,49,.9));
+}
+
+.pad-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--center);
+  height: var(--center);
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  overflow: hidden;
+  border: 1px solid rgba(220,225,226,.34);
+  background: rgba(8,10,11,.78);
+  box-shadow:
+    0 5px 12px rgba(0,0,0,.25),
+    inset 0 0 18px rgba(0,0,0,.24);
+  box-sizing: border-box;
+}
+.center-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.center-media .play-veil {
+  background: linear-gradient(180deg, rgba(0,0,0,.06), rgba(0,0,0,.42));
+  opacity: .08;
+  transition: opacity .15s ease;
+}
+.cube:hover .center-media .play-veil,
+.cube:focus-within .center-media .play-veil { opacity: .72; }
+.center-media .symbol {
+  width: 15px;
+  height: 15px;
+  margin-top: -7px;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.center-volume {
+  position: absolute;
+  z-index: 3;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: rgba(255,255,255,.86);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.7));
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.cube:hover .center-media .symbol,
+.cube:hover .center-volume,
+.cube:focus-within .center-media .symbol,
+.cube:focus-within .center-volume { opacity: 1; }
+.center-volume svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.cube-volume {
+  width: 100%;
+  height: 8px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.cube-volume::-webkit-slider-runnable-track {
+  height: 2px;
+  background: rgba(255,255,255,.92);
+}
+.cube-volume::-webkit-slider-thumb {
+  width: 4px;
+  height: 4px;
+  margin-top: -1px;
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+  background: #fff;
+  box-shadow: 0 0 2px rgba(0,0,0,.6);
+}
+
+/* ========== 条形 ========== */
+.bar {
+  display: grid;
+  grid-template-columns: 48px minmax(0,1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 296px;
+  height: 64px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(160deg, rgba(28,32,40,.94), rgba(10,12,16,.96));
+  box-shadow: 0 14px 36px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.08);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  box-sizing: border-box;
+}
+.bar-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(18,20,26,.92);
+  box-shadow: 0 8px 18px rgba(0,0,0,.28);
+  flex: 0 0 auto;
+}
+.bar-meta { min-width: 0; }
+.bar-title,
+.bar-artist {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bar-title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.bar-artist {
+  margin-top: 3px;
+  color: rgba(255,255,255,.48);
+  font-size: 11px;
+}
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: rgba(245,248,255,.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+.bar-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.bar-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  transform: translateY(-1px);
+}
+.bar-btn:active { transform: scale(.96); }
+.bar-btn.lyrics-btn.active {
+  color: #82fff0;
+  background: rgba(0,245,212,.1);
+}
+
+/* ========== 星稀月白 ========== */
+.moon {
+  position: relative;
+  width: 220px;
+  padding: 14px;
+  border-radius: 24px;
+  border: 1px solid rgba(210,228,255,.2);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255,255,255,.22), transparent 28%),
+    linear-gradient(165deg, rgba(236,244,255,.18), rgba(18,28,48,.88) 42%, rgba(8,12,22,.94));
+  box-shadow: 0 18px 42px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.16);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  box-sizing: border-box;
+}
+.moon-glow {
+  position: absolute;
+  inset: -18% -8% auto auto;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(190,220,255,.35), transparent 68%);
+  pointer-events: none;
+}
+.moon-cover {
+  width: 100%;
+  height: 120px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(12,18,28,.9);
+  box-shadow: 0 12px 28px rgba(0,0,0,.28);
+}
+.moon-body { margin-top: 12px; }
+.moon-title {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.moon-artist {
+  margin-top: 4px;
+  color: rgba(230,240,255,.55);
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.moon-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+.moon-btn {
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.05);
+  color: rgba(245,248,255,.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease, color .16s ease;
+}
+.moon-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.moon-btn:hover {
+  color: #fff;
+  border-color: rgba(180,210,255,.28);
+  background: rgba(255,255,255,.1);
+  transform: translateY(-1px);
+}
+.moon-btn:active { transform: scale(.96); }
+.moon-btn.lyrics-btn.active {
+  color: #b9e7ff;
+  border-color: rgba(150,210,255,.35);
+  background: rgba(120,180,255,.12);
+}
+
+body.dragging { cursor: move; }
+
+@media (prefers-reduced-motion: reduce) {
+  body, .pad, .play-btn, .play-btn .cover, .bar-btn, .moon-btn { transition: none !important; }
+}
