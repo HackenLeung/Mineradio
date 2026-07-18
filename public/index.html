@@ -2613,14 +2613,14 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
       </div>
-      <div class="fx-section-label">智能过渡画面</div>
+      <div class="fx-section-label">智能过渡</div>
       <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
-        <button data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')">镜面</button>
-        <button data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')">频谱</button>
-        <button data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')">方块</button>
-        <button data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')">右滑</button>
-        <button data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
-        <button data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
+        <button data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')" title="智能过渡画面：镜面">镜面</button>
+        <button data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')" title="智能过渡画面：频谱">频谱</button>
+        <button data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')" title="智能过渡画面：方块">方块</button>
+        <button data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')" title="智能过渡画面：右滑">右滑</button>
+        <button data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')" title="智能过渡画面：随机">随机</button>
+        <button data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')" title="关闭智能过渡（含预载交接）">关闭</button>
       </div>
       <div class="fx-section-label">桌面 / 壁纸</div>
       <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
@@ -3299,7 +3299,7 @@ var AUDIO_FADE_OUT_MS = 420;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var AUDIO_PLAY_TIMEOUT_MS = 3600;
 var AUDIO_STALL_TIMEOUT_MS = 7000;
-var playbackStallWatchdog = { timer: null, media: null, token: 0, startTime: 0 };
+var playbackStallWatchdog = { timer: null, media: null, token: 0, startTime: 0, reason: '' };
 var smartTransitionChipTimer = null, smartTransitionChipSerial = 0;
 var SMART_TRANSITION_CHIP_MS = 2800;
 var SMART_TRANSITION_VISUAL_MS = 30000;
@@ -8992,6 +8992,9 @@ function normalizeSmartTransitionStyle(value) {
   value = String(value || '');
   return /^(wipe|blocks|spectrum|mirror|random|off)$/.test(value) ? value : 'mirror';
 }
+function isSmartTransitionEnabled() {
+  return normalizeSmartTransitionStyle(fx && fx.smartTransitionStyle) !== 'off';
+}
 function smartTransitionStyleMode(value) {
   value = normalizeSmartTransitionStyle(value);
   if (value === 'off') return -1;
@@ -9016,11 +9019,20 @@ function updateSmartTransitionStyleControls() {
 function setSmartTransitionStyle(style, silent) {
   fx.smartTransitionStyle = normalizeSmartTransitionStyle(style);
   updateSmartTransitionStyleControls();
+  if (!isSmartTransitionEnabled()) {
+    if (typeof cancelSmartCrossfade === 'function') cancelSmartCrossfade('style-off');
+    if (typeof resetSmartCoverTransition === 'function') resetSmartCoverTransition();
+    if (typeof hideSmartTransitionChip === 'function') hideSmartTransitionChip();
+  }
   saveLyricLayout();
   if (!silent) {
-    var labels = { wipe:'右滑擦入', blocks:'方块替换', spectrum:'频谱重组', mirror:'镜面翻页', random:'随机', off:'关闭' };
+    if (!isSmartTransitionEnabled()) {
+      showToast('智能过渡已关闭');
+      return;
+    }
+    var labels = { wipe:'右滑擦入', blocks:'方块替换', spectrum:'频谱重组', mirror:'镜面翻页', random:'随机' };
     var label = labels[fx.smartTransitionStyle] || '右滑擦入';
-    showToast('智能过渡画面: ' + label);
+    showToast('智能过渡已开启: ' + label);
   }
 }
 function normalizedShelfNumber(key, fallback, min, max) {
@@ -17073,6 +17085,7 @@ function updateSmartAudioDebugState(reason) {
   };
 }
 async function prepareSmartCrossfadeNext() {
+  if (!isSmartTransitionEnabled()) return;
   if (smartCrossfadeState || !audio || audio.paused || audio.ended) return;
   var idx = nextAutoQueueIndexForSmartCrossfade();
   if (idx < 0 || idx === currentIdx || !playQueue[idx]) return;
@@ -17090,7 +17103,7 @@ async function prepareSmartCrossfadeNext() {
   try {
     var playbackData = await fetchSmartCrossfadePlaybackUrl(song);
     if (!smartCrossfadeStateIsCurrent(state) || !playbackData) {
-      cancelSmartCrossfade('prefetch-empty');
+      if (smartCrossfadeState === state) cancelSmartCrossfade('prefetch-empty');
       return;
     }
     var nextAudio = new Audio();
@@ -17123,8 +17136,19 @@ async function prepareSmartCrossfadeNext() {
     nextAudio.load();
   } catch (e) {
     console.warn('[SmartCrossfade]', e);
-    cancelSmartCrossfade('error');
+    if (smartCrossfadeState === state) cancelSmartCrossfade('error');
   }
+}
+function isHealthyHandoffAudio(media, state) {
+  if (!media || !media.src || media.ended) return false;
+  if (media.error) return false;
+  // readyState < HAVE_CURRENT_DATA is too early; networkState=3 is NETWORK_NO_SOURCE
+  if ((Number(media.readyState) || 0) < 2) return false;
+  if ((Number(media.networkState) || 0) === 3) return false;
+  if (media.paused) return false;
+  var startedAt = state && isFinite(state.mixStartTime) ? Number(state.mixStartTime) : 0;
+  if (!isFinite(media.currentTime) || media.currentTime < startedAt + 0.05) return false;
+  return true;
 }
 function handoffSmartCrossfade(state, reason) {
   if (!smartCrossfadeStateIsCurrent(state) || state.handedOff || !state.nextAudio) return;
@@ -17143,6 +17167,28 @@ function handoffSmartCrossfade(state, reason) {
   if (playMode === 'shuffle') rememberShufflePlayHistory(currentIdx);
   currentIdx = state.nextIdx;
   updateSmartAudioDebugState(reason || 'handoff');
+  var healthy = isHealthyHandoffAudio(state.nextAudio, state);
+  if (!healthy) {
+    console.warn('[SmartCrossfadeHandoff] preloaded media unhealthy, falling back to fresh load', {
+      readyState: state.nextAudio.readyState,
+      networkState: state.nextAudio.networkState,
+      error: state.nextAudio.error && state.nextAudio.error.code
+    });
+    try { state.nextAudio.pause(); } catch (e) {}
+    stopSmartCrossfadeAudio(state);
+    smartCrossfadeState = null;
+    Promise.resolve(playQueueAt(state.nextIdx, {
+      preserveHomeState: true,
+      smartTransition: false,
+      smartTransitionHandoff: false,
+      coverCommitted: coverCommitted,
+      forceNewAudioElement: true,
+      fadeInMs: 900
+    })).catch(function(e){
+      console.warn('[SmartCrossfadeHandoffFallback]', e);
+    });
+    return;
+  }
   Promise.resolve(playQueueAt(state.nextIdx, {
     preserveHomeState: true, smartTransition: false, smartTransitionHandoff: true,
     coverCommitted: coverCommitted,
@@ -17181,6 +17227,10 @@ function connectSmartCrossfadeHandoffSource(opts) {
   return true;
 }
 async function startSmartCrossfadeAuto(forceEndedHandoff) {
+  if (!isSmartTransitionEnabled()) {
+    cancelSmartCrossfade('style-off');
+    return;
+  }
   var state = smartCrossfadeState;
   if (!smartCrossfadeStateIsCurrent(state) || state.status !== 'ready' || !state.nextAudio) return;
   var remaining = getPlaybackDurationSeconds() - getPlaybackCurrentSeconds();
@@ -17195,20 +17245,88 @@ async function startSmartCrossfadeAuto(forceEndedHandoff) {
   } catch (visualError) { console.warn('[SmartCrossfadeVisual]', visualError); }
   try { audio.onended = function(){ handoffSmartCrossfade(state, 'old-audio-ended'); }; } catch (e) {}
   try {
-    await state.nextAudio.play();
-    if (!smartCrossfadeStateIsCurrent(state)) return;
+    state.mixStartTime = isFinite(state.nextAudio.currentTime) ? Number(state.nextAudio.currentTime) : 0;
+    await promiseWithTimeout(
+      state.nextAudio.play(),
+      forceEndedHandoff ? 1200 : AUDIO_PLAY_TIMEOUT_MS,
+      forceEndedHandoff ? 'SMART_CROSSFADE_ENDED_PLAY_TIMEOUT' : 'SMART_CROSSFADE_PLAY_TIMEOUT'
+    );
+    if (!smartCrossfadeStateIsCurrent(state)) {
+      recoverFailedSmartCrossfadeStart(state, forceEndedHandoff, 'next-state-lost');
+      return;
+    }
+    var progressed = await waitForSmartCrossfadePlaybackProgress(state, forceEndedHandoff ? 650 : 1400);
+    if (!smartCrossfadeStateIsCurrent(state)) {
+      recoverFailedSmartCrossfadeStart(state, forceEndedHandoff, 'next-state-lost');
+      return;
+    }
+    if (!progressed) {
+      recoverFailedSmartCrossfadeStart(state, forceEndedHandoff, 'next-playback-timeout');
+      return;
+    }
     animateSmartCrossfadeVolumes(state);
     if (forceEndedHandoff) return handoffSmartCrossfade(state, 'ended-ready');
     state.timer = setTimeout(function(){ handoffSmartCrossfade(state, 'mix-timer'); }, state.durationMs + 40);
     updateSmartAudioDebugState();
   } catch (e) {
     state.status = 'ready';
-    cancelSmartCrossfade('next-play-failed');
+    recoverFailedSmartCrossfadeStart(state, forceEndedHandoff, 'next-play-failed');
   }
+}
+function recoverFailedSmartCrossfadeStart(state, forceEndedHandoff, reason) {
+  var tokenStillCurrent = !!(state && state.token === trackSwitchToken);
+  var songStillCurrent = !!(state && currentIdx >= 0 && queueItemKey(playQueue[currentIdx]) === state.currentSongKey);
+  var shouldAdvance = !!forceEndedHandoff || !audio || audio.ended;
+  if (smartCrossfadeState === state) cancelSmartCrossfade(reason || 'next-play-failed');
+  if (!shouldAdvance || !tokenStillCurrent || !songStillCurrent) return;
+  setTimeout(function(){
+    if (state.token !== trackSwitchToken || currentIdx < 0 || queueItemKey(playQueue[currentIdx]) !== state.currentSongKey) return;
+    nextTrack({ autoAdvance: true });
+  }, 0);
+}
+function waitForSmartCrossfadePlaybackProgress(state, timeoutMs) {
+  var media = state && state.nextAudio;
+  if (!media) return Promise.resolve(false);
+  var startedAt = isFinite(state.mixStartTime) ? Number(state.mixStartTime) : 0;
+  if (!media.paused && !media.ended && isFinite(media.currentTime) && media.currentTime >= startedAt + 0.05) {
+    return Promise.resolve(true);
+  }
+  return new Promise(function(resolve) {
+    var settled = false;
+    var timer = null;
+    var poll = null;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      ['timeupdate', 'playing', 'error', 'ended', 'stalled', 'abort'].forEach(function(name){
+        media.removeEventListener(name, check);
+      });
+    }
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(!!value);
+    }
+    function check(event) {
+      if (!smartCrossfadeStateIsCurrent(state) || media.error || media.ended || (event && /^(error|ended|abort)$/.test(event.type))) {
+        finish(false);
+        return;
+      }
+      if (!media.paused && isFinite(media.currentTime) && media.currentTime >= startedAt + 0.05) finish(true);
+    }
+    ['timeupdate', 'playing', 'error', 'ended', 'stalled', 'abort'].forEach(function(name){
+      media.addEventListener(name, check);
+    });
+    poll = setInterval(check, 80);
+    timer = setTimeout(function(){ finish(false); }, Math.max(400, Number(timeoutMs) || 1400));
+    check();
+  });
 }
 function handleSmartCrossfadeEndedFallback(token) {
   var state = smartCrossfadeState;
   if (!state || state.token !== token || !smartCrossfadeStateIsCurrent(state)) return false;
+  if (state.handedOff) return false;
   if (state.status === 'mixing' || state.status === 'handoff') return true;
   if (state.status === 'ready') {
     startSmartCrossfadeAuto(true);
@@ -17231,6 +17349,10 @@ function handleSmartCrossfadeEndedFallback(token) {
   return false;
 }
 function checkSmartCrossfadeAudioState() {
+  if (!isSmartTransitionEnabled()) {
+    if (smartCrossfadeState) cancelSmartCrossfade('style-off');
+    return;
+  }
   if (!audio || audio.paused || audio.ended || currentIdx < 0) return;
   var durationSec = getPlaybackDurationSeconds();
   var currentSec = getPlaybackCurrentSeconds();
@@ -21333,6 +21455,7 @@ function clearPlaybackStallWatchdog(media) {
   playbackStallWatchdog.media = null;
   playbackStallWatchdog.token = 0;
   playbackStallWatchdog.startTime = 0;
+  playbackStallWatchdog.reason = '';
 }
 function resetPlaybackAudioElementAfterStall() {
   clearPlaybackStallWatchdog();
@@ -21359,6 +21482,7 @@ function schedulePlaybackStallRecovery(media, reason) {
   playbackStallWatchdog.media = media;
   playbackStallWatchdog.token = token;
   playbackStallWatchdog.startTime = startTime;
+  playbackStallWatchdog.reason = reason || '';
   playbackStallWatchdog.timer = setTimeout(function(){
     clearPlaybackStallWatchdog(media);
     if (media !== audio || token !== trackSwitchToken || media.ended || (media.paused && !mediaErrored)) return;
@@ -21370,7 +21494,8 @@ function schedulePlaybackStallRecovery(media, reason) {
       showSourceFallbackNotice('播放连接卡住', '正在重新连接当前歌曲。');
       Promise.resolve(playQueueAt(currentIdx, {
         preserveHomeState: true,
-        resumeAt: nowTime,
+        // Stuck handoff media is usually corrupt; restart from 0 is safer than resume.
+        resumeAt: (reason === 'handoff-start' || reason === 'play-start') ? 0 : nowTime,
         forceNewAudioElement: true,
         stallRecoveryCount: recoveries + 1
       })).catch(function(err){ console.warn('[AudioStallRecovery]', err); });
@@ -21380,7 +21505,7 @@ function schedulePlaybackStallRecovery(media, reason) {
     playing = false;
     setPlayIcon(false);
     skipFailedQueueItem(currentIdx, token, '当前音频连接连续卡住，正在播放下一首。');
-  }, mediaErrored ? 800 : AUDIO_STALL_TIMEOUT_MS);
+  }, mediaErrored ? 800 : (reason === 'play-start' || reason === 'handoff-start') ? 2800 : AUDIO_STALL_TIMEOUT_MS);
 }
 
 function ensureUiSfxContext() {
@@ -22056,7 +22181,7 @@ async function playQueueAt(idx, opts) {
   var transitionFromIdx = isFinite(Number(opts.smartTransitionFromIdx)) ? Number(opts.smartTransitionFromIdx) : currentIdx;
   var hasTransitionFrom = transitionFromIdx >= 0 && transitionFromIdx < playQueue.length && transitionFromIdx !== idx;
   var canFadeCurrentAudio = !!(audio && audio.src && !audio.paused && !audio.ended && targetVolume > 0.001);
-  var showSmartTransition = !!opts.smartTransition && hasTransitionFrom && canFadeCurrentAudio && !opts.qualitySwitch && !opts.autoRepeat && !(Number(opts.resumeAt) > 0);
+  var showSmartTransition = isSmartTransitionEnabled() && !!opts.smartTransition && hasTransitionFrom && canFadeCurrentAudio && !opts.qualitySwitch && !opts.autoRepeat && !(Number(opts.resumeAt) > 0);
   if (showSmartTransition) showSmartTransitionChip(opts.smartTransitionDurationMs || SMART_TRANSITION_CHIP_MS);
   else {
     hideSmartTransitionChip();
@@ -22189,6 +22314,7 @@ async function playQueueAt(idx, opts) {
         }
         audioFadeSerial++;
         clearAudioFadeTimers();
+        if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = true;
         audio = localHandoffAudio;
         if (!connectSmartCrossfadeHandoffSource(opts)) {
           resetAudioGraphForCurrentElement();
@@ -22232,9 +22358,28 @@ async function playQueueAt(idx, opts) {
       markPlayPhase('audio-play');
       var localStarted = useLocalCrossfadeHandoff ? true : await playAudio();
       if (localStarted) {
+        if (useLocalCrossfadeHandoff) {
+          try {
+            audio.muted = false;
+            if (audio.paused || audio.ended) {
+              await promiseWithTimeout(audio.play(), AUDIO_PLAY_TIMEOUT_MS, 'AUDIO_LOCAL_HANDOFF_PLAY_TIMEOUT');
+            }
+          } catch (localHandoffPlayErr) {
+            console.warn('[SmartCrossfadeLocalHandoffPlay]', localHandoffPlayErr);
+            try { if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = false; } catch (e) {}
+            cancelSmartCrossfade('local-handoff-play-failed');
+            return playQueueAt(idx, {
+              preserveHomeState: true,
+              forceNewAudioElement: true,
+              stallRecoveryCount: Number(opts.stallRecoveryCount) || 0,
+              fadeInMs: 900
+            });
+          }
+        }
         playing = true;
         setPlayIcon(true);
         if (useLocalCrossfadeHandoff) {
+          schedulePlaybackStallRecovery(audio, 'handoff-start');
           if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = true;
           smartCrossfadeState = null;
           hideSmartTransitionChip();
@@ -22305,6 +22450,7 @@ async function playQueueAt(idx, opts) {
       }
       audioFadeSerial++;
       clearAudioFadeTimers();
+      if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = true;
       audio = handoffAudio;
       audio.crossOrigin = 'anonymous';
       configurePlaybackAudioElement(audio);
@@ -22408,8 +22554,27 @@ async function playQueueAt(idx, opts) {
       fadeInMs: opts.fadeInMs || (showSmartTransition ? 900 : AUDIO_FADE_IN_MS)
     });
     if (useCrossfadeHandoff) {
+      try {
+        audio.muted = false;
+        if (audio.paused || audio.ended) {
+          await promiseWithTimeout(audio.play(), AUDIO_PLAY_TIMEOUT_MS, 'AUDIO_HANDOFF_PLAY_TIMEOUT');
+        }
+      } catch (handoffPlayErr) {
+        console.warn('[SmartCrossfadeHandoffPlay]', handoffPlayErr);
+        // Preloaded element became unusable (often after partial proxy abort).
+        // Rebuild a fresh element and load the same track normally.
+        try { if (opts.crossfadeStateRef) opts.crossfadeStateRef.handedOff = false; } catch (e) {}
+        cancelSmartCrossfade('handoff-play-failed');
+        return playQueueAt(idx, {
+          preserveHomeState: true,
+          forceNewAudioElement: true,
+          stallRecoveryCount: Number(opts.stallRecoveryCount) || 0,
+          fadeInMs: 900
+        });
+      }
       playing = true;
       setPlayIcon(true);
+      schedulePlaybackStallRecovery(audio, 'handoff-start');
       forceLoadingSettled('smart-crossfade-playing');
     }
     if (!playbackStarted) {
@@ -22498,6 +22663,7 @@ async function attemptAudioPlay(opts) {
         await promiseWithTimeout(audio.play(), opts.playTimeoutMs || AUDIO_PLAY_TIMEOUT_MS, 'AUDIO_PLAY_TIMEOUT_RETRY');
       }
       await promiseWithTimeout(resumeAudioAnalysis(), opts.resumeTimeoutMs || 1800, 'AUDIO_CONTEXT_RESUME_TIMEOUT_AFTER_PLAY');
+      schedulePlaybackStallRecovery(audio, 'play-start');
       switchPlaybackVisualToEmily();
       playing = true; setPlayIcon(true);
     if (opts.fade !== false) startPlaybackFadeIn(opts.fadeInMs);
@@ -22560,6 +22726,7 @@ function setPlayIcon(p) {
   pushTrayPlaybackState();
 }
 function allowSmartTransitionForManualTrackSwitch(opts) {
+  if (!isSmartTransitionEnabled()) return false;
   opts = opts || {};
   if (opts.smartTransition === false) return false;
   if (opts.autoAdvance) return true;
@@ -24669,7 +24836,13 @@ function bindPlaybackProgressEvents(audioEl) {
   ['waiting', 'stalled', 'error'].forEach(function(name){
     audioEl.addEventListener(name, function(){ schedulePlaybackStallRecovery(audioEl, name); });
   });
-  ['canplay', 'playing', 'pause', 'ended', 'emptied', 'abort'].forEach(function(name){
+  ['canplay', 'playing'].forEach(function(name){
+    audioEl.addEventListener(name, function(){
+      if (playbackStallWatchdog.media === audioEl && (playbackStallWatchdog.reason === 'play-start' || playbackStallWatchdog.reason === 'handoff-start')) return;
+      clearPlaybackStallWatchdog(audioEl);
+    });
+  });
+  ['pause', 'ended', 'emptied', 'abort'].forEach(function(name){
     audioEl.addEventListener(name, function(){ clearPlaybackStallWatchdog(audioEl); });
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function(name){

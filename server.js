@@ -2468,6 +2468,12 @@ function audioProxyHeadersFor(audioUrl, range) {
   const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/' };
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
+    if (host.includes('kugou') || host.includes('kgimg') || host.includes('kuwo')) {
+      headers.Referer = 'https://www.kugou.com/';
+      if (kugouCookie) headers.Cookie = kugouCookieHeader();
+    } else if (userCookie) {
+      headers.Cookie = userCookie;
+    }
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
@@ -4898,13 +4904,23 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/audio') {
     const controller = new AbortController();
     let streamTimer = null;
-    const armStreamTimeout = (ms = 15000) => {
-      if (streamTimer) clearTimeout(streamTimer);
-      streamTimer = setTimeout(() => controller.abort(new Error('Audio upstream timeout')), ms);
-    };
-    const stopAudioProxy = () => {
+    let clientClosed = false;
+    const clearStreamTimeout = () => {
       if (streamTimer) clearTimeout(streamTimer);
       streamTimer = null;
+    };
+    // Only time out while actively waiting on the upstream body.
+    // Waiting for browser drain is normal backpressure and must not abort
+    // an otherwise healthy media stream.
+    const armStreamTimeout = (ms = 45000) => {
+      clearStreamTimeout();
+      streamTimer = setTimeout(() => {
+        if (!controller.signal.aborted) controller.abort(new Error('Audio upstream timeout'));
+      }, ms);
+    };
+    const stopAudioProxy = () => {
+      clientClosed = true;
+      clearStreamTimeout();
       if (!controller.signal.aborted) controller.abort();
     };
     res.once('close', stopAudioProxy);
@@ -4913,22 +4929,27 @@ const server = http.createServer(async (req, res) => {
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
       const hdr = audioProxyHeadersFor(audioUrl, range);
-      armStreamTimeout(12000);
+      armStreamTimeout(20000);
       const up = await fetch(audioUrl, { headers: hdr, signal: controller.signal });
       if (!up.ok && up.status !== 206) throw new Error('Audio upstream HTTP ' + up.status);
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
       };
-      const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;
+      // Do not forward the upstream Content-Length while streaming. If the
+      // provider closes early, Chromium permanently poisons the media element
+      // with ERR_CONTENT_LENGTH_MISMATCH before the player can recover.
       const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;
       res.writeHead(up.status, out);
       const reader = up.body.getReader();
       while (true) {
+        if (clientClosed || res.writableEnded || res.destroyed) break;
         armStreamTimeout();
         const c = await reader.read();
         if (c.done) break;
+        clearStreamTimeout();
         if (!res.write(c.value)) {
           await new Promise(resolve => {
             const done = () => {
@@ -4939,17 +4960,16 @@ const server = http.createServer(async (req, res) => {
             res.once('drain', done);
             res.once('close', done);
           });
+          if (clientClosed || res.writableEnded || res.destroyed) break;
         }
       }
-      if (streamTimer) clearTimeout(streamTimer);
-      streamTimer = null;
-      res.end();
+      clearStreamTimeout();
+      if (!res.writableEnded && !res.destroyed) res.end();
     } catch (err) {
-      if (streamTimer) clearTimeout(streamTimer);
-      streamTimer = null;
-      console.error('[Audio]', err);
+      clearStreamTimeout();
+      if (!clientClosed) console.error('[Audio]', err);
       if (!res.headersSent) { res.writeHead(502); res.end(); }
-      else res.destroy(err);
+      else if (!res.destroyed) res.destroy(err);
     }
     return;
   }
