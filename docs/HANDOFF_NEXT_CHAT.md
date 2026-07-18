@@ -1,10 +1,10 @@
 # Mineradio Next Chat Handoff
 
-更新时间：2026-07-12
+更新时间：2026-07-18
 
-## 2026-07-12 当前开发状态
+## 2026-07-18 当前开发状态
 
-- 当前源码版本：`v1.1.5`。
+- 当前源码版本：`v1.2.0`。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目和原作者署名仍按 README 保留。
 - 已接入小云、小狗双平台账号与搜索；默认只显示当前平台账号、搜索、歌单和排行，本地排行保留。
 - 已移除/隐藏小Q相关前端入口；旧 `/api/qq/*` 兼容路由不再作为功能入口，后续不要恢复 QQ UI/API。
@@ -39,13 +39,11 @@ Get-Content RELEASE.md
 ## 当前状态
 
 - 当前真实代码/Git 仓库：`D:\projects\Mineradio`
-- 当前版本：`v1.1.5`
-- 当前发布策略：纯净安装版，从当前可信源码重新构建；`v1.0.10` 及更早旧安装包需要隔离，不再建议安装或传播。
-- 本次发布不做 `v1.0.10 -> v1.1.0` 软件内本地更新，不上传 `latest.yml`，不生成快速补丁。
+- 当前版本：`v1.2.0`
+- 当前发布策略：从当前可信源码构建完整 Windows 安装包，并生成配套 `.blockmap` 与 `latest.yml`。
+- `v1.2.0` 本地构建资产为 `dist/Mineradio-1.2.0-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - 安装包样式继续沿用 `docs/INSTALLER_STYLE.md` 的中文极简黑白蓝格式。
-- GitHub 仓库已公开：`https://github.com/XxHuberrr/Mineradio`
-- `v1.1.0` Release：`https://github.com/XxHuberrr/Mineradio/releases/tag/v1.1.0`
-- GitHub `/releases/latest` 仍返回 `v1.0.10`，这是刻意设置，避免旧版软件内更新到 1.1.0。
+- 当前维护仓库：`https://github.com/HackenLeung/Mineradio`。
 
 ## 本轮重点
 

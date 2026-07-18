@@ -88,17 +88,6 @@ body.desktop-shell #desktop-titlebar #update-entry svg{
 }
 body.desktop-shell #desktop-titlebar #update-entry.available{display:flex!important}
 body.desktop-shell #desktop-titlebar #update-entry::before{display:none!important}
-body.desktop-shell #desktop-titlebar #update-entry::after{
-  display:block!important;
-  right:-2px;
-  top:-2px;
-  width:8px;
-  height:8px;
-  border-radius:50%;
-  background:#ff3b55;
-  box-shadow:0 0 0 1px rgba(8,10,12,.55),0 0 10px rgba(255,59,85,.45);
-  pointer-events:none;
-}
 body.desktop-shell #desktop-titlebar #dl-center-btn .dl-badge{
   top:-3px;
   right:-3px;
@@ -607,9 +596,6 @@ body.desktop-shell.empty-home-active.controls-visible #empty-home{bottom:126px}
 .update-ring{stroke:rgba(255,226,162,.84);stroke-width:1.65;fill:none;stroke-linecap:round;stroke-dasharray:48 18;transform-origin:12px 12px;filter:drop-shadow(0 0 5px rgba(244,210,138,.18))}
 .update-arrow{stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .update-entry::before{content:'';position:absolute;inset:-6px;border-radius:50%;border:1px solid rgba(244,210,138,.15);opacity:.70;filter:blur(.2px);pointer-events:none}
-.update-entry::after{content:'';position:absolute;right:5px;top:6px;width:6px;height:6px;border-radius:50%;background:rgba(255,236,184,.96);box-shadow:0 0 12px rgba(244,210,138,.76),0 0 24px rgba(244,210,138,.34);pointer-events:none}
-.update-entry.downloading::after{opacity:.42}
-.update-entry.ready::after{background:rgba(244,210,138,.95);box-shadow:0 0 12px rgba(244,210,138,.58),0 0 26px rgba(244,210,138,.22)}
 .update-progress-ring{opacity:0;stroke:rgba(255,228,170,.92);stroke-width:1.95;fill:none;stroke-linecap:round;stroke-dasharray:55.29;stroke-dashoffset:55.29;transform:rotate(-90deg);transform-origin:12px 12px;transition:opacity .2s;filter:drop-shadow(0 0 5px rgba(244,210,138,.22))}
 .update-entry.downloading .update-progress-ring{opacity:1}
 .update-entry.downloading .update-ring{opacity:.28}

@@ -21,6 +21,12 @@ let desktopLyricsLastMiddleAt = 0;
 let wallpaperWindow = null;
 let wallpaperState = {};
 let cubeRemoteWindow = null;
+let cubeRemoteFullscreenPoller = null;
+let cubeRemoteFullscreenPollerBuffer = '';
+let cubeRemoteFullscreenPollerRestartTimer = null;
+let cubeRemoteFullscreenPollerRestartAttempts = 0;
+let cubeRemoteExternalFullscreenActive = false;
+let cubeRemoteHiddenByFullscreen = false;
 const CUBE_REMOTE_SKINS = {
   cube: { width: 136, height: 136 },
   bar: { width: 320, height: 84 },
@@ -1517,6 +1523,163 @@ function broadcastCubeRemoteEnabledState(enabled, extra = {}) {
   }
 }
 
+function applyCubeRemoteFullscreenVisibility(externalFullscreen) {
+  cubeRemoteExternalFullscreenActive = !!externalFullscreen;
+  if (!cubeRemoteWindow || cubeRemoteWindow.isDestroyed()) return;
+
+  if (cubeRemoteExternalFullscreenActive) {
+    cubeRemoteHiddenByFullscreen = true;
+    if (cubeRemoteWindow.isVisible()) cubeRemoteWindow.hide();
+    return;
+  }
+
+  if (!cubeRemoteHiddenByFullscreen) return;
+  cubeRemoteHiddenByFullscreen = false;
+  if (cubeRemoteState.enabled) cubeRemoteWindow.showInactive();
+}
+
+function scheduleCubeRemoteFullscreenPollerRestart() {
+  if (cubeRemoteFullscreenPollerRestartTimer || appQuitting || !cubeRemoteState.enabled) return;
+  if (!cubeRemoteWindow || cubeRemoteWindow.isDestroyed()) return;
+  const delay = Math.min(15000, 1200 * (2 ** Math.min(cubeRemoteFullscreenPollerRestartAttempts, 4)));
+  cubeRemoteFullscreenPollerRestartAttempts += 1;
+  cubeRemoteFullscreenPollerRestartTimer = setTimeout(() => {
+    cubeRemoteFullscreenPollerRestartTimer = null;
+    startCubeRemoteFullscreenPoller();
+  }, delay);
+}
+
+function startCubeRemoteFullscreenPoller() {
+  if (process.platform !== 'win32' || cubeRemoteFullscreenPoller) return;
+  if (cubeRemoteFullscreenPollerRestartTimer) {
+    clearTimeout(cubeRemoteFullscreenPollerRestartTimer);
+    cubeRemoteFullscreenPollerRestartTimer = null;
+  }
+  const script = `
+$ErrorActionPreference = "SilentlyContinue"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class MineradioFullscreenPoll {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct MONITORINFO {
+    public int Size;
+    public RECT Monitor;
+    public RECT WorkArea;
+    public uint Flags;
+  }
+
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out RECT rect);
+  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+}
+"@
+$mineradioPid = ${process.pid}
+$lastState = $null
+$classNameBuilder = New-Object System.Text.StringBuilder 256
+while ($true) {
+  $isExternalFullscreen = $false
+  $window = [MineradioFullscreenPoll]::GetForegroundWindow()
+  [void]$classNameBuilder.Clear()
+  [void][MineradioFullscreenPoll]::GetClassName($window, $classNameBuilder, $classNameBuilder.Capacity)
+  $className = $classNameBuilder.ToString()
+  $isShellSurface = @("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd") -contains $className
+  if ($window -ne [IntPtr]::Zero -and
+      -not $isShellSurface -and
+      [MineradioFullscreenPoll]::IsWindowVisible($window) -and
+      -not [MineradioFullscreenPoll]::IsIconic($window)) {
+    [uint32]$ownerPid = 0
+    [void][MineradioFullscreenPoll]::GetWindowThreadProcessId($window, [ref]$ownerPid)
+    if ($ownerPid -ne 0 -and $ownerPid -ne $mineradioPid) {
+      $rect = New-Object MineradioFullscreenPoll+RECT
+      $monitor = [MineradioFullscreenPoll]::MonitorFromWindow($window, 2)
+      $info = New-Object MineradioFullscreenPoll+MONITORINFO
+      $info.Size = [Runtime.InteropServices.Marshal]::SizeOf($info)
+      if ([MineradioFullscreenPoll]::GetWindowRect($window, [ref]$rect) -and
+          $monitor -ne [IntPtr]::Zero -and
+          [MineradioFullscreenPoll]::GetMonitorInfo($monitor, [ref]$info)) {
+        $tolerance = 2
+        $isExternalFullscreen = (
+          $rect.Left -le ($info.Monitor.Left + $tolerance) -and
+          $rect.Top -le ($info.Monitor.Top + $tolerance) -and
+          $rect.Right -ge ($info.Monitor.Right - $tolerance) -and
+          $rect.Bottom -ge ($info.Monitor.Bottom - $tolerance)
+        )
+      }
+    }
+  }
+
+  $state = if ($isExternalFullscreen) { "1" } else { "0" }
+  if ($state -ne $lastState) {
+    [Console]::Out.WriteLine("FULLSCREEN " + $state)
+    [Console]::Out.Flush()
+    $lastState = $state
+  }
+  Start-Sleep -Milliseconds 350
+}
+`;
+
+  try {
+    const poller = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    cubeRemoteFullscreenPoller = poller;
+    poller.stdout.on('data', (chunk) => {
+      cubeRemoteFullscreenPollerBuffer += chunk.toString('utf8');
+      const lines = cubeRemoteFullscreenPollerBuffer.split(/\r?\n/);
+      cubeRemoteFullscreenPollerBuffer = lines.pop() || '';
+      lines.forEach((line) => {
+        const match = line.trim().match(/^FULLSCREEN\s+([01])$/);
+        if (match) {
+          cubeRemoteFullscreenPollerRestartAttempts = 0;
+          applyCubeRemoteFullscreenVisibility(match[1] === '1');
+        }
+      });
+    });
+    const handlePollerEnd = () => {
+      if (cubeRemoteFullscreenPoller !== poller) return;
+      cubeRemoteFullscreenPoller = null;
+      cubeRemoteFullscreenPollerBuffer = '';
+      applyCubeRemoteFullscreenVisibility(false);
+      scheduleCubeRemoteFullscreenPollerRestart();
+    };
+    poller.on('exit', handlePollerEnd);
+    poller.on('error', handlePollerEnd);
+  } catch (_e) {
+    cubeRemoteFullscreenPoller = null;
+    cubeRemoteFullscreenPollerBuffer = '';
+    applyCubeRemoteFullscreenVisibility(false);
+    scheduleCubeRemoteFullscreenPollerRestart();
+  }
+}
+
+function stopCubeRemoteFullscreenPoller() {
+  if (cubeRemoteFullscreenPollerRestartTimer) {
+    clearTimeout(cubeRemoteFullscreenPollerRestartTimer);
+    cubeRemoteFullscreenPollerRestartTimer = null;
+  }
+  const poller = cubeRemoteFullscreenPoller;
+  cubeRemoteFullscreenPoller = null;
+  cubeRemoteFullscreenPollerBuffer = '';
+  cubeRemoteFullscreenPollerRestartAttempts = 0;
+  cubeRemoteExternalFullscreenActive = false;
+  cubeRemoteHiddenByFullscreen = false;
+  if (!poller) return;
+  try {
+    poller.kill();
+  } catch (_e) {}
+}
+
 function createCubeRemoteWindow(payload = {}) {
   const behavior = readDesktopBehaviorSettings();
   const nextSkin = clampCubeRemoteSkin(payload.skin || behavior.cubeRemoteSkin || cubeRemoteState.skin || 'cube');
@@ -1527,6 +1690,7 @@ function createCubeRemoteWindow(payload = {}) {
     enabled: true,
   };
   if (cubeRemoteWindow && !cubeRemoteWindow.isDestroyed()) {
+    startCubeRemoteFullscreenPoller();
     sendCubeRemoteState();
     return cubeRemoteWindow;
   }
@@ -1564,12 +1728,13 @@ function createCubeRemoteWindow(payload = {}) {
   try {
     cubeRemoteWindow.setBounds(constrainCubeRemoteBounds(cubeRemoteWindow.getBounds()), false);
   } catch (_e) {}
+  startCubeRemoteFullscreenPoller();
   cubeRemoteWindow.once('ready-to-show', () => {
     if (!cubeRemoteWindow || cubeRemoteWindow.isDestroyed()) return;
     try {
       cubeRemoteWindow.setBounds(constrainCubeRemoteBounds(cubeRemoteWindow.getBounds()), false);
     } catch (_e) {}
-    cubeRemoteWindow.showInactive();
+    if (!cubeRemoteExternalFullscreenActive) cubeRemoteWindow.showInactive();
     sendCubeRemoteState();
   });
   cubeRemoteWindow.webContents.once('did-finish-load', sendCubeRemoteState);
@@ -1578,6 +1743,7 @@ function createCubeRemoteWindow(payload = {}) {
     rememberCubeRemoteBounds(cubeRemoteWindow.getBounds());
   });
   cubeRemoteWindow.on('closed', () => {
+    stopCubeRemoteFullscreenPoller();
     cubeRemoteWindow = null;
     flushCubeRemoteBoundsSave();
     cubeRemoteState = { ...cubeRemoteState, enabled: false };
@@ -1592,6 +1758,7 @@ function createCubeRemoteWindow(payload = {}) {
 
 function closeCubeRemoteWindow({ fromSettings = false } = {}) {
   flushCubeRemoteBoundsSave();
+  stopCubeRemoteFullscreenPoller();
   cubeRemoteState = { ...cubeRemoteState, enabled: false };
   if (cubeRemoteWindow && !cubeRemoteWindow.isDestroyed()) {
     cubeRemoteWindow.removeAllListeners('closed');
