@@ -29,6 +29,8 @@
   var dragPointerId = null;
   var dragLast = { x: 0, y: 0 };
   var moved = false;
+  var wheelDelta = 0;
+  var wheelResetTimer = 0;
 
   function clampSkin(value) {
     value = String(value || 'cube');
@@ -132,6 +134,26 @@
       send('set-volume', { value: Number(input.value) || 0 });
     });
   });
+
+  document.addEventListener('wheel', function (evt) {
+    if (!state.enabled || !evt.target.closest('.skin')) return;
+    evt.preventDefault();
+    wheelDelta += Number(evt.deltaY) || 0;
+    if (wheelResetTimer) clearTimeout(wheelResetTimer);
+    wheelResetTimer = setTimeout(function () { wheelDelta = 0; }, 180);
+    var threshold = evt.deltaMode === 0 ? 40 : 1;
+    if (Math.abs(wheelDelta) < threshold) return;
+    var direction = wheelDelta < 0 ? 1 : -1;
+    wheelDelta = 0;
+    var current = state.muted ? 0 : Number(state.volume) || 0;
+    var next = Math.max(0, Math.min(1, Math.round((current + direction * .05) * 100) / 100));
+    state.volume = next;
+    state.muted = next <= .001;
+    document.querySelectorAll('.cube-volume').forEach(function (input) {
+      input.value = String(next);
+    });
+    send('set-volume', { value: next });
+  }, { passive: false });
 
   function beginDrag(evt) {
     if (evt.button !== 0) return;

@@ -3,7 +3,7 @@
 ## v1.2.1 当前构建
 
 - 版本号：`1.2.1`。
-- 更新内容：智能过渡播放恢复加固；桌面歌词窗口范围收紧；修复高 DPI 下魔方拖动尺寸膨胀；悬浮遥控器与系统托盘并存；本地封面异步同步到遥控器。
+- 更新内容：智能过渡播放恢复加固；桌面歌词窗口范围收紧；修复高 DPI 下魔方拖动尺寸膨胀；悬浮遥控器支持滚轮调音量并与系统托盘并存；本地封面异步同步到遥控器。
 - 打包产物不得包含 `resources/app-update.yml`；更新缓存统一使用安装目录下的 `user-data/updates`，启动后清理旧 `%LOCALAPPDATA%\mineradio-updater`。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目与原作者署名见 README。
 - 构建前必须确认 `.cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
