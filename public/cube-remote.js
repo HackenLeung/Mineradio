@@ -142,6 +142,9 @@
     dragLast.y = evt.screenY;
     dragTarget = evt.target.closest('.play-btn, [data-drag-handle]') || evt.target.closest('.skin') || activeRoot();
     dragPointerId = evt.pointerId;
+    if (window.desktopOverlay && window.desktopOverlay.setCubeDragging) {
+      window.desktopOverlay.setCubeDragging(true).catch(function () {});
+    }
     try { dragTarget.setPointerCapture(dragPointerId); } catch (e) {}
   }
 
@@ -174,6 +177,9 @@
     var pointerId = dragPointerId;
     dragTarget = null;
     dragPointerId = null;
+    if (window.desktopOverlay && window.desktopOverlay.setCubeDragging) {
+      window.desktopOverlay.setCubeDragging(false).catch(function () {});
+    }
     try {
       if (target && target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
     } catch (e) {}

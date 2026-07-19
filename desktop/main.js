@@ -27,6 +27,7 @@ let cubeRemoteFullscreenPollerRestartTimer = null;
 let cubeRemoteFullscreenPollerRestartAttempts = 0;
 let cubeRemoteExternalFullscreenActive = false;
 let cubeRemoteHiddenByFullscreen = false;
+let cubeRemoteDragCursor = null;
 const CUBE_REMOTE_SKINS = {
   cube: { width: 136, height: 136 },
   bar: { width: 320, height: 84 },
@@ -54,6 +55,7 @@ let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
 let mineradioTray = null;
 let appQuitting = false;
+let legacyUpdaterCleanupTimer = null;
 let desktopBehaviorSettings = null;
 let trayPlaybackState = { title: '未播放', artist: '', playing: false, volume: 1, cover: '', muted: false };
 const registeredGlobalHotkeys = new Map();
@@ -324,6 +326,7 @@ function readDesktopBehaviorSettings() {
   };
   try {
     const raw = JSON.parse(fs.readFileSync(desktopBehaviorPath(), 'utf8')) || {};
+    const cubeRemoteSkin = clampCubeRemoteSkin(raw.cubeRemoteSkin || 'cube');
     const bounds = raw.cubeRemoteBounds && typeof raw.cubeRemoteBounds === 'object'
       ? {
         x: Number(raw.cubeRemoteBounds.x),
@@ -337,9 +340,9 @@ function readDesktopBehaviorSettings() {
       openAtLogin: raw.openAtLogin === true,
       immersiveAutoFullscreen: raw.immersiveAutoFullscreen === true,
       cubeRemote: raw.cubeRemote === true,
-      cubeRemoteSkin: clampCubeRemoteSkin(raw.cubeRemoteSkin || 'cube'),
+      cubeRemoteSkin,
       cubeRemoteBounds: bounds && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
-        ? bounds
+        ? normalizeCubeRemoteBounds(bounds, { skin: cubeRemoteSkin })
         : null,
     };
   } catch (_e) {
@@ -367,11 +370,8 @@ function saveDesktopBehaviorSettings(next) {
   } catch (e) {
     console.warn('Login item update failed:', e.message);
   }
-  if (desktopBehaviorSettings.cubeRemote) destroyMineradioTray();
-  else {
-    ensureMineradioTray();
-    updateMineradioTray();
-  }
+  ensureMineradioTray();
+  updateMineradioTray();
   return Object.assign({}, desktopBehaviorSettings);
 }
 
@@ -384,13 +384,14 @@ function destroyMineradioTray() {
 let cubeRemoteBoundsSaveTimer = null;
 let cubeRemoteBoundsPending = null;
 
-function normalizeCubeRemoteBounds(bounds) {
+function normalizeCubeRemoteBounds(bounds, state = cubeRemoteState) {
   if (!bounds) return null;
+  const size = cubeRemoteSize(state);
   return {
     x: Math.round(Number(bounds.x) || 0),
     y: Math.round(Number(bounds.y) || 0),
-    width: Math.round(Number(bounds.width) || 72),
-    height: Math.round(Number(bounds.height) || 72),
+    width: size.width,
+    height: size.height,
   };
 }
 
@@ -429,10 +430,6 @@ function rememberCubeRemoteBounds(bounds, { immediate = false } = {}) {
 }
 
 function ensureMineradioTray() {
-  if (readDesktopBehaviorSettings().cubeRemote) {
-    destroyMineradioTray();
-    return null;
-  }
   if (mineradioTray || !fs.existsSync(APP_ICON_ICO)) return mineradioTray;
   mineradioTray = new Tray(APP_ICON_ICO);
   mineradioTray.setToolTip('Mineradio');
@@ -617,6 +614,36 @@ function toggleMainWindowVisibility() {
 
 function getUpdateDownloadDir() {
   return path.join(app.getPath('userData'), 'updates');
+}
+
+function legacyUpdaterCacheDir() {
+  const localAppData = String(process.env.LOCALAPPDATA || '').trim();
+  if (process.platform !== 'win32' || !localAppData) return '';
+  const parent = path.resolve(localAppData);
+  const target = path.resolve(parent, 'mineradio-updater');
+  return path.dirname(target) === parent ? target : '';
+}
+
+function cleanupLegacyUpdaterCache(attempt = 0) {
+  legacyUpdaterCleanupTimer = null;
+  const target = legacyUpdaterCacheDir();
+  if (!target || !fs.existsSync(target)) return;
+  fs.rm(target, { recursive: true, force: true }, (error) => {
+    if (!error) {
+      console.log(`Removed legacy updater cache: ${target}`);
+      return;
+    }
+    if (appQuitting || attempt >= 4) {
+      console.warn('Legacy updater cache cleanup failed:', error.message);
+      return;
+    }
+    legacyUpdaterCleanupTimer = setTimeout(() => cleanupLegacyUpdaterCache(attempt + 1), 4000 * (attempt + 1));
+  });
+}
+
+function scheduleLegacyUpdaterCacheCleanup() {
+  if (legacyUpdaterCleanupTimer || !legacyUpdaterCacheDir()) return;
+  legacyUpdaterCleanupTimer = setTimeout(() => cleanupLegacyUpdaterCache(0), 12000);
 }
 
 function shouldEnsureDesktopShortcut() {
@@ -1088,8 +1115,8 @@ function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
     : screen.getPrimaryDisplay();
   const bounds = display.bounds;
   const yRatio = clampNumber(payload.y, 0.08, 0.92, 0.76);
-  const width = Math.round(Math.min(Math.max(880, bounds.width * 0.72), bounds.width - 96));
-  const height = Math.round(Math.min(Math.max(340, bounds.height * 0.38), 560, bounds.height - 96));
+  const width = Math.round(Math.min(Math.max(760, bounds.width * 0.46), 1040, bounds.width - 96));
+  const height = Math.round(Math.min(Math.max(210, bounds.height * 0.22), 240, bounds.height - 96));
   return {
     x: Math.round(bounds.x + (bounds.width - width) / 2),
     y: Math.round(bounds.y + bounds.height * yRatio - height / 2),
@@ -1257,7 +1284,19 @@ function broadcastDesktopLyricsEnabledState(enabled) {
 function positionDesktopLyricsWindow(payload = desktopLyricsState, options = {}) {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
   const shouldUseManualBounds = desktopLyricsUserBounds && !options.force;
-  setDesktopLyricsBounds(shouldUseManualBounds ? desktopLyricsUserBounds : desktopLyricsDefaultBounds(payload));
+  const defaultBounds = desktopLyricsDefaultBounds(payload);
+  if (shouldUseManualBounds) {
+    const savedCenterX = desktopLyricsUserBounds.x + desktopLyricsUserBounds.width / 2;
+    const savedCenterY = desktopLyricsUserBounds.y + desktopLyricsUserBounds.height / 2;
+    setDesktopLyricsBounds({
+      x: Math.round(savedCenterX - defaultBounds.width / 2),
+      y: Math.round(savedCenterY - defaultBounds.height / 2),
+      width: defaultBounds.width,
+      height: defaultBounds.height,
+    });
+  } else {
+    setDesktopLyricsBounds(defaultBounds);
+  }
   if (typeof desktopLyricsWindow.setOpacity === 'function') {
     desktopLyricsWindow.setOpacity(clampNumber(payload.opacity, 0.28, 1, 0.92));
   }
@@ -1491,16 +1530,18 @@ function resizeCubeRemoteBounds(bounds, state = {}, keepLeft = false) {
     y: Math.round(bounds.y + (bounds.height - size.height) / 2),
     width: size.width,
     height: size.height,
-  });
+  }, state);
 }
 
-function constrainCubeRemoteBounds(bounds) {
-  const display = screen.getDisplayMatching(bounds || cubeRemoteDefaultBounds());
+function constrainCubeRemoteBounds(bounds, state = cubeRemoteState) {
+  const size = cubeRemoteSize(state);
+  const source = bounds || cubeRemoteDefaultBounds(state);
+  const display = screen.getDisplayMatching(source);
   const area = display.workArea || display.bounds;
   const next = {
-    ...bounds,
-    width: Math.round(Math.min(Math.max(60, bounds.width || 60), area.width)),
-    height: Math.round(Math.min(Math.max(60, bounds.height || 60), area.height)),
+    ...source,
+    width: Math.round(Math.min(size.width, area.width)),
+    height: Math.round(Math.min(size.height, area.height)),
   };
   const maxX = area.x + Math.max(0, area.width - next.width);
   const maxY = area.y + Math.max(0, area.height - next.height);
@@ -1943,10 +1984,21 @@ ipcMain.handle('mineradio-cube-remote-move-by', (_event, dx, dy) => {
   try {
     if (!cubeRemoteWindow || cubeRemoteWindow.isDestroyed()) return { ok: false, error: 'NO_CUBE_WINDOW' };
     const bounds = cubeRemoteWindow.getBounds();
+    const cursor = screen.getCursorScreenPoint();
+    let moveX = clampNumber(dx, -240, 240, 0);
+    let moveY = clampNumber(dy, -240, 240, 0);
+    if (cubeRemoteDragCursor) {
+      moveX = clampNumber(cursor.x - cubeRemoteDragCursor.x, -240, 240, 0);
+      moveY = clampNumber(cursor.y - cubeRemoteDragCursor.y, -240, 240, 0);
+      cubeRemoteDragCursor = cursor;
+    }
+    const size = cubeRemoteSize(cubeRemoteState);
     const next = constrainCubeRemoteBounds({
       ...bounds,
-      x: Math.round(bounds.x + clampNumber(dx, -240, 240, 0)),
-      y: Math.round(bounds.y + clampNumber(dy, -240, 240, 0)),
+      x: Math.round(bounds.x + moveX),
+      y: Math.round(bounds.y + moveY),
+      width: size.width,
+      height: size.height,
     });
     cubeRemoteWindow.setBounds(next, false);
     rememberCubeRemoteBounds(cubeRemoteWindow.getBounds());
@@ -1956,6 +2008,11 @@ ipcMain.handle('mineradio-cube-remote-move-by', (_event, dx, dy) => {
   }
 });
 
+ipcMain.handle('mineradio-cube-remote-set-dragging', (_event, dragging) => {
+  cubeRemoteDragCursor = dragging ? screen.getCursorScreenPoint() : null;
+  return { ok: true };
+});
+
 ipcMain.handle('mineradio-cube-remote-resize', (_event, payload = {}) => {
   try {
     if (!cubeRemoteWindow || cubeRemoteWindow.isDestroyed()) return { ok: false, error: 'NO_CUBE_WINDOW' };
@@ -1963,11 +2020,7 @@ ipcMain.handle('mineradio-cube-remote-resize', (_event, payload = {}) => {
       cubeRemoteState = { ...cubeRemoteState, skin: clampCubeRemoteSkin(payload.skin) };
       saveDesktopBehaviorSettings({ cubeRemoteSkin: cubeRemoteState.skin });
     }
-    const width = Math.round(Number(payload.width) || 0);
-    const height = Math.round(Number(payload.height) || 0);
-    const size = (width > 40 && height > 40)
-      ? { width, height }
-      : cubeRemoteSize(cubeRemoteState);
+    const size = cubeRemoteSize(cubeRemoteState);
     const bounds = cubeRemoteWindow.getBounds();
     const next = constrainCubeRemoteBounds({
       x: Math.round(bounds.x + (bounds.width - size.width) / 2),
@@ -2434,6 +2487,7 @@ if (!gotSingleInstanceLock) {
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
+    scheduleLegacyUpdaterCacheCleanup();
   });
 
   app.on('activate', () => {
@@ -2447,6 +2501,10 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     appQuitting = true;
+    if (legacyUpdaterCleanupTimer) {
+      clearTimeout(legacyUpdaterCleanupTimer);
+      legacyUpdaterCleanupTimer = null;
+    }
     unregisterMineradioGlobalHotkeys();
     flushCubeRemoteBoundsSave();
     closeOverlayWindows();

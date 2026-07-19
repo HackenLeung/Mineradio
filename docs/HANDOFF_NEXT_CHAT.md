@@ -4,7 +4,7 @@
 
 ## 2026-07-18 当前开发状态
 
-- 当前源码版本：`v1.2.0`。
+- 当前源码版本：`v1.2.1`。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目和原作者署名仍按 README 保留。
 - 已接入小云、小狗双平台账号与搜索；默认只显示当前平台账号、搜索、歌单和排行，本地排行保留。
 - 已移除/隐藏小Q相关前端入口；旧 `/api/qq/*` 兼容路由不再作为功能入口，后续不要恢复 QQ UI/API。
@@ -41,7 +41,7 @@ Get-Content RELEASE.md
 - 当前真实代码/Git 仓库：`D:\projects\Mineradio`
 - 当前版本：`v1.2.0`
 - 当前发布策略：从当前可信源码构建完整 Windows 安装包，并生成配套 `.blockmap` 与 `latest.yml`。
-- `v1.2.0` 本地构建资产为 `dist/Mineradio-1.2.0-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
+- `v1.2.1` 本地构建资产为 `dist/Mineradio-1.2.1-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - 安装包样式继续沿用 `docs/INSTALLER_STYLE.md` 的中文极简黑白蓝格式。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`。
 

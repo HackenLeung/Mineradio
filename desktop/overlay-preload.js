@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('desktopOverlay', {
   closeLyrics: () => ipcRenderer.invoke('mineradio-desktop-lyrics-set-enabled', false, {}),
   onCubeState: (callback) => bind('mineradio-cube-remote-state', callback),
   sendCubeCommand: (command, payload) => ipcRenderer.invoke('mineradio-cube-remote-command', command, payload || {}),
+  setCubeDragging: (dragging) => ipcRenderer.invoke('mineradio-cube-remote-set-dragging', !!dragging),
   moveCubeBy: (dx, dy) => ipcRenderer.invoke('mineradio-cube-remote-move-by', Number(dx) || 0, Number(dy) || 0),
   resizeCube: (payload) => ipcRenderer.invoke('mineradio-cube-remote-resize', payload || {}),
 });

@@ -60,6 +60,8 @@
 !macroend
 
 !macro customInstall
+  Delete "$INSTDIR\app-update.yml"
+  Delete "$INSTDIR\resources\app-update.yml"
   FileOpen $0 "$INSTDIR\${MINERADIO_INSTALL_MARKER}" w
   ${IfNot} ${Errors}
     FileWrite $0 "Mineradio install root$\r$\n"
@@ -1192,6 +1194,7 @@ Function un.MineradioRemoveInstalledFiles
   Delete "$INSTDIR\uninstallerIcon.ico"
   Delete "$INSTDIR\${MINERADIO_INSTALL_MARKER}"
   Delete "$INSTDIR\app-update.yml"
+  Delete "$INSTDIR\resources\app-update.yml"
   Delete "$INSTDIR\elevate.exe"
 
   Delete "$INSTDIR\chrome_100_percent.pak"

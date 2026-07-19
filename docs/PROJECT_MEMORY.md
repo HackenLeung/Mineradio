@@ -17,7 +17,7 @@
 - 真实代码/Git 仓库：`D:\projects\Mineradio`
 - GitHub 仓库：`https://github.com/HackenLeung/Mineradio.git`
 - 统一备份目录：`D:\projects\Mineradio\工作区备份`
-- 当前源码检查点：`v1.2.0`。
+- 当前源码检查点：`v1.2.1`。
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
 - 更新包命名规则：从 `v1.0.10` 起，快速补丁本地文件名和 GitHub Release label 使用 `Mineradio-旧版本→新版本.patch.json` 这种右箭头格式；GitHub 资产底层 `name` 可能会把 `→` 净化成点号，但更新解析仍可识别 from/to 版本。

@@ -2724,7 +2724,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 
   <div class="fx-section-label" id="fx-control-label">音乐遥控器</div>
   <div class="fx-toggle-grid" id="fx-control-toggle-grid">
-    <div class="fx-toggle" id="t-cubeRemote" onclick="toggleCubeRemote()" title="开启后显示悬浮遥控器，托盘会隐藏"><span>悬浮遥控器</span><span class="dot"></span></div>
+    <div class="fx-toggle" id="t-cubeRemote" onclick="toggleCubeRemote()" title="开启后显示悬浮遥控器，系统托盘继续保留"><span>悬浮遥控器</span><span class="dot"></span></div>
   </div>
   <div class="fx-section-label" id="fx-control-skin-label">选择样式</div>
   <div id="fx-control-remote" class="remote-skin-grid" role="listbox" aria-label="遥控器样式">
@@ -2768,7 +2768,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <span class="remote-skin-soon">敬请期待</span>
     </button>
   </div>
-  <p class="fx-control-note" id="fx-control-note">可切换多种悬浮遥控器外观。开启后托盘会隐藏，可用遥控器打开主程序。当前：<b id="setting-remote-skin-label">魔方遥控器</b></p>
+  <p class="fx-control-note" id="fx-control-note">可切换多种悬浮遥控器外观。开启后系统托盘继续保留，也可用遥控器打开主程序。当前：<b id="setting-remote-skin-label">魔方遥控器</b></p>
 
   <div class="fx-actions">
     <button class="fx-mini-btn" onclick="resetFx()">恢复默认</button>
@@ -11349,6 +11349,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     setControlCoverSrc(thumbSrc);
   }
   if (shelfManager) shelfManager.onCoverChange(thumbSrc);
+  // 本地歌曲的在线匹配/自定义封面可能在开始播放后才异步完成；
+  // 封面真正应用成功时再同步一次托盘与悬浮遥控器，避免它们停留在空封面状态。
+  if (typeof pushTrayPlaybackState === 'function') pushTrayPlaybackState();
 
   // 启动颜色渐变 (1.4 秒)
   if (opts.smartTransitionHandoff) {
@@ -31610,7 +31613,7 @@ async function setCubeRemoteEnabled(next, opts) {
     cubeRemoteEnabled = !!(result && Object.prototype.hasOwnProperty.call(result, 'enabled') ? result.enabled : value);
     syncCubeRemoteControls();
     if (cubeRemoteEnabled) pushCubeRemoteState();
-    if (!opts.quiet) showToast(cubeRemoteEnabled ? (cubeRemoteSkinLabel() + '已开启（托盘已隐藏）') : '音乐遥控器已关闭');
+    if (!opts.quiet) showToast(cubeRemoteEnabled ? (cubeRemoteSkinLabel() + '已开启') : '音乐遥控器已关闭');
   } catch (error) {
     if (token !== cubeRemoteOperationToken) return;
     cubeRemoteEnabled = false;

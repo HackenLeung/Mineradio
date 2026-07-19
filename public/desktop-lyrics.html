@@ -38,7 +38,7 @@
     .stage{
       position:relative;
       max-width:calc(100vw - 24px);
-      padding:104px 86px 94px;
+      padding:54px 54px 48px;
       box-sizing:border-box;
       pointer-events:auto;
       cursor:default;
@@ -58,7 +58,7 @@
       width:min(100%,1120px);
       max-width:calc(100vw - 24px);
       margin:0 auto;
-      padding:1.24em var(--lyric-edge-width) 1.34em;
+      padding:.56em var(--lyric-edge-width) .68em;
       box-sizing:border-box;
       overflow:hidden;
       text-align:center;
@@ -125,7 +125,7 @@
       position:absolute;
       z-index:4;
       left:50%;
-      top:72px;
+      top:20px;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -588,7 +588,7 @@
       var viewportWidth = Math.round(Math.max(280, Math.min(safeWidth - 12, innerWidth - Math.min(240, Math.max(88, innerWidth * .13)))));
       var clearWidth = Math.max(160, viewportWidth - edgeWidth * 2);
       var readableWidth = clearWidth;
-      var maxHeight = Math.max(64, innerHeight - 188);
+      var maxHeight = Math.max(64, innerHeight - 142);
       var nextLayoutKey = [
         line.textContent || '',
         baseFontSize,
