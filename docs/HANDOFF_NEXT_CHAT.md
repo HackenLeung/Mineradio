@@ -39,7 +39,7 @@ Get-Content RELEASE.md
 ## 当前状态
 
 - 当前真实代码/Git 仓库：`D:\projects\Mineradio`
-- 当前版本：`v1.2.0`
+- 当前版本：`v1.2.1`
 - 当前发布策略：从当前可信源码构建完整 Windows 安装包，并生成配套 `.blockmap` 与 `latest.yml`。
 - `v1.2.1` 本地构建资产为 `dist/Mineradio-1.2.1-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - 安装包样式继续沿用 `docs/INSTALLER_STYLE.md` 的中文极简黑白蓝格式。
