@@ -1,15 +1,15 @@
 # 发布流程
 
-## v1.2.1 当前构建
+## v1.2.2 当前构建
 
-- 版本号：`1.2.1`。
-- 更新内容：智能过渡播放恢复加固；桌面歌词窗口范围收紧；修复高 DPI 下魔方拖动尺寸膨胀；悬浮遥控器支持滚轮调音量并与系统托盘并存；本地封面异步同步到遥控器。
+- 版本号：`1.2.2`。
+- 更新内容：随机模式指定下一首优先；队列悬浮操作和列表独立滚动；本地歌曲打开所在文件夹；音频标签按需解析；文件夹歌词主动匹配、进度和持久缓存加固。
 - 打包产物不得包含 `resources/app-update.yml`；更新缓存统一使用安装目录下的 `user-data/updates`，启动后清理旧 `%LOCALAPPDATA%\mineradio-updater`。
 - 当前维护仓库：`https://github.com/HackenLeung/Mineradio`；原项目与原作者署名见 README。
 - 构建前必须确认 `.cookie`、`.kugou-cookie`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 本地提交应包含 `platform-playlist-import.js` 与 `public/cube-remote.*`，它们是运行和打包所需源码。
 - 构建命令：`npm run build:win`。
-- 预期资产：`dist/Mineradio-1.2.1-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
+- 预期资产：`dist/Mineradio-1.2.2-Setup.exe`、对应 `.blockmap` 和 `dist/latest.yml`。
 - npm 审计现有 `NeteaseCloudMusicApi` 依赖链仍报告 2 个 high、1 个 moderate；上游暂无兼容修复，禁止直接执行会降级到 3.x 的 `npm audit fix --force`。
 
 以下 `v1.1.0` 内容为历史发布边界。

@@ -3,6 +3,7 @@ const net = require('net');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 
 let mainWindow = null;
@@ -483,6 +484,141 @@ function localMediaUrl(filePath) {
   return id ? `http://127.0.0.1:${mainServerPort}/api/local-media?id=${encodeURIComponent(id)}` : '';
 }
 
+let musicMetadataModulePromise = null;
+let localAudioMetadataCache = null;
+let localAudioMetadataCacheDirty = false;
+let localAudioMetadataCacheSaveTimer = null;
+let localAudioMetadataCacheSavePromise = Promise.resolve();
+const LOCAL_AUDIO_METADATA_CACHE_LIMIT = 24000;
+
+function localAudioMetadataCacheFile() {
+  return path.join(app.getPath('userData'), 'local-audio-metadata-cache-v1.json');
+}
+
+function readLocalAudioMetadataCache() {
+  if (localAudioMetadataCache) return localAudioMetadataCache;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(localAudioMetadataCacheFile(), 'utf8'));
+    localAudioMetadataCache = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_error) {
+    localAudioMetadataCache = {};
+  }
+  return localAudioMetadataCache;
+}
+
+function localAudioMetadataCacheKey(item) {
+  if (!item || !item.filePath) return '';
+  return [path.resolve(item.filePath).toLowerCase(), Number(item.size) || 0, Number(item.lastModified) || 0].join('|');
+}
+
+function applyLocalAudioMetadataRecord(item, record) {
+  if (!item || !record) return item;
+  if (record.title) item.embeddedTitle = record.title;
+  if (record.artist) item.embeddedArtist = record.artist;
+  if (Array.isArray(record.artists) && record.artists.length) item.embeddedArtists = record.artists.slice(0, 8);
+  if (record.album) item.embeddedAlbum = record.album;
+  if (Number(record.duration) > 0) item.embeddedDuration = Number(record.duration);
+  if (Number(record.trackNo) > 0) item.embeddedTrackNo = Number(record.trackNo);
+  item.embeddedMetadataParsed = record.parsed === true;
+  return item;
+}
+
+function applyCachedLocalLibraryEntryMetadata(item) {
+  const key = localAudioMetadataCacheKey(item);
+  const record = key && readLocalAudioMetadataCache()[key];
+  if (record) applyLocalAudioMetadataRecord(item, record);
+  return !!record;
+}
+
+function saveLocalAudioMetadataCache() {
+  if (!localAudioMetadataCacheDirty || !localAudioMetadataCache) return localAudioMetadataCacheSavePromise;
+  localAudioMetadataCacheSavePromise = localAudioMetadataCacheSavePromise.catch(() => {}).then(async () => {
+    if (!localAudioMetadataCacheDirty || !localAudioMetadataCache) return;
+    const keys = Object.keys(localAudioMetadataCache);
+    if (keys.length > LOCAL_AUDIO_METADATA_CACHE_LIMIT) {
+      keys.sort((a, b) => Number(localAudioMetadataCache[b] && localAudioMetadataCache[b].cachedAt) - Number(localAudioMetadataCache[a] && localAudioMetadataCache[a].cachedAt));
+      keys.slice(LOCAL_AUDIO_METADATA_CACHE_LIMIT).forEach((key) => { delete localAudioMetadataCache[key]; });
+    }
+    const payload = JSON.stringify(localAudioMetadataCache);
+    localAudioMetadataCacheDirty = false;
+    try {
+      await fs.promises.writeFile(localAudioMetadataCacheFile(), payload, 'utf8');
+    } catch (error) {
+      localAudioMetadataCacheDirty = true;
+      console.warn('Local audio metadata cache write failed:', error.message);
+    }
+  });
+  return localAudioMetadataCacheSavePromise;
+}
+
+function scheduleLocalAudioMetadataCacheSave() {
+  if (localAudioMetadataCacheSaveTimer) clearTimeout(localAudioMetadataCacheSaveTimer);
+  localAudioMetadataCacheSaveTimer = setTimeout(() => {
+    localAudioMetadataCacheSaveTimer = null;
+    void saveLocalAudioMetadataCache();
+  }, 1500);
+}
+
+function getMusicMetadataModule() {
+  if (!musicMetadataModulePromise) {
+    musicMetadataModulePromise = import('music-metadata').catch((error) => {
+      console.warn('Local audio metadata parser unavailable:', error.message);
+      return null;
+    });
+  }
+  return musicMetadataModulePromise;
+}
+
+function cleanLocalAudioTag(value, maxLength = 320) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+async function enrichLocalLibraryEntryMetadata(item, force = false) {
+  if (!item || !item.filePath) return item;
+  if (!force && applyCachedLocalLibraryEntryMetadata(item)) return item;
+  try {
+    const parser = await getMusicMetadataModule();
+    if (!parser || typeof parser.parseFile !== 'function') return item;
+    const metadata = await parser.parseFile(item.filePath, { duration: true, skipCovers: true });
+    const common = metadata && metadata.common || {};
+    const format = metadata && metadata.format || {};
+    const artists = (Array.isArray(common.artists) ? common.artists : [])
+      .map((value) => cleanLocalAudioTag(value, 160))
+      .filter(Boolean)
+      .slice(0, 8);
+    const artist = cleanLocalAudioTag(common.artist || common.albumartist || artists.join(' / '), 240);
+    const title = cleanLocalAudioTag(common.title, 320);
+    const album = cleanLocalAudioTag(common.album, 320);
+    const duration = Number(format.duration) || 0;
+    const trackNo = Number(common.track && common.track.no) || 0;
+    const record = { parsed: true, title, artist, artists, album, duration, trackNo, cachedAt: Date.now() };
+    applyLocalAudioMetadataRecord(item, record);
+    const key = localAudioMetadataCacheKey(item);
+    if (key) {
+      readLocalAudioMetadataCache()[key] = record;
+      localAudioMetadataCacheDirty = true;
+    }
+  } catch (error) {
+    console.warn('Local audio metadata read failed:', path.basename(item.filePath), error.message);
+  }
+  return item;
+}
+
+async function enrichLocalLibraryEntriesMetadata(items, concurrency = 2, force = false) {
+  if (!Array.isArray(items) || !items.length) return items;
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(Number(concurrency) || 4, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await enrichLocalLibraryEntryMetadata(items[index], force);
+    }
+  });
+  await Promise.all(workers);
+  await saveLocalAudioMetadataCache();
+  return items;
+}
+
 function localLibraryEntryFromPath(filePath, rootPath) {
   const abs = path.resolve(String(filePath || ''));
   const ext = path.extname(abs).toLowerCase();
@@ -575,7 +711,10 @@ async function scanLocalMusicFolder(folderPath) {
       }
       if (!entry.isFile()) continue;
       const item = localLibraryEntryFromPath(abs, root);
-      if (item) files.push(item);
+      if (item) {
+        applyCachedLocalLibraryEntryMetadata(item);
+        files.push(item);
+      }
     }
     if (visited > 60000) break;
   }
@@ -2174,14 +2313,161 @@ ipcMain.handle('mineradio-local-music-scan-folder', async (_event, folderPath) =
   }
 });
 
-ipcMain.handle('mineradio-local-music-resolve-file', async (_event, filePath) => {
+ipcMain.handle('mineradio-local-music-resolve-file', async (_event, filePath, options) => {
   try {
     if (!filePath) return { ok: false, error: 'LOCAL_LIBRARY_FILE_PATH_EMPTY' };
     const file = localLibraryEntryFromPath(filePath, path.dirname(path.resolve(String(filePath))));
     if (!file) return { ok: false, error: 'LOCAL_LIBRARY_FILE_MISSING' };
+    await enrichLocalLibraryEntryMetadata(file);
+    if (!(options && options.deferCacheSave)) scheduleLocalAudioMetadataCacheSave();
     return { ok: true, file };
   } catch (e) {
     return { ok: false, error: e.message || 'LOCAL_LIBRARY_FILE_RESOLVE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-audio-metadata-cache-flush', async () => {
+  try {
+    if (localAudioMetadataCacheSaveTimer) {
+      clearTimeout(localAudioMetadataCacheSaveTimer);
+      localAudioMetadataCacheSaveTimer = null;
+    }
+    await saveLocalAudioMetadataCache();
+    if (localAudioMetadataCacheDirty) return { ok: false, error: 'LOCAL_AUDIO_METADATA_CACHE_WRITE_FAILED' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_AUDIO_METADATA_CACHE_FLUSH_FAILED' };
+  }
+});
+
+function localLyricsCachePath(cacheKey) {
+  const hash = crypto.createHash('sha256').update(String(cacheKey || '')).digest('hex');
+  return path.join(app.getPath('userData'), 'local-lyrics-cache', `${hash}.json`);
+}
+
+const LOCAL_LYRICS_CACHE_MAX_FILES = 6000;
+const LOCAL_LYRICS_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+const LOCAL_LYRICS_CACHE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+let localLyricsCacheCleanupAt = 0;
+let localLyricsCacheCleanupPromise = null;
+
+function scheduleLocalLyricsCacheCleanup() {
+  if (localLyricsCacheCleanupPromise || Date.now() - localLyricsCacheCleanupAt < 6 * 60 * 60 * 1000) return;
+  localLyricsCacheCleanupAt = Date.now();
+  localLyricsCacheCleanupPromise = (async () => {
+    const dir = path.dirname(localLyricsCachePath('cleanup'));
+    let names = [];
+    try { names = await fs.promises.readdir(dir); } catch (error) {
+      if (error && error.code !== 'ENOENT') console.warn('Local lyrics cache cleanup failed:', error.message);
+      return;
+    }
+    const files = (await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => {
+      const filePath = path.join(dir, name);
+      try {
+        const stat = await fs.promises.stat(filePath);
+        return { filePath, size: stat.size, touchedAt: Math.max(stat.mtimeMs, stat.atimeMs) };
+      } catch (_error) { return null; }
+    }))).filter(Boolean).sort((a, b) => b.touchedAt - a.touchedAt);
+    let keptBytes = 0;
+    let keptFiles = 0;
+    const now = Date.now();
+    const expired = [];
+    files.forEach((file) => {
+      const canKeep = keptFiles < LOCAL_LYRICS_CACHE_MAX_FILES &&
+        keptBytes + file.size <= LOCAL_LYRICS_CACHE_MAX_BYTES &&
+        now - file.touchedAt <= LOCAL_LYRICS_CACHE_MAX_AGE_MS;
+      if (canKeep) {
+        keptFiles += 1;
+        keptBytes += file.size;
+      } else {
+        expired.push(file.filePath);
+      }
+    });
+    await Promise.all(expired.map(async (filePath) => {
+      try { await fs.promises.unlink(filePath); } catch (_error) {}
+    }));
+  })().catch((error) => {
+    console.warn('Local lyrics cache cleanup failed:', error.message);
+  }).finally(() => { localLyricsCacheCleanupPromise = null; });
+}
+
+function localOnlineMetadataCacheFile() {
+  return path.join(app.getPath('userData'), 'local-online-metadata-cache-v1.json');
+}
+
+let localOnlineMetadataCacheWritePromise = Promise.resolve();
+
+ipcMain.handle('mineradio-local-online-metadata-cache-get', async () => {
+  try {
+    const payload = JSON.parse(await fs.promises.readFile(localOnlineMetadataCacheFile(), 'utf8'));
+    return { ok: true, payload: payload && typeof payload === 'object' ? payload : {} };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: true, payload: {} };
+    return { ok: false, error: e.message || 'LOCAL_ONLINE_METADATA_CACHE_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-online-metadata-cache-set', async (_event, payload) => {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const keys = Object.keys(source).slice(-24000);
+  const safePayload = {};
+  keys.forEach((key) => {
+    if (key && source[key] && typeof source[key] === 'object') safePayload[String(key).slice(0, 2048)] = source[key];
+  });
+  localOnlineMetadataCacheWritePromise = localOnlineMetadataCacheWritePromise.catch(() => {}).then(() => fs.promises.writeFile(localOnlineMetadataCacheFile(), JSON.stringify(safePayload), 'utf8'));
+  try {
+    await localOnlineMetadataCacheWritePromise;
+    return { ok: true, count: keys.length };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_ONLINE_METADATA_CACHE_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-lyrics-cache-get', async (_event, cacheKey) => {
+  try {
+    if (!cacheKey) return { ok: false, error: 'LOCAL_LYRIC_CACHE_KEY_EMPTY' };
+    const payload = JSON.parse(await fs.promises.readFile(localLyricsCachePath(cacheKey), 'utf8'));
+    const now = new Date();
+    fs.promises.utimes(localLyricsCachePath(cacheKey), now, now).catch(() => {});
+    scheduleLocalLyricsCacheCleanup();
+    return { ok: true, payload };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: true, payload: null };
+    return { ok: false, error: e.message || 'LOCAL_LYRIC_CACHE_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-lyrics-cache-set', async (_event, cacheKey, payload) => {
+  try {
+    if (!cacheKey) return { ok: false, error: 'LOCAL_LYRIC_CACHE_KEY_EMPTY' };
+    const safePayload = {
+      provider: String(payload && payload.provider || '').slice(0, 24),
+      songId: String(payload && payload.songId || '').slice(0, 160),
+      lyric: String(payload && payload.lyric || '').slice(0, 1024 * 1024),
+      yrc: String(payload && payload.yrc || '').slice(0, 1024 * 1024),
+      updatedAt: Date.now(),
+    };
+    const filePath = localLyricsCachePath(cacheKey);
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(filePath, JSON.stringify(safePayload), 'utf8');
+    scheduleLocalLyricsCacheCleanup();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LYRIC_CACHE_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-music-show-in-folder', async (_event, filePath) => {
+  try {
+    if (!filePath) return { ok: false, error: 'LOCAL_LIBRARY_FILE_PATH_EMPTY' };
+    const target = path.resolve(String(filePath));
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      return { ok: false, error: 'LOCAL_LIBRARY_FILE_MISSING' };
+    }
+    shell.showItemInFolder(target);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_SHOW_IN_FOLDER_FAILED' };
   }
 });
 
