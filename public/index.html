@@ -139,6 +139,8 @@ body.desktop-shell.desktop-fullscreen #top-right{top:24px}
 .wallpaper-picker.show{display:flex}
 .wallpaper-picker-card{width:min(1080px,96vw);max-height:min(820px,90vh);overflow:auto;border-radius:20px;padding:20px;background:rgba(10,11,15,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 32px 100px rgba(0,0,0,.62)}
 .wallpaper-picker-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.wallpaper-picker-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.wallpaper-picker-actions .fx-mini-btn{flex:0 0 auto;width:auto;min-width:max-content;height:30px;padding:0 12px;white-space:nowrap;line-height:1}
 .wallpaper-picker-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .wallpaper-card{position:relative;aspect-ratio:16/9;min-height:0;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#111;cursor:pointer;content-visibility:auto;contain-intrinsic-size:320px 180px}
 .wallpaper-card img,.wallpaper-card-preview{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;background:#050608;filter:brightness(.96) saturate(1.02);transition:transform .25s,filter .25s}
@@ -146,7 +148,11 @@ body.desktop-shell.desktop-fullscreen #top-right{top:24px}
 .wallpaper-card-placeholder{position:absolute;inset:0;background:#0b0d12}
 .wallpaper-card-meta{position:absolute;inset:auto 0 0;padding:26px 11px 10px;background:linear-gradient(transparent,rgba(0,0,0,.88));font-size:11px;color:#fff}
 .wallpaper-card-meta small{display:block;margin-top:3px;color:rgba(255,255,255,.58)}
-.wallpaper-card-hide{position:absolute;right:8px;top:8px;z-index:3;width:27px;height:27px;border:1px solid rgba(255,255,255,.18);border-radius:50%;background:rgba(0,0,0,.62);color:#fff;cursor:pointer;opacity:.72}
+.wallpaper-card-tools{position:absolute;right:8px;top:8px;z-index:3;display:flex;align-items:center;gap:6px}
+.wallpaper-card-open-folder{height:27px;padding:0 10px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(0,0,0,.62);color:rgba(255,255,255,.92);font-size:11px;line-height:1;white-space:nowrap;cursor:pointer;opacity:0;transform:translateY(-2px);pointer-events:none;transition:opacity .18s ease,transform .18s ease,background .15s ease}
+.wallpaper-card:hover .wallpaper-card-open-folder,.wallpaper-card:focus-within .wallpaper-card-open-folder{opacity:1;transform:translateY(0);pointer-events:auto}
+.wallpaper-card-open-folder:hover{background:rgba(20,28,42,.88);border-color:rgba(255,255,255,.28)}
+.wallpaper-card-hide{width:27px;height:27px;border:1px solid rgba(255,255,255,.18);border-radius:50%;background:rgba(0,0,0,.62);color:#fff;cursor:pointer;opacity:.72;display:inline-flex;align-items:center;justify-content:center}
 .wallpaper-card-hide:hover{opacity:1;background:rgba(150,35,45,.78)}
 .wallpaper-mirror-row #wallpaper-mirror-toggle.active{background:rgba(244,210,138,.20);border-color:rgba(244,210,138,.48);color:#fff}
 @media (max-width:860px){.wallpaper-picker-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1585,16 +1591,18 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .qi-sub{font-size:10.5px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .queue-artist-link{max-width:100%;border:0;background:transparent;color:rgba(var(--fc-accent-rgb),.64);font:inherit;padding:0;margin:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .queue-artist-link:hover{color:#fff;text-decoration:underline;text-underline-offset:3px}
-.qi-act{display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.qi-act{display:flex;align-items:center;justify-content:center;gap:4px;opacity:0;transition:opacity .15s}
 .queue-item:hover .qi-act,.queue-item:focus-within .qi-act{opacity:1}
 #queue-list .queue-item:hover,#queue-list .queue-item:focus-within{z-index:5}
 #queue-list .qi-act{position:absolute;z-index:3;right:38px;top:50%;padding:4px;border:1px solid rgba(255,255,255,.11);border-radius:8px;background:rgba(4,4,7,.94);box-shadow:0 10px 28px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.07);opacity:0;pointer-events:none;transform:translate3d(5px,-50%,0) scale(.97);transition:opacity .16s ease,transform .20s cubic-bezier(.16,1,.3,1)}
 #queue-list .queue-item:hover .qi-act,#queue-list .queue-item:focus-within .qi-act{opacity:1;pointer-events:auto;transform:translate3d(0,-50%,0) scale(1)}
-.qi-act button{width:24px;height:24px;border:none;border-radius:5px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.55);cursor:pointer;font-size:13px;line-height:1}
+.qi-act button{width:24px;height:24px;border:none;border-radius:5px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.55);cursor:pointer;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:0 0 24px}
+.qi-act button svg,.qi-act button .heart-svg{display:block;flex:0 0 auto}
 .qi-act button:hover{background:rgba(255,255,255,.15);color:#fff}
+.qi-act button.queue-next{font-weight:600;letter-spacing:0}
 .qi-act button.queue-next:hover{background:rgba(0,245,212,.14);color:#eafffb}
 .qi-act button.liked,.song-action-btn.liked{color:#ff7a90;background:rgba(255,122,144,.10)}
-.qi-remove{width:24px;height:24px;flex:0 0 24px;border:0;border-radius:5px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.55);cursor:pointer;font-size:13px;line-height:1;transition:background .15s,color .15s}
+.qi-remove{width:24px;height:24px;flex:0 0 24px;border:0;border-radius:5px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.55);cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0;transition:background .15s,color .15s}
 .qi-remove:hover{background:rgba(255,255,255,.15);color:#fff}
 .song-action-btn{width:28px;height:28px;border-radius:50%;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.045);color:rgba(255,255,255,.58);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s;font-size:14px;line-height:1}
 .song-action-btn:hover{background:rgba(0,245,212,.10);border-color:rgba(0,245,212,.32);color:#eafffb;transform:translateY(-1px)}
@@ -2311,7 +2319,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 <div id="custom-bg"><video id="custom-bg-video" muted loop playsinline preload="metadata"></video></div>
 <div id="wallpaper-picker" class="wallpaper-picker" onclick="if(event.target===this)closeWallpaperPicker()">
   <div class="wallpaper-picker-card">
-    <div class="wallpaper-picker-head"><div><div class="fx-title">Wallpaper Engine 壁纸导入</div><div class="fx-sub">点击卡片导入 Mineradio；Scene 仅导入静态预览</div></div><div style="display:flex;gap:8px"><button class="fx-mini-btn ghost" type="button" onclick="restoreHiddenWallpaperItems()">恢复隐藏</button><button class="fx-mini-btn ghost" type="button" onclick="closeWallpaperPicker()">关闭</button></div></div>
+    <div class="wallpaper-picker-head"><div><div class="fx-title">Wallpaper Engine 壁纸导入</div><div class="fx-sub">点击卡片导入 Mineradio；Scene 仅导入静态预览</div></div><div class="wallpaper-picker-actions"><button id="wallpaper-rescan-btn" class="fx-mini-btn ghost" type="button" onclick="rescanWallpaperEngineLibrary()">重新扫描</button><button class="fx-mini-btn ghost" type="button" onclick="restoreHiddenWallpaperItems()">恢复隐藏</button><button class="fx-mini-btn ghost" type="button" onclick="closeWallpaperPicker()">关闭</button></div></div>
     <div id="wallpaper-picker-grid" class="wallpaper-picker-grid"></div>
   </div>
 </div>
@@ -2504,7 +2512,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   <div class="lyric-color-row image-pick-row">
     <button class="fx-mini-btn ghost" type="button" onclick="openWallpaperPicker()">浏览</button>
     <div class="fx-color-row-label">Wallpaper Engine<small>导入本地壁纸库</small></div>
-    <button class="fx-mini-btn ghost" type="button" onclick="loadWallpaperEngineLibrary(true)">刷新</button>
+    <button class="fx-mini-btn ghost" type="button" onclick="rescanWallpaperEngineLibrary()">重新扫描</button>
   </div>
   <div class="lyric-color-row image-pick-row wallpaper-mirror-row">
     <button id="wallpaper-mirror-toggle" class="fx-mini-btn ghost" type="button" onclick="toggleWallpaperMirror()">镜像</button>
@@ -2552,7 +2560,11 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
           <button id="lyric-source-custom" type="button" onclick="setLyricSourceMode('custom')">自定义</button>
         </div>
       </div>
-      <div class="fx-toggle-grid">
+      <div class="fx-toggle-grid" id="fx-lyric-primary-controls">
+        <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-lyricGlow" onclick="toggleFx('lyricGlow')"><span>歌词溢光</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-lyricGlowBeat" onclick="toggleFx('lyricGlowBeat')"><span>鼓点溢光</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-lyricGlowParticles" onclick="toggleFx('lyricGlowParticles')"><span>歌词光粒</span><span class="dot"></span></div>
         <div class="fx-toggle" id="stage-lyric-vertical-btn" onclick="toggleStageLyricVertical()" title="窗口内歌词竖排显示"><span>局内竖排</span><span class="dot"></span></div>
       </div>
       <div class="fx-section-label">局内歌词行数</div>
@@ -2586,6 +2598,24 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <div class="fx-slider"><label>景深位置</label><input id="fx-lyricz" type="range" min="-1.6" max="1.6" step="0.01"><output></output></div>
       <div class="fx-slider"><label>上下角度</label><input id="fx-lyrictiltx" type="range" min="-42" max="42" step="1"><output></output></div>
       <div class="fx-slider"><label>左右角度</label><input id="fx-lyrictilty" type="range" min="-42" max="42" step="1"><output></output></div>
+      <div class="fx-section-label">桌面歌词</div>
+      <div class="fx-toggle-grid" id="fx-desktop-lyrics-controls">
+        <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
+      </div>
+      <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
+      <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
+      <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92" step="0.01"><output></output></div>
+      <div class="fx-section-label">桌面歌词帧率</div>
+      <div class="fx-seg" id="desktop-lyrics-fps-seg">
+        <button data-desktop-lyrics-fps="24">24</button>
+        <button data-desktop-lyrics-fps="30">30</button>
+        <button data-desktop-lyrics-fps="60">60</button>
+        <button data-desktop-lyrics-fps="120">120</button>
+        <button data-desktop-lyrics-fps="0">无上限</button>
+      </div>
     </div>
   </div>
 
@@ -2619,16 +2649,8 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <div class="fx-toggle-grid">
         <div class="fx-toggle" id="t-float" onclick="toggleFx('floatLayer')"><span>浮空粒子层</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-cinema" onclick="toggleFx('cinema')"><span>电影镜头</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-lyricGlow" onclick="toggleFx('lyricGlow')"><span>歌词溢光</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-lyricGlowBeat" onclick="toggleFx('lyricGlowBeat')"><span>鼓点溢光</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-lyricGlowParticles" onclick="toggleFx('lyricGlowParticles')"><span>歌词光粒</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
       </div>
       <div class="fx-section-label">智能过渡</div>
       <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
@@ -2638,18 +2660,6 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <button data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')" title="智能过渡画面：右滑">右滑</button>
         <button data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')" title="智能过渡画面：随机">随机</button>
         <button data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')" title="关闭智能过渡（含预载交接）">关闭</button>
-      </div>
-      <div class="fx-section-label">桌面 / 壁纸</div>
-      <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92" step="0.01"><output></output></div>
-      <div class="fx-section-label">桌面帧数</div>
-      <div class="fx-seg" id="desktop-lyrics-fps-seg">
-        <button data-desktop-lyrics-fps="24">24</button>
-        <button data-desktop-lyrics-fps="30">30</button>
-        <button data-desktop-lyrics-fps="60">60</button>
-        <button data-desktop-lyrics-fps="120">120</button>
-        <button data-desktop-lyrics-fps="0">无上限</button>
       </div>
     </div>
   </div>
@@ -4491,11 +4501,24 @@ function updateDesktopBehaviorControls() {
     if (el) el.classList.toggle('on', desktopBehavior[key] === true);
   });
 }
-async function loadDesktopBehaviorSettings() {
+function syncDesktopLyricsPreferenceFromBehavior(behavior) {
+  if (!behavior || typeof behavior !== 'object') return false;
+  if (!Object.prototype.hasOwnProperty.call(behavior, 'desktopLyrics')) return false;
+  var enabled = behavior.desktopLyrics === true;
+  if (!!fx.desktopLyrics === enabled) return false;
+  fx.desktopLyrics = enabled;
+  try {
+    if (typeof updateFxInputs === 'function') updateFxInputs();
+  } catch (e) {}
+  try { saveLyricLayout(); } catch (e) {}
+  return true;
+}
+async function loadDesktopBehaviorSettings(options) {
+  options = options || {};
   var api = getDesktopWindowApi && getDesktopWindowApi();
   if (!api || typeof api.getDesktopBehavior !== 'function') {
     updateDesktopBehaviorControls();
-    return;
+    return desktopBehavior;
   }
   try {
     desktopBehavior = Object.assign(desktopBehavior, await api.getDesktopBehavior());
@@ -4503,6 +4526,11 @@ async function loadDesktopBehaviorSettings() {
     console.warn('desktop behavior load failed:', e);
   }
   updateDesktopBehaviorControls();
+  // 桌面歌词开关以主进程记忆兜底，避免 localStorage 与 desktop-behavior.json 不一致
+  if (options.syncDesktopLyrics === true) {
+    syncDesktopLyricsPreferenceFromBehavior(desktopBehavior);
+  }
+  return desktopBehavior;
 }
 async function toggleDesktopBehavior(key) {
   if (!Object.prototype.hasOwnProperty.call(desktopBehavior, key)) return;
@@ -26186,6 +26214,7 @@ function toggleWallpaperMirror(silent) {
   if (!silent) showToast(fx.wallpaperMirror ? '壁纸镜像已开启' : '壁纸镜像已关闭');
 }
 var wallpaperEngineLibrary = [];
+var wallpaperEngineScanBusy = false;
 var HIDDEN_WALLPAPER_STORE_KEY = 'mineradio-hidden-wallpapers-v1';
 var hiddenWallpaperIds = (function(){
   try {
@@ -26198,18 +26227,50 @@ var hiddenWallpaperIds = (function(){
 function saveHiddenWallpaperIds() {
   try { localStorage.setItem(HIDDEN_WALLPAPER_STORE_KEY, JSON.stringify(Array.from(hiddenWallpaperIds))); } catch (_e) {}
 }
-async function loadWallpaperEngineLibrary(showNotice) {
+function setWallpaperScanBusy(busy) {
+  wallpaperEngineScanBusy = !!busy;
+  var btn = document.getElementById('wallpaper-rescan-btn');
+  if (!btn) return;
+  btn.disabled = wallpaperEngineScanBusy;
+  btn.textContent = wallpaperEngineScanBusy ? '扫描中…' : '重新扫描';
+  btn.classList.toggle('active', wallpaperEngineScanBusy);
+}
+function setWallpaperPickerLoading(message) {
+  var grid = document.getElementById('wallpaper-picker-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="grid-column:1/-1;padding:36px;text-align:center;color:rgba(255,255,255,.52)">' + escHtml(message || '正在扫描 Wallpaper Engine…') + '</div>';
+}
+async function loadWallpaperEngineLibrary(showNotice, options) {
+  options = options || {};
+  var force = options.force === true;
+  if (wallpaperEngineScanBusy) return wallpaperEngineLibrary;
+  setWallpaperScanBusy(true);
+  if (force || !wallpaperEngineLibrary.length) setWallpaperPickerLoading(force ? '正在重新扫描 Wallpaper Engine…' : '正在扫描 Wallpaper Engine…');
   try {
     var result = await apiJson('/api/wallpaper/list?t=' + Date.now());
     wallpaperEngineLibrary = result && Array.isArray(result.wallpapers) ? result.wallpapers : [];
     renderWallpaperPicker();
-    if (showNotice) showToast(wallpaperEngineLibrary.length ? ('已找到 ' + wallpaperEngineLibrary.length + ' 个 Wallpaper 壁纸') : '没有找到可用的 Wallpaper 壁纸');
+    if (showNotice) {
+      var visibleCount = getUniqueWallpaperEntries().length;
+      if (wallpaperEngineLibrary.length) {
+        showToast(force
+          ? ('已重新扫描，找到 ' + wallpaperEngineLibrary.length + ' 个壁纸' + (visibleCount !== wallpaperEngineLibrary.length ? '（显示 ' + visibleCount + ' 个）' : ''))
+          : ('已找到 ' + wallpaperEngineLibrary.length + ' 个 Wallpaper 壁纸'));
+      } else {
+        showToast('没有找到可用的 Wallpaper 壁纸');
+      }
+    }
   } catch (e) {
     wallpaperEngineLibrary = [];
     renderWallpaperPicker();
-    if (showNotice) showToast('Wallpaper Engine 壁纸读取失败');
+    if (showNotice) showToast(force ? '重新扫描失败' : 'Wallpaper Engine 壁纸读取失败');
+  } finally {
+    setWallpaperScanBusy(false);
   }
   return wallpaperEngineLibrary;
+}
+async function rescanWallpaperEngineLibrary() {
+  return loadWallpaperEngineLibrary(true, { force: true });
 }
 function wallpaperMediaUrl(item, kind) {
   return '/api/wallpaper/media?id=' + encodeURIComponent(item.id) + '&kind=' + encodeURIComponent(kind);
@@ -26238,7 +26299,10 @@ function renderWallpaperPicker() {
     var preview = item.hasPreview ? wallpaperMediaUrl(item, 'preview') : '';
     var sceneOnly = item.projectType === 'scene' && !item.playable;
     return '<div class="wallpaper-card" role="button" tabindex="0" onclick="importWallpaperEngineItem(' + index + ')">' +
+      '<div class="wallpaper-card-tools">' +
+      '<button class="wallpaper-card-open-folder" type="button" title="打开所在文件夹" onclick="event.stopPropagation();openWallpaperEngineItemFolder(' + index + ')">打开所在文件夹</button>' +
       '<button class="wallpaper-card-hide" type="button" title="从 Mineradio 隐藏" onclick="event.stopPropagation();hideWallpaperEngineItem(' + index + ')">×</button>' +
+      '</div>' +
       (preview ? '<img src="' + preview + '" alt="" loading="lazy" decoding="async">' : '<div class="wallpaper-card-placeholder"></div>') +
       '<span class="wallpaper-card-meta">' + escHtml(item.title || 'Wallpaper') + '<small>' +
       (sceneOnly ? 'Scene · 静态预览' : (item.mediaType === 'video' ? '动态媒体' : '图片壁纸')) +
@@ -26252,6 +26316,27 @@ function hideWallpaperEngineItem(index) {
   saveHiddenWallpaperIds();
   renderWallpaperPicker();
 }
+async function openWallpaperEngineItemFolder(index) {
+  var item = wallpaperEngineLibrary[Number(index)];
+  if (!item) return;
+  var target = item.revealPath || item.folder || '';
+  if (!target) {
+    showToast('未找到壁纸路径');
+    return;
+  }
+  if (!window.desktopWindow || typeof window.desktopWindow.showLocalMusicInFolder !== 'function') {
+    showToast('仅桌面版支持打开所在文件夹');
+    return;
+  }
+  try {
+    var result = await window.desktopWindow.showLocalMusicInFolder(target);
+    if (!result || result.ok !== true) {
+      showToast(result && result.error === 'LOCAL_LIBRARY_FILE_MISSING' ? '壁纸文件夹已移动或不存在' : '打开所在文件夹失败');
+    }
+  } catch (e) {
+    showToast('打开所在文件夹失败');
+  }
+}
 function restoreHiddenWallpaperItems() {
   hiddenWallpaperIds.clear();
   saveHiddenWallpaperIds();
@@ -26260,7 +26345,12 @@ function restoreHiddenWallpaperItems() {
 async function openWallpaperPicker() {
   var picker = document.getElementById('wallpaper-picker');
   if (picker) picker.classList.add('show');
-  if (!wallpaperEngineLibrary.length) await loadWallpaperEngineLibrary(false);
+  if (!wallpaperEngineLibrary.length) {
+    setWallpaperPickerLoading('正在扫描 Wallpaper Engine…');
+    await loadWallpaperEngineLibrary(false);
+  } else {
+    renderWallpaperPicker();
+  }
 }
 function closeWallpaperPicker() {
   var picker = document.getElementById('wallpaper-picker');
@@ -27094,7 +27184,7 @@ function fxPanelTargetForNode(node, current) {
   var id = node.id || '';
   var inputId = fxPanelInputId(node);
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
-  if (id === 'fx-lyric-fold') return 'lyrics';
+  if (id === 'fx-lyric-fold' || id === 'fx-desktop-lyrics-controls' || id === 'desktop-lyrics-fps-seg' || id === 'fx-desktop-lyrics-section-label' || id === 'fx-desktop-lyrics-fps-label') return 'lyrics';
   if (id === 'fx-audio-fold' || id === 'audio-preset-seg' || id === 'audio-eq-grid') return 'sound';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
   if (id === 'fx-advanced' || node.classList.contains('fx-actions')) return 'advanced';
@@ -27104,7 +27194,7 @@ function fxPanelTargetForNode(node, current) {
   if (node.classList.contains('lyric-color-row') || node.classList.contains('cover-color-pop') || node.classList.contains('color-lab-pop') || node.classList.contains('cover-color-loupe')) return 'appearance';
   if (inputId === 'fx-bgopacity' || inputId === 'fx-wallpaperopacity' || inputId === 'fx-glassaberration') return 'appearance';
   if (inputId === 'audio-preamp' || /^audio-eq-/.test(inputId)) return 'sound';
-  if (inputId === 'fx-lyricglow') return 'lyrics';
+  if (inputId === 'fx-lyricglow' || /^fx-desktoplyrics/.test(inputId)) return 'lyrics';
   if (/^fx-(intensity|depth|coverres|cineshake)$/.test(inputId)) return 'motion';
   return current || 'presets';
 }
@@ -27211,6 +27301,17 @@ function moveToggleToGrid(toggleId, grid) {
   if (!node || !grid || node.parentNode === grid) return;
   grid.appendChild(node);
 }
+function ensureLyricToggle(id, label, title, onClick) {
+  var node = document.getElementById(id);
+  if (node) return node;
+  node = document.createElement('div');
+  node.className = 'fx-toggle';
+  node.id = id;
+  if (title) node.title = title;
+  if (onClick) node.setAttribute('onclick', onClick);
+  node.innerHTML = '<span>' + label + '</span><span class="dot"></span>';
+  return node;
+}
 function ensureLyricPrimaryControls() {
   var body = document.querySelector('#fx-lyric-fold .fx-fold-body');
   if (!body) return;
@@ -27227,16 +27328,15 @@ function ensureLyricPrimaryControls() {
     body.insertBefore(label, grid);
   }
   [
-    't-desktopLyrics',
-    't-desktopLyricsClickThrough',
-    't-desktopLyricsCinema',
-    't-desktopLyricsHighlight',
-    't-lyricCameraLock',
-    't-lyricGlow',
-    't-lyricGlowBeat',
-    't-lyricGlowParticles',
-    'stage-lyric-vertical-btn'
-  ].forEach(function(id){ moveToggleToGrid(id, grid); });
+    ensureLyricToggle('t-lyricCameraLock', '歌词镜头绑定', '', "toggleFx('lyricCameraLock')"),
+    ensureLyricToggle('t-lyricGlow', '歌词溢光', '', "toggleFx('lyricGlow')"),
+    ensureLyricToggle('t-lyricGlowBeat', '鼓点溢光', '', "toggleFx('lyricGlowBeat')"),
+    ensureLyricToggle('t-lyricGlowParticles', '歌词光粒', '', "toggleFx('lyricGlowParticles')"),
+    ensureLyricToggle('stage-lyric-vertical-btn', '局内竖排', '窗口内歌词竖排显示', 'toggleStageLyricVertical()')
+  ].forEach(function(node){
+    if (!node) return;
+    if (node.parentNode !== grid) grid.appendChild(node);
+  });
   var rows = document.getElementById('stage-lyric-lines-seg');
   var rowsLabel = rows && rows.previousElementSibling && rows.previousElementSibling.classList.contains('fx-section-label')
     ? rows.previousElementSibling
@@ -27244,6 +27344,82 @@ function ensureLyricPrimaryControls() {
   if (rows && rowsLabel) {
     grid.insertAdjacentElement('afterend', rowsLabel);
     rowsLabel.insertAdjacentElement('afterend', rows);
+  }
+  ensureDesktopLyricsControlsInLyricTab();
+}
+function moveFxControlBlock(node, parent, beforeNode) {
+  if (!node || !parent) return null;
+  if (node.parentNode !== parent || (beforeNode && node.nextSibling !== beforeNode)) {
+    if (beforeNode && beforeNode.parentNode === parent) parent.insertBefore(node, beforeNode);
+    else parent.appendChild(node);
+  }
+  return node;
+}
+function ensureDesktopLyricsControlsInLyricTab() {
+  var body = document.querySelector('#fx-lyric-fold .fx-fold-body');
+  if (!body) return;
+  var size = document.getElementById('fx-desktoplyricssize');
+  var opacity = document.getElementById('fx-desktoplyricsopacity');
+  var height = document.getElementById('fx-desktoplyricsy');
+  var sizeSlider = size && size.closest ? size.closest('.fx-slider') : null;
+  var opacitySlider = opacity && opacity.closest ? opacity.closest('.fx-slider') : null;
+  var heightSlider = height && height.closest ? height.closest('.fx-slider') : null;
+  var fpsSeg = document.getElementById('desktop-lyrics-fps-seg');
+  var desktopGrid = document.getElementById('fx-desktop-lyrics-controls');
+  if (!desktopGrid) {
+    desktopGrid = document.createElement('div');
+    desktopGrid.className = 'fx-toggle-grid';
+    desktopGrid.id = 'fx-desktop-lyrics-controls';
+  }
+  [
+    't-desktopLyrics',
+    't-desktopLyricsClickThrough',
+    't-desktopLyricsCinema',
+    't-desktopLyricsHighlight'
+  ].forEach(function(id){ moveToggleToGrid(id, desktopGrid); });
+  var sectionLabel = document.getElementById('fx-desktop-lyrics-section-label');
+  if (!sectionLabel) {
+    sectionLabel = desktopGrid.previousElementSibling && desktopGrid.previousElementSibling.classList.contains('fx-section-label')
+      ? desktopGrid.previousElementSibling
+      : null;
+  }
+  if (!sectionLabel) {
+    sectionLabel = document.createElement('div');
+    sectionLabel.className = 'fx-section-label';
+  }
+  sectionLabel.id = 'fx-desktop-lyrics-section-label';
+  sectionLabel.textContent = '桌面歌词';
+  var fpsLabel = fpsSeg && fpsSeg.previousElementSibling && fpsSeg.previousElementSibling.classList.contains('fx-section-label')
+    ? fpsSeg.previousElementSibling
+    : document.getElementById('fx-desktop-lyrics-fps-label');
+  if (!fpsLabel) {
+    fpsLabel = document.createElement('div');
+    fpsLabel.className = 'fx-section-label';
+  }
+  fpsLabel.id = 'fx-desktop-lyrics-fps-label';
+  fpsLabel.textContent = '桌面歌词帧率';
+  // 固定顺序：桌面歌词开关 -> 三项滑条 -> 帧率
+  moveFxControlBlock(sectionLabel, body, null);
+  moveFxControlBlock(desktopGrid, body, null);
+  if (sizeSlider) moveFxControlBlock(sizeSlider, body, null);
+  if (opacitySlider) moveFxControlBlock(opacitySlider, body, null);
+  if (heightSlider) moveFxControlBlock(heightSlider, body, null);
+  if (fpsSeg) {
+    moveFxControlBlock(fpsLabel, body, null);
+    moveFxControlBlock(fpsSeg, body, null);
+  }
+  // 把桌面歌词区块放到歌词布局后面
+  var lyricScale = document.getElementById('fx-lyricscale');
+  var lyricTiltY = document.getElementById('fx-lyrictilty');
+  var layoutEnd = lyricTiltY && lyricTiltY.closest ? lyricTiltY.closest('.fx-slider') : (lyricScale && lyricScale.closest ? lyricScale.closest('.fx-slider') : null);
+  if (layoutEnd && layoutEnd.parentNode === body) {
+    var insertAfter = layoutEnd;
+    [sectionLabel, desktopGrid, sizeSlider, opacitySlider, heightSlider, fpsLabel, fpsSeg].forEach(function(node){
+      if (!node) return;
+      if (insertAfter.nextSibling) body.insertBefore(node, insertAfter.nextSibling);
+      else body.appendChild(node);
+      insertAfter = node;
+    });
   }
 }
 function applyBackgroundMediaHint() {
@@ -32425,7 +32601,6 @@ applySavedLyricPaletteState();
 bindQualityControl();
 bindVolumeControls();
 bindPlaybackTuningControls();
-loadDesktopBehaviorSettings();
 bindTrayCommands();
 bindCubeRemoteController();
 pushTrayPlaybackState();
@@ -32454,7 +32629,10 @@ scheduleStartupIdleTask(function(){
 applyUserCapsuleAutoHideState();
 applyFxFabAutoHideState();
 applyControlsAutoHidePreference();
-applyDesktopLyricsState(false);
+// 先同步主进程桌面歌词开关记忆，再应用，避免启动时被 localStorage 旧值抢先关掉/打开
+loadDesktopBehaviorSettings({ syncDesktopLyrics: true }).finally(function(){
+  applyDesktopLyricsState(false);
+});
 applyWallpaperModeState(false);
 setShelfMode(fx.shelf);
 applyStartupStarfieldPreset();

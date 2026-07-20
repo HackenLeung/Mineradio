@@ -475,6 +475,8 @@ function scanWallpaperEngineLibrary() {
           dynamic: !!media && compatible.mediaType === 'video',
           hasPreview: !!preview,
           dedupeKey: contentFingerprint || fingerprint,
+          folder: dir,
+          revealPath: media || preview || projectPath,
         });
       } catch (_err) {}
     });

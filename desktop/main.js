@@ -315,6 +315,72 @@ function desktopBehaviorPath() {
   return path.join(app.getPath('userData'), DESKTOP_BEHAVIOR_FILE);
 }
 
+function normalizeDesktopLyricsBounds(bounds) {
+  if (!bounds || typeof bounds !== 'object') return null;
+  const next = {
+    x: Number(bounds.x),
+    y: Number(bounds.y),
+    width: Number(bounds.width),
+    height: Number(bounds.height),
+  };
+  if (![next.x, next.y, next.width, next.height].every(Number.isFinite)) return null;
+  return {
+    x: Math.round(next.x),
+    y: Math.round(next.y),
+    width: Math.round(Math.max(320, next.width)),
+    height: Math.round(Math.max(180, next.height)),
+  };
+}
+
+function desktopLyricsBoundsEqual(a, b) {
+  if (!a || !b) return false;
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+let desktopLyricsBoundsSaveTimer = null;
+let desktopLyricsBoundsPending = null;
+
+function flushDesktopLyricsBoundsSave() {
+  if (desktopLyricsBoundsSaveTimer) {
+    clearTimeout(desktopLyricsBoundsSaveTimer);
+    desktopLyricsBoundsSaveTimer = null;
+  }
+  if (!desktopLyricsBoundsPending) return;
+  const next = desktopLyricsBoundsPending;
+  desktopLyricsBoundsPending = null;
+  const current = readDesktopBehaviorSettings().desktopLyricsBounds;
+  if (desktopLyricsBoundsEqual(current, next)) return;
+  saveDesktopBehaviorSettings({ desktopLyricsBounds: next });
+}
+
+function rememberDesktopLyricsBoundsPersist(bounds, { immediate = false, clear = false } = {}) {
+  if (clear) {
+    desktopLyricsUserBounds = null;
+    desktopLyricsBoundsPending = null;
+    if (desktopLyricsBoundsSaveTimer) {
+      clearTimeout(desktopLyricsBoundsSaveTimer);
+      desktopLyricsBoundsSaveTimer = null;
+    }
+    if (readDesktopBehaviorSettings().desktopLyricsBounds) {
+      saveDesktopBehaviorSettings({ desktopLyricsBounds: null });
+    }
+    return;
+  }
+  const next = normalizeDesktopLyricsBounds(bounds);
+  if (!next) return;
+  desktopLyricsUserBounds = next;
+  desktopLyricsBoundsPending = next;
+  if (immediate) {
+    flushDesktopLyricsBoundsSave();
+    return;
+  }
+  if (desktopLyricsBoundsSaveTimer) clearTimeout(desktopLyricsBoundsSaveTimer);
+  desktopLyricsBoundsSaveTimer = setTimeout(() => {
+    desktopLyricsBoundsSaveTimer = null;
+    flushDesktopLyricsBoundsSave();
+  }, 320);
+}
+
 function readDesktopBehaviorSettings() {
   if (desktopBehaviorSettings) return desktopBehaviorSettings;
   const defaults = {
@@ -324,6 +390,8 @@ function readDesktopBehaviorSettings() {
     cubeRemote: false,
     cubeRemoteSkin: 'cube',
     cubeRemoteBounds: null,
+    desktopLyrics: false,
+    desktopLyricsBounds: null,
   };
   try {
     const raw = JSON.parse(fs.readFileSync(desktopBehaviorPath(), 'utf8')) || {};
@@ -336,6 +404,7 @@ function readDesktopBehaviorSettings() {
         height: Number(raw.cubeRemoteBounds.height),
       }
       : null;
+    const lyricsBounds = normalizeDesktopLyricsBounds(raw.desktopLyricsBounds);
     desktopBehaviorSettings = {
       closeToTray: raw.closeToTray === true,
       openAtLogin: raw.openAtLogin === true,
@@ -345,12 +414,17 @@ function readDesktopBehaviorSettings() {
       cubeRemoteBounds: bounds && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
         ? normalizeCubeRemoteBounds(bounds, { skin: cubeRemoteSkin })
         : null,
+      desktopLyrics: raw.desktopLyrics === true,
+      desktopLyricsBounds: lyricsBounds,
     };
   } catch (_e) {
     desktopBehaviorSettings = defaults;
   }
   if (desktopBehaviorSettings.cubeRemoteBounds) {
     cubeRemoteUserBounds = { ...desktopBehaviorSettings.cubeRemoteBounds };
+  }
+  if (desktopBehaviorSettings.desktopLyricsBounds) {
+    desktopLyricsUserBounds = { ...desktopBehaviorSettings.desktopLyricsBounds };
   }
   cubeRemoteState = {
     ...cubeRemoteState,
@@ -1300,7 +1374,7 @@ function setDesktopLyricsBounds(bounds) {
 
 function rememberDesktopLyricsBounds() {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || desktopLyricsProgrammaticMove) return;
-  desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+  rememberDesktopLyricsBoundsPersist(desktopLyricsWindow.getBounds());
 }
 
 function applyDesktopLyricsMouseBehavior() {
@@ -1455,7 +1529,10 @@ function createDesktopLyricsWindow(payload = {}) {
   const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
   const opacityChanged = Object.prototype.hasOwnProperty.call(payload || {}, 'opacity')
     && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
-  if (yChanged) desktopLyricsUserBounds = null;
+  if (yChanged) rememberDesktopLyricsBoundsPersist(null, { clear: true });
+  if (readDesktopBehaviorSettings().desktopLyrics !== true) {
+    saveDesktopBehaviorSettings({ desktopLyrics: true });
+  }
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
     if (yChanged) {
       positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged });
@@ -1512,18 +1589,25 @@ function createDesktopLyricsWindow(payload = {}) {
   return desktopLyricsWindow;
 }
 
-function closeDesktopLyricsWindow() {
+function closeDesktopLyricsWindow(options = {}) {
+  const fromUser = options.fromUser === true;
   desktopLyricsState = { ...desktopLyricsState, enabled: false };
   desktopLyricsPointerCapture = false;
   desktopLyricsMouseIgnored = null;
   desktopLyricsHotBounds = null;
   stopDesktopLyricsMousePoller();
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    sendDesktopLyricsState();
+    if (fromUser) sendDesktopLyricsState();
     desktopLyricsWindow.close();
   }
   desktopLyricsWindow = null;
-  broadcastDesktopLyricsEnabledState(false);
+  // 退出/主窗口销毁时只拆窗口，不要把“桌面歌词开启”偏好改成关闭并回写前端
+  if (fromUser) {
+    if (readDesktopBehaviorSettings().desktopLyrics !== false) {
+      saveDesktopBehaviorSettings({ desktopLyrics: false });
+    }
+    broadcastDesktopLyricsEnabledState(false);
+  }
 }
 
 function nativeWindowHandleDecimal(win) {
@@ -2461,7 +2545,15 @@ ipcMain.handle('mineradio-local-music-show-in-folder', async (_event, filePath) 
   try {
     if (!filePath) return { ok: false, error: 'LOCAL_LIBRARY_FILE_PATH_EMPTY' };
     const target = path.resolve(String(filePath));
-    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+    if (!fs.existsSync(target)) {
+      return { ok: false, error: 'LOCAL_LIBRARY_FILE_MISSING' };
+    }
+    const stat = fs.statSync(target);
+    if (stat.isDirectory()) {
+      const error = await shell.openPath(target);
+      return error ? { ok: false, error } : { ok: true };
+    }
+    if (!stat.isFile()) {
       return { ok: false, error: 'LOCAL_LIBRARY_FILE_MISSING' };
     }
     shell.showItemInFolder(target);
@@ -2518,7 +2610,7 @@ ipcMain.handle('mineradio-desktop-lyrics-set-enabled', async (_event, enabled, p
       createDesktopLyricsWindow(payload || {});
       broadcastDesktopLyricsEnabledState(true);
     } else {
-      closeDesktopLyricsWindow();
+      closeDesktopLyricsWindow({ fromUser: true });
     }
     return { ok: true };
   } catch (e) {
@@ -2593,7 +2685,7 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
       y: Math.round(bounds.y + clampNumber(dy, -160, 160, 0)),
     };
     desktopLyricsWindow.setBounds(next, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+    rememberDesktopLyricsBoundsPersist(desktopLyricsWindow.getBounds(), { immediate: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_MOVE_FAILED' };
@@ -2793,6 +2885,7 @@ if (!gotSingleInstanceLock) {
     }
     unregisterMineradioGlobalHotkeys();
     flushCubeRemoteBoundsSave();
+    flushDesktopLyricsBoundsSave();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
   });
