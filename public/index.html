@@ -24172,7 +24172,12 @@ function applyFreshLocalMediaEntry(song, file) {
   return song;
 }
 async function ensureLocalEmbeddedMetadata(song) {
-  if (!song || song.type !== 'local' || song.embeddedMetadataParsed) return song;
+  if (!song || song.type !== 'local') return song;
+  // 封面不写入标签缓存（方案A：每次启动重读），所以 embeddedMetadataParsed 命中
+  // 标签缓存时 cover/embeddedCoverUrl 仍可能为空。只有当封面与歌词都齐全时才早退，
+  // 否则必须发 IPC 让主进程补读内嵌封面，否则舞台会一直停在上一首歌的封面。
+  var hasCover = !!(song.cover || song.embeddedCoverUrl || song.localSidecarCover || getCustomCoverForSong(song));
+  if (song.embeddedMetadataParsed && hasCover) return song;
   var api = getDesktopWindowApi && getDesktopWindowApi();
   if (!song.localPath || !api || typeof api.resolveLocalMusicFile !== 'function') return song;
   try {
@@ -24198,6 +24203,16 @@ function refreshLocalEmbeddedMetadataUi(song, token) {
   renderLocalLibraryPanel();
   renderPlaylistPanelDetailPanel();
   if (emptyHomeActive) renderHomeDiscover();
+  // 若切歌时元数据尚未解析，解析完成后补应用内嵌/同目录封面，
+  // 避免封面停留在上一首本地歌曲。
+  if (!getCustomCoverForSong(song) && song.cover) {
+    var coverOpts = { trackToken: token, deferHeavy: true, delay: 120, timeout: 1900 };
+    if (/^data:/i.test(String(song.cover))) {
+      applyCoverDataUrl(song.cover, coverOpts);
+    } else {
+      loadCoverFromUrl(coverUrlWithSize(song.cover, 400), coverOpts);
+    }
+  }
 }
 function localLibraryMatchForPlayback(song) {
   if (!song) return null;
