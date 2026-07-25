@@ -593,6 +593,7 @@ function applyLocalAudioMetadataRecord(item, record) {
   if (record.album) item.embeddedAlbum = record.album;
   if (Number(record.duration) > 0) item.embeddedDuration = Number(record.duration);
   if (Number(record.trackNo) > 0) item.embeddedTrackNo = Number(record.trackNo);
+  if (record.lyrics) item.embeddedLyrics = record.lyrics;
   item.embeddedMetadataParsed = record.parsed === true;
   return item;
 }
@@ -649,7 +650,24 @@ function cleanLocalAudioTag(value, maxLength = 320) {
 
 async function enrichLocalLibraryEntryMetadata(item, force = false) {
   if (!item || !item.filePath) return item;
-  if (!force && applyCachedLocalLibraryEntryMetadata(item)) return item;
+  if (!force && applyCachedLocalLibraryEntryMetadata(item)) {
+    // 方案A：封面不缓存进 JSON。命中缓存后若缺少封面，单独补读一次（毫秒级）。
+    if (!item.embeddedCover || !item.embeddedLyrics) {
+      const hadLyrics = !!item.embeddedLyrics;
+      await attachEmbeddedMediaToItem(item);
+      // 旧缓存没有 lyrics 字段，补读到歌词后回写进缓存，下次启动直接用。
+      if (!hadLyrics && item.embeddedLyrics) {
+        const key = localAudioMetadataCacheKey(item);
+        const cache = key && readLocalAudioMetadataCache()[key];
+        if (cache && !cache.lyrics) {
+          cache.lyrics = item.embeddedLyrics;
+          localAudioMetadataCacheDirty = true;
+          scheduleLocalAudioMetadataCacheSave();
+        }
+      }
+    }
+    return item;
+  }
   try {
     const parser = await getMusicMetadataModule();
     if (!parser || typeof parser.parseFile !== 'function') return item;
@@ -665,15 +683,68 @@ async function enrichLocalLibraryEntryMetadata(item, force = false) {
     const album = cleanLocalAudioTag(common.album, 320);
     const duration = Number(format.duration) || 0;
     const trackNo = Number(common.track && common.track.no) || 0;
-    const record = { parsed: true, title, artist, artists, album, duration, trackNo, cachedAt: Date.now() };
+    const lyrics = extractEmbeddedLyricsText(common);
+    const record = { parsed: true, title, artist, artists, album, duration, trackNo, lyrics, cachedAt: Date.now() };
     applyLocalAudioMetadataRecord(item, record);
     const key = localAudioMetadataCacheKey(item);
     if (key) {
       readLocalAudioMetadataCache()[key] = record;
       localAudioMetadataCacheDirty = true;
     }
+    // 方案A：封面每次启动重读，不写入 JSON 缓存。
+    await attachEmbeddedMediaToItem(item, metadata);
   } catch (error) {
     console.warn('Local audio metadata read failed:', path.basename(item.filePath), error.message);
+  }
+  return item;
+}
+
+function extractEmbeddedLyricsText(common) {
+  if (!common) return '';
+  const pick = (value) => {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const text = pick(entry);
+        if (text) return text;
+      }
+      return '';
+    }
+    if (typeof value === 'object') return pick(value.text != null ? value.text : (value.lyrics != null ? value.lyrics : value.value));
+    return String(value);
+  };
+  const raw = pick(common.lyrics);
+  const text = String(raw || '').replace(/\r\n/g, '\n').trim();
+  // 内嵌歌词标签可能存在但内容为空，要求至少有实质内容
+  return text.length >= 8 ? text.slice(0, 512 * 1024) : '';
+}
+
+async function attachEmbeddedMediaToItem(item, metadata) {
+  if (!item || !item.filePath) return item;
+  try {
+    let common = metadata && metadata.common;
+    if (!common) {
+      const parser = await getMusicMetadataModule();
+      if (!parser || typeof parser.parseFile !== 'function') return item;
+      const parsed = await parser.parseFile(item.filePath, { duration: false });
+      common = parsed && parsed.common;
+    }
+    if (!common) return item;
+    const pic = Array.isArray(common.picture) && common.picture.length ? common.picture[0] : null;
+    if (pic && pic.data) {
+      const buf = Buffer.isBuffer(pic.data) ? pic.data : Buffer.from(pic.data);
+      if (buf.length) {
+        const mime = String(pic.format || 'image/jpeg').trim() || 'image/jpeg';
+        item.embeddedCover = `data:${mime};base64,${buf.toString('base64')}`;
+      }
+    }
+    if (!item.embeddedLyrics) {
+      const lyrics = extractEmbeddedLyricsText(common);
+      if (lyrics) item.embeddedLyrics = lyrics;
+    }
+  } catch (error) {
+    console.warn('Local embedded media read failed:', path.basename(item.filePath), error.message);
   }
   return item;
 }
