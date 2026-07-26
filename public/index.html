@@ -1182,12 +1182,24 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .same-tempo-status{min-height:18px;margin-bottom:10px;font-size:11.5px;color:rgba(126,226,168,.84)}
 .same-tempo-status.warn{color:#f4d28a}
 .same-tempo-status.fail{color:#ff8f9d}
-.same-tempo-list{max-height:min(360px,46vh);overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.same-tempo-list{max-height:min(360px,46vh);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;scrollbar-width:thin;scrollbar-color:rgba(var(--fc-accent-rgb),.28) transparent}
+.same-tempo-list::-webkit-scrollbar{width:6px}
+.same-tempo-list::-webkit-scrollbar-track{background:transparent}
+.same-tempo-list::-webkit-scrollbar-thumb{background:rgba(var(--fc-accent-rgb),.28);border-radius:999px}
+.same-tempo-list::-webkit-scrollbar-thumb:hover{background:rgba(var(--fc-accent-rgb),.45)}
 .same-tempo-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035)}
 .same-tempo-item img,.same-tempo-item .same-tempo-cover{width:38px;height:38px;border-radius:8px;object-fit:cover;flex:0 0 auto;background:rgba(255,255,255,.06)}
 .same-tempo-item .qi-name{font-size:12.5px;color:rgba(255,255,255,.92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .same-tempo-item .qi-sub{margin-top:2px;font-size:10.5px;color:rgba(255,255,255,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.same-tempo-bpm{margin-left:auto;flex:0 0 auto;font-size:11px;color:rgba(244,210,138,.9)}
+.same-tempo-bpm{flex:0 0 auto;font-size:11px;color:rgba(244,210,138,.9)}
+.same-tempo-energy{margin-left:auto;flex:0 0 auto;display:flex;align-items:flex-end;gap:2px;height:14px}
+.same-tempo-energy i{width:3px;height:5px;border-radius:1px;background:rgba(255,255,255,.16);transition:background .2s,height .2s}
+.same-tempo-energy i:nth-child(2){height:7px}
+.same-tempo-energy i:nth-child(3){height:9px}
+.same-tempo-energy i:nth-child(4){height:11px}
+.same-tempo-energy i:nth-child(5){height:13px}
+.same-tempo-energy i.on{background:linear-gradient(180deg,rgba(255,196,120,.95),rgba(244,150,90,.9))}
+.same-tempo-energy.same-tempo-seed{align-items:center;color:rgba(255,255,255,.38);font-size:10px}
 .custom-lyric-modal{width:min(560px,92vw);max-width:min(560px,92vw);padding:28px;text-align:left}
 .custom-lyric-modal h2{text-align:center;margin-bottom:14px}
 .custom-lyric-track{padding:11px 12px;margin-bottom:12px;border-radius:12px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035)}
@@ -13635,6 +13647,8 @@ function packLocalBeatMap(map) {
     analyzedAt: map.analyzedAt || Date.now(),
     partial: !!map.partial,
     partialUntilSec: map.partialUntilSec || 0,
+    // 冻结能量分随缓存持久化(缺失时现算一次),重启后直接复用,杜绝重算漂移。
+    energyScore: (typeof map.energyScore === 'number' && map.energyScore >= 0) ? map.energyScore : computeBeatMapEnergyScore(map),
     cameraBeats: camera,
     pulseBeats: pulse
   };
@@ -13656,7 +13670,8 @@ function unpackLocalBeatMap(stored) {
     visualBeatCount: stored.visualBeatCount || camera.length,
     analyzedAt: stored.analyzedAt || Date.now(),
     partial: !!stored.partial,
-    partialUntilSec: stored.partialUntilSec || 0
+    partialUntilSec: stored.partialUntilSec || 0,
+    energyScore: (typeof stored.energyScore === 'number' && stored.energyScore >= 0) ? stored.energyScore : -1
   };
 }
 function readLocalBeatPrefs() {
@@ -13975,6 +13990,70 @@ function getCachedSongBpm(song) {
   if (key && beatMapCache[key]) return bpmFromBeatMap(beatMapCache[key]);
   return 0;
 }
+function getCachedSongBeatMap(song) {
+  if (!song) return null;
+  if (song.localKey) {
+    var localMap = getCachedLocalBeatMap(song.localKey);
+    if (localMap) return localMap;
+  }
+  var key = beatMapSongKey(song);
+  if (key && beatMapCache[key]) return beatMapCache[key];
+  return null;
+}
+// 从已缓存 beatmap 推导一首歌的“能量强度”(0~1),用于过渡歌单的爽感爬升排序。
+// 关键:每首歌的 impact 是各自动态范围内归一化的(安静曲和炸曲都会铺满 0.2~0.9),
+// 不能跨曲比较。真正跨曲可比的是“强拍密度”——单位时间里有多少个重拍,这是真实计数。
+// 统一使用会被缓存持久化的 cameraBeats,避免同一首歌重启前后因事件集合不同而变分。
+// 纯计算:只从 cameraBeats(会被缓存持久化的事件集合)推导分数,不读 beats。
+// 这样 fresh map 和重启后从缓存重建的 map 用的是同一份事件,分数天然一致。
+function computeBeatMapEnergyScore(map) {
+  if (!map) return -1;
+  var beats = (map.cameraBeats && map.cameraBeats.length) ? map.cameraBeats
+    : ((map.pulseBeats && map.pulseBeats.length) ? map.pulseBeats : null);
+  if (!beats || !beats.length) return -1;
+  var dur = Number(map.duration) || 0;
+  if (!(dur > 4)) {
+    // 没有时长就退回用鼓点间隔估算覆盖时长
+    var first = null, last = null;
+    for (var j = 0; j < beats.length; j++) {
+      var tb = beats[j];
+      var tt = (typeof tb === 'number') ? tb : (tb && tb.time);
+      if (!isFinite(tt)) continue;
+      if (first == null) first = tt;
+      last = tt;
+    }
+    dur = (first != null && last != null && last > first) ? (last - first) : 0;
+  }
+  if (!(dur > 4)) return -1;
+  // 强拍占比:impact 高于该曲中位偏上的拍算“重拍”。这是曲内相对量,只做次要微调。
+  var strongCount = 0, n = 0;
+  for (var i = 0; i < beats.length; i++) {
+    var b = beats[i];
+    n++;
+    if (typeof b === 'number') continue;
+    if (!b) continue;
+    var imp = (b.impact == null) ? (b.strength == null ? 0.45 : b.strength) : b.impact;
+    if (imp >= 0.5) strongCount++;
+  }
+  if (!n) return -1;
+  // 密度:每秒重拍数。流行/摇滚大概 1.5~4 拍/秒,归一到 0~1(6 拍/秒封顶算满能量)。
+  var density = n / dur;
+  var densityScore = Math.max(0, Math.min(1, density / 6));
+  var strongRatio = strongCount / n;                 // 0~1
+  return Math.max(0, Math.min(1, densityScore * 0.72 + strongRatio * 0.28));
+}
+function beatMapEnergyScore(map) {
+  if (!map) return -1;
+  // 优先用已冻结、随缓存持久化的分数,保证同一首歌重启前后完全一致。
+  if (typeof map.energyScore === 'number' && map.energyScore >= 0) return map.energyScore;
+  var score = computeBeatMapEnergyScore(map);
+  // 首次算出就冻结到 map 上,后续(含打包进缓存)一律复用这个值。
+  if (score >= 0) map.energyScore = score;
+  return score;
+}
+function getCachedSongEnergy(song) {
+  return beatMapEnergyScore(getCachedSongBeatMap(song));
+}
 async function loadLocalBeatMapForSong(song) {
   if (!song || !song.localKey) return null;
   var map = getCachedLocalBeatMap(song.localKey);
@@ -14094,25 +14173,80 @@ function collectSameTempoCandidates(seedSong, scope) {
   }
   return list;
 }
-function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count) {
-  var tight = [];
-  var loose = [];
+// 过渡歌单排序:先按 BPM 相近筛出候选池,再用“贪心衔接”把它们串成一条能量爬升弧线。
+// 每一步都从剩余歌里挑“衔接代价最小”的下一首(BPM 差小 + 能量比当前略高一点),
+// 让整条歌单听起来越来越上头,而不是单纯按速度差排。
+function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy, seedSong) {
+  var pool = [];
   candidates.forEach(function(song){
     var key = sameTempoSongKey(song);
     if (!song || !key || excludeKeys[key]) return;
     var bpm = getCachedSongBpm(song);
     if (!(bpm > 0)) return;
     var delta = Math.abs(bpm - seedBpm);
-    var item = { song: song, bpm: bpm, delta: delta };
-    if (delta <= 2.05) tight.push(item);
-    else if (delta <= 4.05) loose.push(item);
+    if (delta > 4.05) return;
+    var energy = getCachedSongEnergy(song);
+    pool.push({ song: song, bpm: bpm, delta: delta, energy: energy });
   });
-  function byDelta(a, b) {
-    return (a.delta - b.delta) || String(a.song.name || '').localeCompare(String(b.song.name || ''), 'zh');
+  count = Math.max(1, count || 15);
+  if (!pool.length) return [];
+
+  // 参考歌作为过渡的起点固定排在第一首(它已被 excludeKeys 挡在 pool 外)。
+  var seedItem = null;
+  if (seedSong && sameTempoSongKey(seedSong)) {
+    var seedItemEnergy = (seedEnergy != null && seedEnergy >= 0) ? seedEnergy : getCachedSongEnergy(seedSong);
+    seedItem = { song: seedSong, bpm: seedBpm, delta: 0, energy: seedItemEnergy, isSeed: true };
   }
-  tight.sort(byDelta);
-  loose.sort(byDelta);
-  return tight.concat(loose).slice(0, Math.max(1, count || 15));
+
+  // 能量缺失(旧缓存没鼓点细节)时用中性值,不让它干扰排序。
+  var energif = pool.filter(function(p){ return p.energy >= 0; }).map(function(p){ return p.energy; });
+  var energyFallback = energif.length ? energif.reduce(function(a,b){ return a+b; }, 0) / energif.length : 0.5;
+  pool.forEach(function(p){ if (!(p.energy >= 0)) p.energy = energyFallback; });
+
+  // BPM 已被 ±4 的候选池保证平滑了,所以排序阶段让【能量】当主角:
+  // 沿一条“从贴近参考的能量起步 → 逐步爬升到最高”的目标弧线铺歌,
+  // 每一步选“最贴近当前目标能量、且能量在往上走”的一首,BPM 只做次要微调。
+  var startEnergy = seedItem ? seedItem.energy : ((seedEnergy != null && seedEnergy >= 0) ? seedEnergy : energyFallback);
+  var energyValues = pool.map(function(p){ return p.energy; });
+  var poolMin = Math.min.apply(null, energyValues);
+  var poolMax = Math.max.apply(null, energyValues);
+  // 目标弧线:第一首贴近参考能量,最后一首冲到池子里的最高能量。
+  var arcStart = Math.max(poolMin, Math.min(startEnergy, poolMax));
+  var arcEnd = poolMax;
+  // 参考歌占掉第一首名额,其余从池子里按弧线补足到 count 总数。
+  var picks = Math.min(seedItem ? count - 1 : count, pool.length);
+  var remaining = pool.slice();
+  var ordered = seedItem ? [seedItem] : [];
+  var prevEnergy = arcStart;
+  var prevBpm = seedBpm;
+  for (var step = 0; step < picks && remaining.length; step++) {
+    // 本步的目标能量:在弧线上按进度插值(picks==1 时就取起点)。
+    var progress = picks > 1 ? step / (picks - 1) : 0;
+    var targetEnergy = arcStart + (arcEnd - arcStart) * progress;
+    var bestIdx = 0;
+    var bestCost = Infinity;
+    for (var i = 0; i < remaining.length; i++) {
+      var cand = remaining[i];
+      // 主代价:与目标能量的距离(能量当主角)。
+      var energyCost = Math.abs(cand.energy - targetEnergy);
+      // 轻罚能量回落,鼓励整体往上走(不是硬性禁止,避免排不出)。
+      var dropPenalty = cand.energy < prevEnergy - 0.02 ? (prevEnergy - cand.energy) * 0.5 : 0;
+      // 次要:速度衔接,权重压低,只在能量接近时做微调。
+      var bpmCost = (Math.abs(cand.bpm - prevBpm) / 4.05) * 0.18;
+      var cost = energyCost + dropPenalty + bpmCost;
+      if (cost < bestCost - 1e-6) { bestCost = cost; bestIdx = i; }
+    }
+    var pick = remaining.splice(bestIdx, 1)[0];
+    ordered.push(pick);
+    prevEnergy = pick.energy;
+    prevBpm = pick.bpm;
+  }
+  // 参考歌固定第一首;其余生成歌曲最终按能量升序,保证展示和实际播放都不会向下回落。
+  var generated = seedItem ? ordered.slice(1) : ordered;
+  generated.sort(function(a, b){
+    return (a.energy - b.energy) || (Math.abs(a.bpm - seedBpm) - Math.abs(b.bpm - seedBpm));
+  });
+  return seedItem ? [seedItem].concat(generated) : generated;
 }
 async function warmSameTempoCandidateBpms(candidates, token, limit) {
   limit = Math.max(1, Number(limit) || 40);
@@ -14149,6 +14283,13 @@ function updateSameTempoOptionButtons() {
     folderBtn.classList.toggle('active', sameTempoState.scope === 'folder');
   }
 }
+// 把能量值(0~1.2)映射成 1~5 档,给结果列表画“越往下越上头”的能量条。
+function sameTempoEnergyLevel(energy) {
+  if (!(energy >= 0)) return 3;
+  // 密度制能量多数落在 0.25~0.75，把这段拉满 1~5 档，视觉区分更明显。
+  var lvl = Math.round(1 + Math.max(0, Math.min(1, (energy - 0.25) / 0.5)) * 4);
+  return Math.max(1, Math.min(5, lvl));
+}
 function renderSameTempoResults() {
   var list = document.getElementById('same-tempo-list');
   if (!list) return;
@@ -14163,11 +14304,18 @@ function renderSameTempoResults() {
     var coverHtml = cover
       ? '<img src="' + String(cover).replace(/"/g, '&quot;') + '" alt="">'
       : '<div class="same-tempo-cover"></div>';
+    var lvl = sameTempoEnergyLevel(item.energy);
+    var energyHtml = item.isSeed
+      ? '<div class="same-tempo-energy same-tempo-seed" title="参考歌固定第一首">参考</div>'
+      : '<div class="same-tempo-energy" title="能量档位 ' + lvl + '/5（参考歌后逐步增强）">' +
+        [1,2,3,4,5].map(function(n){ return '<i class="' + (n <= lvl ? 'on' : '') + '"></i>'; }).join('') +
+      '</div>';
     return '<div class="same-tempo-item">' + coverHtml +
       '<div style="min-width:0;flex:1">' +
         '<div class="qi-name">' + escHtml((index + 1) + '. ' + (song.name || '本地歌曲')) + '</div>' +
         '<div class="qi-sub">' + escHtml(song.artist || song.localFolderName || '本地文件') + '</div>' +
       '</div>' +
+      energyHtml +
       '<div class="same-tempo-bpm">' + (item.bpm ? (Math.round(item.bpm) + ' BPM') : '--') + '</div>' +
     '</div>';
   }).join('');
@@ -14195,7 +14343,7 @@ function updateSameTempoModal() {
       primary.textContent = '生成中...';
       primary.disabled = true;
     } else if (sameTempoState.mode === 'result' && sameTempoState.results.length) {
-      primary.textContent = '立即播放';
+      primary.textContent = '替换队列并播放';
       primary.disabled = false;
       primary.setAttribute('onclick', 'applySameTempoPlaylist(true)');
     } else {
@@ -14316,11 +14464,12 @@ async function startSameTempoGeneration() {
       return;
     }
     setSameTempoStatus('参考 ' + Math.round(seedBpm) + ' BPM，正在读取缓存…', 'warn');
+    var seedEnergy = getCachedSongEnergy(seed);
     var candidates = collectSameTempoCandidates(seed, sameTempoState.scope);
     await warmSameTempoCandidateBpms(candidates, token, sameTempoState.source === 'playlist' ? 60 : 40);
     if (token !== sameTempoState.token) return;
     var excludeKeys = sameTempoExcludeKeySet(seed);
-    var matched = matchSameTempoSongs(seedBpm, candidates, excludeKeys, sameTempoState.count);
+    var matched = matchSameTempoSongs(seedBpm, candidates, excludeKeys, sameTempoState.count, seedEnergy, seed);
     if (matched.length < sameTempoState.count) {
       var analyzeLimit = sameTempoState.source === 'playlist' ? 10 : 6;
       var needAnalyze = candidates.filter(function(song){
@@ -14332,7 +14481,7 @@ async function startSameTempoGeneration() {
         setSameTempoStatus('补充分析 ' + (i + 1) + '/' + needAnalyze.length + ' · 目标 ' + Math.round(seedBpm) + ' BPM', 'warn');
         await ensureSongBpm(needAnalyze[i], { allowAnalyze: true });
         if (token !== sameTempoState.token) return;
-        matched = matchSameTempoSongs(seedBpm, candidates, excludeKeys, sameTempoState.count);
+        matched = matchSameTempoSongs(seedBpm, candidates, excludeKeys, sameTempoState.count, seedEnergy, seed);
         if (matched.length >= sameTempoState.count) break;
       }
     }
@@ -14372,7 +14521,7 @@ function applySameTempoPlaylist(playNow) {
     safeSwitchPlaylistTab('queue', 'same-tempo-play');
     closeSameTempoModal();
     playQueueAt(0).catch(function(e){ console.warn('[SameTempoPlay]', e); });
-    showToast('已开始播放过渡歌单 · ' + songs.length + ' 首');
+    showToast('已替换当前队列并播放 · ' + songs.length + ' 首');
     return;
   }
   songs.forEach(function(song){ queueSong(song); });
@@ -19885,32 +20034,47 @@ function packPlaybackSessionSong(song) {
   delete cloned._lastPlaybackFailAt;
   return cloned;
 }
+function buildPlaybackSession(reason, start, count) {
+  var queue = start > 0 || count < playQueue.length ? playQueue.slice(start, start + count) : playQueue;
+  var currentSong = playQueue[currentIdx];
+  // “下一首播放”序列:存 key,恢复时按 key 在重建队列里重新匹配,还原 FIFO 顺序
+  var nextKeys = (queuedNextSongs || []).map(function(song){
+    var idx = playQueue.indexOf(song);
+    return idx >= start && idx < start + count ? queueItemKey(song) : '';
+  }).filter(Boolean);
+  return {
+    version: 2,
+    savedAt: Date.now(),
+    reason: reason || '',
+    currentIdx: Math.max(0, currentIdx - start),
+    sourceCurrentIdx: currentIdx,
+    playMode: playMode || 'loop',
+    activeRadioContext: activeRadioContext || null,
+    currentKey: queueItemKey(currentSong),
+    nextKeys: nextKeys,
+    totalQueueLength: playQueue.length,
+    queue: queue.map(packPlaybackSessionSong).filter(Boolean)
+  };
+}
 function savePlaybackSession(reason) {
   try {
     if (!Array.isArray(playQueue) || !playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) {
       localStorage.removeItem(PLAYBACK_SESSION_STORE_KEY);
       return;
     }
-    var maxSave = 300;
-    var start = 0;
-    var queue = playQueue;
-    if (queue.length > maxSave) {
-      start = Math.max(0, Math.min(currentIdx - Math.floor(maxSave / 2), queue.length - maxSave));
-      queue = queue.slice(start, start + maxSave);
+    // 默认存全部队列;只有真的撑爆 localStorage 配额时,才以当前歌为中心逐步收窄窗口
+    var counts = [playQueue.length, 1000, 500, 200, 80];
+    for (var i = 0; i < counts.length; i++) {
+      var count = Math.min(counts[i], playQueue.length);
+      var start = count >= playQueue.length ? 0
+        : Math.max(0, Math.min(currentIdx - Math.floor(count / 2), playQueue.length - count));
+      try {
+        localStorage.setItem(PLAYBACK_SESSION_STORE_KEY, JSON.stringify(buildPlaybackSession(reason, start, count)));
+        return;
+      } catch (quotaErr) {
+        if (i === counts.length - 1) throw quotaErr;
+      }
     }
-    var currentSong = playQueue[currentIdx];
-    var session = {
-      version: 1,
-      savedAt: Date.now(),
-      reason: reason || '',
-      currentIdx: Math.max(0, currentIdx - start),
-      sourceCurrentIdx: currentIdx,
-      playMode: playMode || 'loop',
-      activeRadioContext: activeRadioContext || null,
-      currentKey: queueItemKey(currentSong),
-      queue: queue.map(packPlaybackSessionSong).filter(Boolean)
-    };
-    localStorage.setItem(PLAYBACK_SESSION_STORE_KEY, JSON.stringify(session));
   } catch (e) {
     console.warn('[PlaybackSessionSave]', e);
   }
@@ -19935,6 +20099,22 @@ function restorePlaybackSession() {
     currentIdx = restoredIdx;
     if (session.playMode) playMode = session.playMode;
     activeRadioContext = session.activeRadioContext || null;
+    // 还原“下一首播放”FIFO 序列:按存的 key 在重建队列里找回对象引用,保持原顺序
+    queuedNextSong = null;
+    queuedNextSongs = [];
+    if (Array.isArray(session.nextKeys) && session.nextKeys.length) {
+      session.nextKeys.forEach(function(key){
+        if (!key) return;
+        for (var i = 0; i < playQueue.length; i++) {
+          if (queueItemKey(playQueue[i]) === key && queuedNextSongs.indexOf(playQueue[i]) < 0) {
+            queuedNextSongs.push(playQueue[i]);
+            break;
+          }
+        }
+      });
+      pruneQueuedNextSongs();
+      if (queuedNextSongs.length) queuedNextSong = queuedNextSongs[0];
+    }
     homeForcedOpen = true;
     homeSuppressed = false;
     var song = playQueue[currentIdx];
