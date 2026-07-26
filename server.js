@@ -397,7 +397,7 @@ function bestWallpaperPreview(dir, project) {
     project && project.preview,
     project && project.cover,
     project && project.poster,
-    'preview.jpg', 'preview.png', 'preview.jpeg', 'preview.webp',
+    'preview.jpg', 'preview.png', 'preview.jpeg', 'preview.webp', 'preview.gif',
     'cover.jpg', 'cover.png', 'poster.jpg', 'poster.png',
   ]);
   const candidates = [];
@@ -414,7 +414,7 @@ function bestWallpaperPreview(dir, project) {
       if (++visited > 3000) break;
       const target = path.join(current, entry.name);
       if (entry.isDirectory()) { stack.push(target); continue; }
-      if (!entry.isFile() || !/^(?:preview|cover|poster|thumbnail)[^/]*\.(?:jpe?g|png|webp)$/i.test(entry.name)) continue;
+      if (!entry.isFile() || !/^(?:preview|cover|poster|thumbnail)[^/]*\.(?:jpe?g|png|webp|gif)$/i.test(entry.name)) continue;
       try { candidates.push({ file: target, size: fs.statSync(target).size, priority: current === dir ? 2 : 1 }); } catch (_error) {}
     }
   }
@@ -438,7 +438,12 @@ function scanWallpaperEngineLibrary() {
   wallpaperMediaIndex.clear();
   const results = [];
   const projectRoots = [];
-  steamLibraryRoots().forEach(root => {
+  const libraryRoots = steamLibraryRoots();
+  const executablePath = libraryRoots.map(root => firstExistingWallpaperFile(
+    path.join(root, 'steamapps', 'common', 'wallpaper_engine'),
+    ['wallpaper64.exe', 'wallpaper32.exe']
+  )).find(Boolean) || '';
+  libraryRoots.forEach(root => {
     projectRoots.push(path.join(root, 'steamapps', 'workshop', 'content', '431960'));
     projectRoots.push(path.join(root, 'steamapps', 'common', 'wallpaper_engine', 'projects', 'myprojects'));
   });
@@ -454,10 +459,10 @@ function scanWallpaperEngineLibrary() {
       try {
         const project = JSON.parse(fs.readFileSync(projectPath, 'utf8'));
         const type = String(project.type || '').toLowerCase();
-        const compatible = compatibleWallpaperMedia(dir, project);
+        const compatible = type === 'scene' ? { file: '', mediaType: '' } : compatibleWallpaperMedia(dir, project);
         const media = compatible.file;
         const preview = bestWallpaperPreview(dir, project);
-        if (!media && !preview) return;
+        if (!media && !preview && type !== 'scene') return;
         const fingerprint = crypto.createHash('sha1').update(projectPath).digest('hex').slice(0, 18);
         const contentFingerprint = wallpaperContentFingerprint(media || preview);
         if (seen.has(fingerprint) || (contentFingerprint && seenContent.has(contentFingerprint))) return;
@@ -472,11 +477,14 @@ function scanWallpaperEngineLibrary() {
           projectType: type || '',
           mediaType: compatible.mediaType || '',
           playable: !!media,
+          nativePlayable: type === 'scene',
           dynamic: !!media && compatible.mediaType === 'video',
           hasPreview: !!preview,
           dedupeKey: contentFingerprint || fingerprint,
           folder: dir,
-          revealPath: media || preview || projectPath,
+          projectPath,
+          executablePath,
+          revealPath: type === 'scene' ? projectPath : media || preview || projectPath,
         });
       } catch (_err) {}
     });

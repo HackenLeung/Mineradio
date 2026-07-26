@@ -21,6 +21,8 @@ let desktopLyricsHotBounds = null;
 let desktopLyricsLastMiddleAt = 0;
 let wallpaperWindow = null;
 let wallpaperState = {};
+let mainWindowDesktopLocked = false;
+let mainWindowDesktopRestoreState = null;
 let cubeRemoteWindow = null;
 let cubeRemoteFullscreenPoller = null;
 let cubeRemoteFullscreenPollerBuffer = '';
@@ -289,6 +291,7 @@ function getWindowState(win) {
     isMinimized: false,
     isVisible: false,
     isFocused: false,
+    isDesktopLocked: false,
     isPrimaryDisplay: true,
     hasDisplayOnLeft: false,
     hasDisplayOnRight: false,
@@ -299,7 +302,8 @@ function getWindowState(win) {
     isNativeFullScreen: win.isFullScreen(),
     isHtmlFullScreen: htmlFullscreenActive,
     isWindowFullScreen: windowFullscreenActive,
-    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive,
+    isDesktopLocked: win === mainWindow && mainWindowDesktopLocked,
+    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive || (win === mainWindow && mainWindowDesktopLocked),
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
@@ -541,6 +545,14 @@ function updateMineradioTray() {
       ],
     },
     { type: 'separator' },
+    {
+      label: '退出桌面锁定',
+      visible: mainWindowDesktopLocked,
+      click: () => setMainWindowDesktopLocked(false, 'tray').then((result) => {
+        if (!result.ok) console.warn('Desktop unlock from tray failed:', result.error);
+      }),
+    },
+    { type: 'separator', visible: mainWindowDesktopLocked },
     { label: '打开 Mineradio', click: focusMainWindow },
     {
       label: '退出 Mineradio',
@@ -1352,6 +1364,10 @@ function applyWindowedBounds(win) {
 
 function exitFullscreenToWindow(win) {
   if (!win || win.isDestroyed()) return;
+  if (win === mainWindow && mainWindowDesktopLocked) {
+    sendWindowState(win);
+    return;
+  }
   windowFullscreenActive = false;
 
   if (!win.isFullScreen()) {
@@ -1373,6 +1389,10 @@ function exitFullscreenToWindow(win) {
 
 function toggleFullscreen(win) {
   if (!win || win.isDestroyed()) return;
+  if (win === mainWindow && mainWindowDesktopLocked) {
+    sendWindowState(win);
+    return;
+  }
   if (win.isFullScreen() || windowFullscreenActive) {
     exitFullscreenToWindow(win);
     return;
@@ -1687,9 +1707,29 @@ function nativeWindowHandleDecimal(win) {
   return String(handle.readUInt32LE(0));
 }
 
-function attachWallpaperToWorkerW(win) {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+function setWindowWorkerWParent(win, enabled) {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) {
+    return Promise.resolve({ ok: false, error: 'DESKTOP_LOCK_WINDOWS_ONLY' });
+  }
   const hwnd = nativeWindowHandleDecimal(win);
+  const placementScript = enabled ? `
+$monitor = [MineradioNativeWin]::MonitorFromWindow($target, 2)
+$monitorInfo = [MineradioNativeWin+MONITORINFO]::new()
+$monitorInfo.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][MineradioNativeWin+MONITORINFO])
+if (-not [MineradioNativeWin]::GetMonitorInfo($monitor, [ref]$monitorInfo)) { throw "GetMonitorInfo failed" }
+$screenRect = $monitorInfo.rcMonitor
+[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
+if ([MineradioNativeWin]::GetAncestor($target, 1) -ne $script:workerw) { throw "SetParent failed" }
+[MineradioNativeWin]::MapWindowPoints([IntPtr]::Zero, $script:workerw, [ref]$screenRect, 2) | Out-Null
+$width = $screenRect.Right - $screenRect.Left
+$height = $screenRect.Bottom - $screenRect.Top
+if ($width -lt 640 -or $height -lt 360) { throw "Invalid desktop lock bounds" }
+if (-not [MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, $screenRect.Left, $screenRect.Top, $width, $height, 0x0070)) { throw "SetWindowPos failed" }
+` : `
+[MineradioNativeWin]::SetParent($target, [IntPtr]::Zero) | Out-Null
+if ([MineradioNativeWin]::GetAncestor($target, 1) -eq $script:workerw) { throw "SetParent failed" }
+if (-not [MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0073)) { throw "SetWindowPos failed" }
+`;
   const script = `
 $ErrorActionPreference = "Stop"
 if (-not ("MineradioNativeWin" -as [type])) {
@@ -1697,11 +1737,17 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class MineradioNativeWin {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint dwFlags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+  [DllImport("user32.dll", SetLastError=true)] public static extern int MapWindowPoints(IntPtr hWndFrom, IntPtr hWndTo, ref RECT lpPoints, uint cPoints);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 }
@@ -1722,14 +1768,81 @@ $enum = [MineradioNativeWin+EnumWindowsProc]{
 [MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
 if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
 $target = [IntPtr]::new([Int64]${hwnd})
-[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
-[MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0013) | Out-Null
+${placementScript}
 `;
-  execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    windowsHide: true,
-    timeout: 5000,
-  }, (error) => {
-    if (error) console.warn('Wallpaper WorkerW attach failed:', error.message);
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true,
+      timeout: 5000,
+    }, (error) => resolve(error
+      ? { ok: false, error: error.message || 'DESKTOP_LOCK_FAILED' }
+      : { ok: true }));
+  });
+}
+
+function attachWallpaperToWorkerW(win) {
+  setWindowWorkerWParent(win, true).then((result) => {
+    if (!result.ok) console.warn('Wallpaper WorkerW attach failed:', result.error);
+  });
+}
+
+function broadcastMainDesktopLockState(source) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('mineradio-main-desktop-lock-state', { locked: mainWindowDesktopLocked, source: source || 'ipc' });
+}
+
+async function setMainWindowDesktopLocked(enabled, source) {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: 'MAIN_WINDOW_MISSING' };
+  enabled = enabled === true;
+  if (mainWindowDesktopLocked === enabled) return { ok: true };
+  if (enabled) {
+    mainWindowDesktopRestoreState = {
+      bounds: mainWindow.getNormalBounds(),
+      maximized: mainWindow.isMaximized(),
+      movable: mainWindow.isMovable(),
+      resizable: mainWindow.isResizable(),
+    };
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    const result = await setWindowWorkerWParent(mainWindow, true);
+    if (!result.ok) {
+      await setWindowWorkerWParent(mainWindow, false);
+      mainWindow.setBounds(mainWindowDesktopRestoreState.bounds, false);
+      if (mainWindowDesktopRestoreState.maximized) mainWindow.maximize();
+      mainWindowDesktopRestoreState = null;
+      return result;
+    }
+    mainWindowDesktopLocked = true;
+    mainWindow.setSkipTaskbar(true);
+    mainWindow.setMovable(false);
+    mainWindow.setResizable(false);
+    updateMineradioTray();
+    broadcastMainDesktopLockState(source);
+    sendWindowState(mainWindow);
+    return { ok: true };
+  }
+  const result = await setWindowWorkerWParent(mainWindow, false);
+  if (!result.ok) return result;
+  const restore = mainWindowDesktopRestoreState;
+  mainWindowDesktopLocked = false;
+  mainWindowDesktopRestoreState = null;
+  mainWindow.setSkipTaskbar(false);
+  mainWindow.setMovable(restore ? restore.movable : true);
+  mainWindow.setResizable(restore ? restore.resizable : true);
+  if (restore && restore.bounds) mainWindow.setBounds(restore.bounds, false);
+  if (restore && restore.maximized) mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
+  updateMineradioTray();
+  broadcastMainDesktopLockState(source);
+  sendWindowState(mainWindow);
+  return { ok: true };
+}
+
+function refreshMainWindowDesktopLockBounds() {
+  if (!mainWindowDesktopLocked || !mainWindow || mainWindow.isDestroyed()) return;
+  setWindowWorkerWParent(mainWindow, true).then((result) => {
+    if (!result.ok) console.warn('Desktop lock bounds refresh failed:', result.error);
+    else sendWindowState(mainWindow);
   });
 }
 
@@ -1795,6 +1908,41 @@ function closeWallpaperWindow() {
     wallpaperWindow.close();
   }
   wallpaperWindow = null;
+}
+
+function openWallpaperEngineProject(payload = {}) {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve({ ok: false, error: 'WALLPAPER_ENGINE_WINDOWS_ONLY' });
+    const executablePath = path.resolve(String(payload.executablePath || ''));
+    const projectPath = path.resolve(String(payload.projectPath || ''));
+    if (!/\\steamapps\\common\\wallpaper_engine\\wallpaper(?:32|64)\.exe$/i.test(executablePath) || !fs.existsSync(executablePath)) {
+      return resolve({ ok: false, error: 'WALLPAPER_ENGINE_NOT_INSTALLED' });
+    }
+    if (!/\\(?:workshop\\content\\431960|common\\wallpaper_engine\\projects\\myprojects)\\.+\\project\.json$/i.test(projectPath) || !fs.existsSync(projectPath)) {
+      return resolve({ ok: false, error: 'WALLPAPER_ENGINE_PROJECT_MISSING' });
+    }
+    let settled = false;
+    let successTimer = null;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (successTimer) clearTimeout(successTimer);
+      resolve(result);
+    };
+    const child = spawn(executablePath, ['-control', 'openWallpaper', '-file', projectPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.once('error', () => finish({ ok: false, error: 'WALLPAPER_ENGINE_COMMAND_FAILED' }));
+    child.once('exit', (code) => finish(code === 0
+      ? { ok: true }
+      : { ok: false, error: 'WALLPAPER_ENGINE_COMMAND_FAILED' }));
+    child.once('spawn', () => {
+      child.unref();
+      successTimer = setTimeout(() => finish({ ok: true }), 5000);
+    });
+  });
 }
 
 function cubeRemoteSize(state = {}) {
@@ -2791,6 +2939,9 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('wallpaper-engine-open-project', (_event, payload) => openWallpaperEngineProject(payload));
+ipcMain.handle('mineradio-main-desktop-lock', (_event, enabled) => setMainWindowDesktopLocked(enabled));
+
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
@@ -2931,10 +3082,17 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
+      refreshMainWindowDesktopLockBounds();
       scheduleWindowStateSend(mainWindow);
     });
-    screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
-    screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
+    screen.on('display-added', () => {
+      refreshMainWindowDesktopLockBounds();
+      scheduleWindowStateSend(mainWindow);
+    });
+    screen.on('display-removed', () => {
+      refreshMainWindowDesktopLockBounds();
+      scheduleWindowStateSend(mainWindow);
+    });
     await createWindow();
     scheduleLegacyUpdaterCacheCleanup();
   });
