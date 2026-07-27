@@ -1176,9 +1176,13 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .same-tempo-modal{width:min(520px,92vw);max-width:min(520px,92vw);padding:24px;text-align:left}
 .same-tempo-modal h2{text-align:center;margin-bottom:12px}
 .same-tempo-sub{margin-bottom:12px;font-size:12px;line-height:1.5;color:rgba(255,255,255,.52);text-align:center}
-.same-tempo-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.same-tempo-option{min-height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);color:rgba(255,255,255,.72);font-family:inherit;cursor:pointer}
+.same-tempo-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.same-tempo-option{min-height:42px;padding:0 8px;border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);color:rgba(255,255,255,.72);font-family:inherit;font-size:12px;cursor:pointer}
 .same-tempo-option.active{border-color:rgba(244,210,138,.48);background:rgba(244,210,138,.12);color:var(--champagne)}
+.same-tempo-option:disabled,.same-tempo-scan:disabled{opacity:.42;cursor:default}
+.same-tempo-scan{grid-column:1/-1;min-height:38px;border-radius:12px;border:1px dashed rgba(255,255,255,.14);background:rgba(255,255,255,.028);color:rgba(255,255,255,.62);font-family:inherit;font-size:11.5px;cursor:pointer;transition:border-color .18s,background .18s,color .18s}
+.same-tempo-scan:hover:not(:disabled){border-color:rgba(126,226,168,.42);color:rgba(196,245,218,.92)}
+.same-tempo-scan.busy{border-style:solid;border-color:rgba(126,226,168,.46);background:rgba(126,226,168,.10);color:rgba(196,245,218,.92)}
 .same-tempo-status{min-height:18px;margin-bottom:10px;font-size:11.5px;color:rgba(126,226,168,.84)}
 .same-tempo-status.warn{color:#f4d28a}
 .same-tempo-status.fail{color:#ff8f9d}
@@ -3197,6 +3201,8 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button id="same-tempo-count-20" class="same-tempo-option" type="button" onclick="setSameTempoCount(20)">20 首</button>
       <button id="same-tempo-scope-all" class="same-tempo-option active" type="button" onclick="setSameTempoScope('all')">全部本地</button>
       <button id="same-tempo-scope-folder" class="same-tempo-option" type="button" onclick="setSameTempoScope('folder')">当前文件夹</button>
+      <button id="same-tempo-scope-online" class="same-tempo-option" type="button" onclick="setSameTempoScope('online')" title="本地库加上听过、已有节奏缓存的在线歌">本地+已听在线</button>
+      <button id="same-tempo-scan-btn" class="same-tempo-scan" type="button" onclick="toggleSameTempoLibraryScan()">扫描本地库节奏</button>
     </div>
     <div id="same-tempo-status" class="same-tempo-status"></div>
     <div id="same-tempo-list" class="same-tempo-list"></div>
@@ -3435,6 +3441,10 @@ var HOME_PLAYLIST_ORDER_KEY = 'mineradio-home-playlist-order-v1';
 var VISUAL_GUIDE_SEEN_STORE_KEY = 'mineradio-visual-guide-seen-v2';
 var LOCAL_BEATMAP_STORE_KEY = 'mineradio-local-beatmaps-v1';
 var LOCAL_BEAT_PREF_STORE_KEY = 'mineradio-local-beatmap-prefs-v1';
+// 过渡歌单用的轻量节奏索引:每首歌只存 BPM + 能量分,不存事件数组。
+// 完整 beatmap 太大(几千个事件),整库扫描时既存不进 localStorage 配额,
+// 也会把内存和主线程拖垮;索引一条只有几十字节,几百首歌也放得下。
+var TEMPO_INDEX_STORE_KEY = 'mineradio-tempo-index-v1';
 var LOCAL_BEAT_COMBOS = ['', 'downbeat', 'push', 'drop', 'rebound', 'accent'];
 var HOTKEY_ACTIONS = [
   { key:'togglePlay', label:'播放 / 暂停', category:'播放', local:'Space', global:'Ctrl+Alt+Space' },
@@ -3451,8 +3461,15 @@ var diyPlayerMode = readDiyModePreference();
 var customCoverMap = readCustomCoverMap();
 var customLyricMap = readCustomLyricMap();
 var customLyricPrefs = readCustomLyricPrefs();
+// 能量分版本号。公式变更时递增,旧缓存里的旧版分数会被忽略并重算,
+// 避免新旧公式的分数混在同一次排序里(它们不在同一量纲上)。
+// 必须声明在 readLocalBeatMapCache() 之前 —— unpackLocalBeatMap 会读它。
+var BEAT_ENERGY_SCORE_VERSION = 2;
 var localBeatMapCache = readLocalBeatMapCache();
 var localBeatMapPrefs = readLocalBeatPrefs();
+// 过渡歌单的轻量节奏索引:每首歌只留 BPM 和能量分,不留鼓点事件。
+// 完整 beatmap 走磁盘缓存,所以这份索引可以覆盖整个本地库而不撑爆 localStorage。
+var sameTempoIndex = readSameTempoIndex();
 var playbackQuality = readPlaybackQualityPreference();
 var downloadQuality = readDownloadQualityPreference();
 var coverCropState = null, coverCropBound = false;
@@ -3475,6 +3492,8 @@ var sameTempoState = {
   candidates: [],
   results: []
 };
+// 本地库节奏扫描:给过渡歌单预热候选池。用独立 token,关弹窗或再次点击都能中断。
+var sameTempoScanState = { active:false, token:0, done:0, total:0, ok:0, fail:0 };
 var trackDetailSong = null;
 var likedSongMap = {}, likeBusyMap = {}, likeStatusToken = 0;
 var collectTargetSong = null, collectBusy = false;
@@ -13648,7 +13667,9 @@ function packLocalBeatMap(map) {
     partial: !!map.partial,
     partialUntilSec: map.partialUntilSec || 0,
     // 冻结能量分随缓存持久化(缺失时现算一次),重启后直接复用,杜绝重算漂移。
-    energyScore: (typeof map.energyScore === 'number' && map.energyScore >= 0) ? map.energyScore : computeBeatMapEnergyScore(map),
+    // 带版本号:公式升级后旧分数会被 beatMapEnergyScore 忽略并重算。
+    energyScoreV2: beatMapEnergyScore(map),
+    energyScoreVer: BEAT_ENERGY_SCORE_VERSION,
     cameraBeats: camera,
     pulseBeats: pulse
   };
@@ -13671,7 +13692,11 @@ function unpackLocalBeatMap(stored) {
     analyzedAt: stored.analyzedAt || Date.now(),
     partial: !!stored.partial,
     partialUntilSec: stored.partialUntilSec || 0,
-    energyScore: (typeof stored.energyScore === 'number' && stored.energyScore >= 0) ? stored.energyScore : -1
+    // 旧版能量分只作历史字段保留,排序不再读它(公式已换,量纲不同)。
+    energyScore: (typeof stored.energyScore === 'number' && stored.energyScore >= 0) ? stored.energyScore : -1,
+    // 带版本的能量分:版本不匹配时 beatMapEnergyScore 会忽略并重算。
+    energyScoreV2: (typeof stored.energyScoreV2 === 'number' && stored.energyScoreV2 >= 0) ? stored.energyScoreV2 : -1,
+    energyScoreVer: Number(stored.energyScoreVer) || 0
   };
 }
 function readLocalBeatPrefs() {
@@ -13988,7 +14013,9 @@ function getCachedSongBpm(song) {
   if (localBpm > 0) return localBpm;
   var key = beatMapSongKey(song);
   if (key && beatMapCache[key]) return bpmFromBeatMap(beatMapCache[key]);
-  return 0;
+  // 完整 map 不在内存时退回轻量索引(批量扫描建立的那份)。
+  var idx = sameTempoIndexEntry(song);
+  return idx ? idx.bpm : 0;
 }
 function getCachedSongBeatMap(song) {
   if (!song) return null;
@@ -14002,57 +14029,145 @@ function getCachedSongBeatMap(song) {
 }
 // 从已缓存 beatmap 推导一首歌的“能量强度”(0~1),用于过渡歌单的爽感爬升排序。
 // 关键:每首歌的 impact 是各自动态范围内归一化的(安静曲和炸曲都会铺满 0.2~0.9),
-// 不能跨曲比较。真正跨曲可比的是“强拍密度”——单位时间里有多少个重拍,这是真实计数。
-// 统一使用会被缓存持久化的 cameraBeats,避免同一首歌重启前后因事件集合不同而变分。
-// 纯计算:只从 cameraBeats(会被缓存持久化的事件集合)推导分数,不读 beats。
-// 这样 fresh map 和重启后从缓存重建的 map 用的是同一份事件,分数天然一致。
+// 不能跨曲比较,所以 impact 只能做曲内微调。
+//
+// 旧版主项用“每秒重拍数 / 6”,但 cameraBeats 最多每个 gridStep 一个,
+// 所以密度恒 <= BPM/60 —— 它和 BPM 是同一个量。候选池按 BPM 筛过之后,
+// 池内密度近似常数,能量弧线就被压平了。
+//
+// 新主项改成【网格填充率】= cameraBeats 数 / 完整网格拍数(duration / gridStep):
+// 分母把 BPM 除掉,于是它表示“多少比例的网格拍强到值得触发相机”,与 BPM 不共线。
+// 同为 144 BPM 的抒情曲和电子曲,填充率会明显分开。
+// 副项用 snap/body 相对 low 的占比(打击的频谱分布,绝对量,跨曲可比):
+// 高频占比大 = 通透密集的节奏,低频独大 = 沉闷。
+//
+// 只读会被缓存持久化的字段(cameraBeats / duration / gridStep 及事件上的
+// low/body/snap/impact),保证 fresh map 和重启后从缓存重建的 map 分数一致。
 function computeBeatMapEnergyScore(map) {
   if (!map) return -1;
   var beats = (map.cameraBeats && map.cameraBeats.length) ? map.cameraBeats
     : ((map.pulseBeats && map.pulseBeats.length) ? map.pulseBeats : null);
   if (!beats || !beats.length) return -1;
   var dur = Number(map.duration) || 0;
-  if (!(dur > 4)) {
-    // 没有时长就退回用鼓点间隔估算覆盖时长
-    var first = null, last = null;
-    for (var j = 0; j < beats.length; j++) {
-      var tb = beats[j];
-      var tt = (typeof tb === 'number') ? tb : (tb && tb.time);
-      if (!isFinite(tt)) continue;
-      if (first == null) first = tt;
-      last = tt;
-    }
-    dur = (first != null && last != null && last > first) ? (last - first) : 0;
+  var first = null, last = null;
+  for (var j = 0; j < beats.length; j++) {
+    var tb = beats[j];
+    var tt = (typeof tb === 'number') ? tb : (tb && tb.time);
+    if (!isFinite(tt)) continue;
+    if (first == null) first = tt;
+    last = tt;
   }
+  // 没有时长就退回用鼓点跨度估算覆盖时长
+  if (!(dur > 4)) dur = (first != null && last != null && last > first) ? (last - first) : 0;
   if (!(dur > 4)) return -1;
-  // 强拍占比:impact 高于该曲中位偏上的拍算“重拍”。这是曲内相对量,只做次要微调。
-  var strongCount = 0, n = 0;
+
+  var n = 0, strongCount = 0;
+  var toneSum = 0, toneCount = 0, stepSum = 0, stepCount = 0;
   for (var i = 0; i < beats.length; i++) {
     var b = beats[i];
     n++;
-    if (typeof b === 'number') continue;
-    if (!b) continue;
+    if (typeof b === 'number' || !b) continue;
     var imp = (b.impact == null) ? (b.strength == null ? 0.45 : b.strength) : b.impact;
     if (imp >= 0.5) strongCount++;
+    // 打击频谱分布:高频(snap+body)在总能量里的占比。low/body/snap 都是绝对量。
+    var low = (b.low == null) ? 0 : b.low;
+    var body = (b.body == null) ? 0 : b.body;
+    var snap = (b.snap == null) ? 0 : b.snap;
+    var total = low + body + snap;
+    if (total > 0.02) {
+      toneSum += (body + snap) / total;
+      toneCount++;
+    }
+    // 事件自带的 step 可作为 gridStep 缺失时的兜底
+    if (b.step > 0.05) { stepSum += b.step; stepCount++; }
   }
   if (!n) return -1;
-  // 密度:每秒重拍数。流行/摇滚大概 1.5~4 拍/秒,归一到 0~1(6 拍/秒封顶算满能量)。
-  var density = n / dur;
-  var densityScore = Math.max(0, Math.min(1, density / 6));
-  var strongRatio = strongCount / n;                 // 0~1
-  return Math.max(0, Math.min(1, densityScore * 0.72 + strongRatio * 0.28));
+
+  // 网格步长:优先用 map.gridStep(已持久化),否则用事件平均 step,再否则按鼓点跨度反推。
+  var step = Number(map.gridStep) || 0;
+  if (!(step > 0.05) && stepCount) step = stepSum / stepCount;
+  if (!(step > 0.05) && n > 1 && first != null && last != null && last > first) step = (last - first) / (n - 1);
+  if (!(step > 0.05)) return -1;
+
+  // 主项:网格填充率。完整网格约 dur/step 拍,cameraBeats 是其中够强的子集。
+  var gridBeats = dur / step;
+  var fillRate = gridBeats > 0 ? (n / gridBeats) : 0;
+  var fillScore = Math.max(0, Math.min(1, fillRate));
+  // 副项:打击通透度(跨曲可比)。多数落在 0.1~0.6,拉伸到 0~1。
+  var toneScore = toneCount ? Math.max(0, Math.min(1, (toneSum / toneCount - 0.10) / 0.50)) : 0.5;
+  // 微调:曲内强拍占比。impact 是曲内归一化的,跨曲无意义,只给小权重。
+  var strongRatio = strongCount / n;
+  return Math.max(0, Math.min(1, fillScore * 0.62 + toneScore * 0.28 + strongRatio * 0.10));
 }
 function beatMapEnergyScore(map) {
   if (!map) return -1;
   // 优先用已冻结、随缓存持久化的分数,保证同一首歌重启前后完全一致。
-  if (typeof map.energyScore === 'number' && map.energyScore >= 0) return map.energyScore;
+  if (map.energyScoreVer === BEAT_ENERGY_SCORE_VERSION
+    && typeof map.energyScoreV2 === 'number' && map.energyScoreV2 >= 0) return map.energyScoreV2;
   var score = computeBeatMapEnergyScore(map);
   // 首次算出就冻结到 map 上,后续(含打包进缓存)一律复用这个值。
-  if (score >= 0) map.energyScore = score;
+  if (score >= 0) {
+    map.energyScoreV2 = score;
+    map.energyScoreVer = BEAT_ENERGY_SCORE_VERSION;
+  }
   return score;
 }
+// ---- 轻量节奏索引 ------------------------------------------------------------
+// 过渡歌单只需要每首歌的 BPM 和能量分,不需要完整鼓点表。批量扫描本地库时如果
+// 把完整 beatmap 都塞进 localBeatMapCache,会有两个问题:
+//   1) storeLocalBeatEntry 每首都调 saveLocalBeatMapCache(),后者把缓存里最多
+//      12 条 beatmap 全量重新 pack + JSON.stringify —— 扫几百首就是几百万次
+//      事件重打包,全在主线程上;
+//   2) 完整 map 常驻内存,而 localStorage 那边最多只留 12 条,内存换不来持久化。
+// 所以扫描只往这份索引里写两个数字,完整 map 交给磁盘缓存。
+function readSameTempoIndex() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(TEMPO_INDEX_STORE_KEY) || '{}') || {};
+    // 能量公式升级后旧索引整体作废(BPM 还能用,但能量不同量纲,不如一起重建)。
+    if (Number(raw.ver) !== BEAT_ENERGY_SCORE_VERSION) return {};
+    return raw.songs && typeof raw.songs === 'object' ? raw.songs : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveSameTempoIndex() {
+  try {
+    localStorage.setItem(TEMPO_INDEX_STORE_KEY, JSON.stringify({
+      ver: BEAT_ENERGY_SCORE_VERSION,
+      songs: sameTempoIndex || {}
+    }));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function sameTempoIndexEntry(song) {
+  var key = sameTempoSongKey(song);
+  if (!key) return null;
+  var hit = sameTempoIndex[key];
+  return (hit && hit.bpm > 0) ? hit : null;
+}
+// 往索引里写一首歌的 BPM 和能量分。只存两个数字,完整 map 不保留。
+// 不在这里落盘 —— 批量扫描时由调用方定期 saveSameTempoIndex(),
+// 避免每首歌都 JSON.stringify 整份索引。
+function setSameTempoIndexEntry(song, bpm, energy) {
+  var key = sameTempoSongKey(song);
+  if (!key || !(bpm > 0)) return 0;
+  sameTempoIndex[key] = {
+    bpm: Math.round(bpm * 10) / 10,
+    energy: (energy >= 0) ? Math.round(energy * 1000) / 1000 : -1,
+    at: Date.now()
+  };
+  return bpm;
+}
 function getCachedSongEnergy(song) {
-  return beatMapEnergyScore(getCachedSongBeatMap(song));
+  var map = getCachedSongBeatMap(song);
+  if (map) {
+    var score = beatMapEnergyScore(map);
+    if (score >= 0) return score;
+  }
+  var idx = sameTempoIndexEntry(song);
+  return (idx && idx.energy >= 0) ? idx.energy : -1;
 }
 async function loadLocalBeatMapForSong(song) {
   if (!song || !song.localKey) return null;
@@ -14141,19 +14256,52 @@ function sameTempoExcludeKeySet(seedSong) {
   }
   return keys;
 }
+// 把听歌历史里的一条记录还原成够用的歌曲对象。
+// 记录里带 id / hash / type / sourceKey,正好是 beatMapSongKey 需要的字段,
+// 所以能直接用来查已有的节奏缓存;真要播放时播放链会自己补 url。
+function sameTempoSongFromListenRecord(rec) {
+  if (!rec) return null;
+  if (!rec.id && !rec.hash && !rec.mid) return null;
+  var song = {
+    id: rec.id || '',
+    mid: rec.mid || '',
+    mediaMid: rec.mediaMid || '',
+    hash: rec.hash || '',
+    albumAudioId: rec.albumAudioId || '',
+    mixSongId: rec.mixSongId || '',
+    type: rec.type || 'song',
+    sourceKey: rec.sourceKey || '',
+    name: rec.name || '',
+    artist: rec.artist || '',
+    cover: rec.cover || '',
+    source: rec.source || ''
+  };
+  if (isLocalSong(song) || song.type === 'local') return null;
+  return song;
+}
 function collectSameTempoCandidates(seedSong, scope) {
   var list = [];
   var seen = {};
+  // online 范围允许在线歌进池;其余范围仍只收本地文件。
+  var allowOnline = sameTempoState.source === 'playlist' || scope === 'online';
   function pushSong(song) {
     if (!song) return;
     var key = sameTempoSongKey(song);
     if (!key || seen[key]) return;
-    if (sameTempoState.source !== 'playlist' && !(song.type === 'local' && song.localKey)) return;
+    if (!allowOnline && !(song.type === 'local' && song.localKey)) return;
     seen[key] = true;
     list.push(song);
   }
   if (sameTempoState.source === 'playlist') {
     (sameTempoState.candidates || []).forEach(pushSong);
+    return list;
+  }
+  if (scope === 'online') {
+    // 本地库 ∪ 听歌历史里的在线歌。历史按最近优先,前面的歌更可能已有缓存。
+    (localLibrarySongs || []).forEach(pushSong);
+    ((listenStatsState && listenStatsState.history) || []).forEach(function(rec){
+      pushSong(sameTempoSongFromListenRecord(rec));
+    });
     return list;
   }
   if (scope === 'folder') {
@@ -14173,9 +14321,25 @@ function collectSameTempoCandidates(seedSong, scope) {
   }
   return list;
 }
-// 过渡歌单排序:先按 BPM 相近筛出候选池,再用“贪心衔接”把它们串成一条能量爬升弧线。
-// 每一步都从剩余歌里挑“衔接代价最小”的下一首(BPM 差小 + 能量比当前略高一点),
-// 让整条歌单听起来越来越上头,而不是单纯按速度差排。
+// 速度差的参考尺度:±8 BPM 大致等价于 0.1 的能量差,所以每 1 BPM 折 0.0125 能量当量。
+// 能量分满量程是 1,于是速度只在能量接近时才会左右取舍,不会盖掉能量弧线。
+var SAME_TEMPO_BPM_SCALE = 8;
+var SAME_TEMPO_BPM_COST = 0.1 / SAME_TEMPO_BPM_SCALE;
+// 两首歌的速度距离。允许半速/倍速衔接(87 与 175 视为可接),
+// 因为 bpmFromBeatMap 来自 gridStep,而 gridStep 取的是整拍还是半拍本身就可能差一倍,
+// 且 normalizeSameTempoBpm 的倍频折叠已经会把一部分歌折到另一个八度。
+function sameTempoBpmDistance(a, b) {
+  a = Number(a) || 0;
+  b = Number(b) || 0;
+  if (!(a > 0) || !(b > 0)) return SAME_TEMPO_BPM_SCALE * 4;
+  return Math.min(Math.abs(a - b), Math.abs(a * 2 - b), Math.abs(a / 2 - b));
+}
+// 过渡歌单排序:所有拿到 BPM 的候选都进池,再用“贪心衔接”把它们串成一条能量爬升弧线。
+//
+// 旧版用 ±4 BPM 的硬门槛筛池子,但 BPM 自身的误差可能有百分之几甚至整整一倍
+// (gridStep 的整拍/半拍判定),在这种估计上卡硬门槛,筛掉的多是本来合适的歌,
+// 还经常凑不满数量。现在改成【不筛只罚】:速度差进入代价函数,
+// 权重压到“±8 BPM ≈ 0.1 能量差”,于是能量当主角、速度只在能量接近时做取舍。
 function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy, seedSong) {
   var pool = [];
   candidates.forEach(function(song){
@@ -14183,10 +14347,8 @@ function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy
     if (!song || !key || excludeKeys[key]) return;
     var bpm = getCachedSongBpm(song);
     if (!(bpm > 0)) return;
-    var delta = Math.abs(bpm - seedBpm);
-    if (delta > 4.05) return;
     var energy = getCachedSongEnergy(song);
-    pool.push({ song: song, bpm: bpm, delta: delta, energy: energy });
+    pool.push({ song: song, bpm: bpm, delta: sameTempoBpmDistance(bpm, seedBpm), energy: energy });
   });
   count = Math.max(1, count || 15);
   if (!pool.length) return [];
@@ -14203,9 +14365,9 @@ function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy
   var energyFallback = energif.length ? energif.reduce(function(a,b){ return a+b; }, 0) / energif.length : 0.5;
   pool.forEach(function(p){ if (!(p.energy >= 0)) p.energy = energyFallback; });
 
-  // BPM 已被 ±4 的候选池保证平滑了,所以排序阶段让【能量】当主角:
-  // 沿一条“从贴近参考的能量起步 → 逐步爬升到最高”的目标弧线铺歌,
-  // 每一步选“最贴近当前目标能量、且能量在往上走”的一首,BPM 只做次要微调。
+  // 排序阶段让【能量】当主角:沿一条“从贴近参考的能量起步 → 逐步爬升到最高”
+  // 的目标弧线铺歌,每一步选“最贴近当前目标能量、且能量在往上走”的一首;
+  // 速度差只按 SAME_TEMPO_BPM_SCALE 折算成能量当量参与取舍,不再当筛子。
   var startEnergy = seedItem ? seedItem.energy : ((seedEnergy != null && seedEnergy >= 0) ? seedEnergy : energyFallback);
   var energyValues = pool.map(function(p){ return p.energy; });
   var poolMin = Math.min.apply(null, energyValues);
@@ -14231,9 +14393,11 @@ function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy
       var energyCost = Math.abs(cand.energy - targetEnergy);
       // 轻罚能量回落,鼓励整体往上走(不是硬性禁止,避免排不出)。
       var dropPenalty = cand.energy < prevEnergy - 0.02 ? (prevEnergy - cand.energy) * 0.5 : 0;
-      // 次要:速度衔接,权重压低,只在能量接近时做微调。
-      var bpmCost = (Math.abs(cand.bpm - prevBpm) / 4.05) * 0.18;
-      var cost = energyCost + dropPenalty + bpmCost;
+      // 次要:与上一首的速度衔接(含半速/倍速容错)。
+      var stepCost = sameTempoBpmDistance(cand.bpm, prevBpm) * SAME_TEMPO_BPM_COST;
+      // 次要:与参考速度的整体偏离,避免整条歌单慢慢飘走。
+      var seedCost = cand.delta * SAME_TEMPO_BPM_COST * 0.5;
+      var cost = energyCost + dropPenalty + stepCost + seedCost;
       if (cost < bestCost - 1e-6) { bestCost = cost; bestIdx = i; }
     }
     var pick = remaining.splice(bestIdx, 1)[0];
@@ -14244,7 +14408,7 @@ function matchSameTempoSongs(seedBpm, candidates, excludeKeys, count, seedEnergy
   // 参考歌固定第一首;其余生成歌曲最终按能量升序,保证展示和实际播放都不会向下回落。
   var generated = seedItem ? ordered.slice(1) : ordered;
   generated.sort(function(a, b){
-    return (a.energy - b.energy) || (Math.abs(a.bpm - seedBpm) - Math.abs(b.bpm - seedBpm));
+    return (a.energy - b.energy) || (a.delta - b.delta);
   });
   return seedItem ? [seedItem].concat(generated) : generated;
 }
@@ -14276,18 +14440,193 @@ function updateSameTempoOptionButtons() {
   var showScope = sameTempoState.source !== 'playlist';
   if (allBtn) {
     allBtn.style.display = showScope ? '' : 'none';
-    allBtn.classList.toggle('active', sameTempoState.scope !== 'folder');
+    allBtn.classList.toggle('active', sameTempoState.scope !== 'folder' && sameTempoState.scope !== 'online');
   }
   if (folderBtn) {
     folderBtn.style.display = showScope ? '' : 'none';
     folderBtn.classList.toggle('active', sameTempoState.scope === 'folder');
   }
+  var onlineBtn = document.getElementById('same-tempo-scope-online');
+  if (onlineBtn) {
+    onlineBtn.style.display = showScope ? '' : 'none';
+    onlineBtn.classList.toggle('active', sameTempoState.scope === 'online');
+  }
+  updateSameTempoScanButton();
 }
-// 把能量值(0~1.2)映射成 1~5 档,给结果列表画“越往下越上头”的能量条。
+// ---- 本地库节奏扫描 ----------------------------------------------------------
+// 过渡歌单只能用“已有节奏缓存”的歌当候选(没缓存就没 BPM、没能量),
+// 而缓存过去只在播放时顺带产生,所以刚导入的本地库几乎没有候选池。
+// 这里提供一个可见、可中断的批量扫描,把本地库的节奏缓存一次性建起来。
+function sameTempoScanPool() {
+  var out = [];
+  var seen = {};
+  (localLibrarySongs || []).forEach(function(song){
+    if (!song || !song.localKey) return;
+    var key = sameTempoSongKey(song);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    out.push(song);
+  });
+  return out;
+}
+function sameTempoScanCachedCount(pool) {
+  var n = 0;
+  (pool || []).forEach(function(song){ if (getCachedSongBpm(song) > 0) n++; });
+  return n;
+}
+function updateSameTempoScanButton() {
+  var btn = document.getElementById('same-tempo-scan-btn');
+  if (!btn) return;
+  // 歌单来源的候选池是当前歌单,不是本地库,这里不显示扫描入口。
+  if (sameTempoState.source === 'playlist') {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
+  var pool = sameTempoScanPool();
+  var total = pool.length;
+  btn.classList.toggle('busy', !!sameTempoScanState.active);
+  if (sameTempoScanState.active) {
+    btn.disabled = false;
+    btn.textContent = '扫描中 ' + sameTempoScanState.done + '/' + sameTempoScanState.total + ' · 点击停止';
+    return;
+  }
+  // 生成过程中不允许同时扫描(两者都要抢 beatMapBusy)。
+  btn.disabled = !total || !!sameTempoState.active;
+  btn.textContent = total
+    ? ('扫描本地库节奏 (' + sameTempoScanCachedCount(pool) + '/' + total + ')')
+    : '本地库为空';
+}
+// 扫描专用的单曲分析:只把 BPM 和能量分留在轻量索引里,完整 beatmap 写磁盘缓存后丢掉。
+//
+// 不能直接用 ensureSongBpm —— 它会走 storeLocalBeatEntry,而后者每存一首都会
+// saveLocalBeatMapCache(),把内存里最多 12 条完整 beatmap 整体重新 pack + JSON.stringify。
+// 单首歌就要重打包上万个事件对象,扫几百首会在主线程上放大成百万次,界面直接卡死;
+// 而且完整 map 会全部驻留内存,却换不来持久化收益(localStorage 最多只留 12 条)。
+async function scanSongTempoForIndex(song) {
+  if (!song) return 0;
+  var cached = getCachedSongBpm(song);
+  if (cached > 0) return cached;
+  // 先看磁盘缓存里有没有现成的(之前播放过或扫过)。
+  var map = await loadSongBeatMapForBpm(song);
+  if (map) {
+    var diskBpm = bpmFromBeatMap(map);
+    if (diskBpm > 0) {
+      setSameTempoIndexEntry(song, diskBpm, beatMapEnergyScore(map));
+      return diskBpm;
+    }
+  }
+  if (localBeatAnalysis.active) return 0;
+  var url = '';
+  if (isLocalSong(song)) {
+    try { await ensureFreshLocalPlaybackUrl(song); } catch (e) {}
+    url = song.localUrl || song.url || '';
+  } else {
+    try { url = await fetchBeatPrefetchAudioUrl(song); } catch (e) { url = ''; }
+  }
+  if (!url) return 0;
+  // 正在播放的那首歌的分析优先,扫描让路。
+  var waits = 0;
+  while (beatMapBusy && waits < 48) {
+    await yieldToIdle(220);
+    waits++;
+  }
+  if (beatMapBusy || localBeatAnalysis.active) return 0;
+  var token = beatMapToken;
+  try {
+    map = await analyzeAudioBeats(url, Number(song.duration) || 0, token, { background: true, song: song });
+  } catch (e) {
+    console.warn('[SameTempoScan] analyze failed', e);
+    map = null;
+  }
+  if (!map) return 0;
+  var bpm = bpmFromBeatMap(map);
+  if (!(bpm > 0)) return 0;
+  setSameTempoIndexEntry(song, bpm, beatMapEnergyScore(map));
+  // 完整 map 只写磁盘(异步,不阻塞扫描),不进内存缓存,扫完即可释放。
+  var diskKey = song.localKey ? localBeatDiskKey(song.localKey, 'mr') : beatMapSongKey(song);
+  if (diskKey) writeBeatDiskCache(diskKey, map, song, 'mr');
+  return bpm;
+}
+function stopSameTempoLibraryScan() {
+  sameTempoScanState.token++;
+  sameTempoScanState.active = false;
+  saveSameTempoIndex();
+  updateSameTempoScanButton();
+}
+function toggleSameTempoLibraryScan() {
+  if (sameTempoScanState.active) {
+    stopSameTempoLibraryScan();
+    setSameTempoStatus('已停止扫描 · 已建立 ' + sameTempoScanCachedCount(sameTempoScanPool()) + ' 首节奏缓存', 'warn');
+    return;
+  }
+  if (sameTempoState.active) {
+    showToast('正在生成过渡歌单，先等它结束');
+    return;
+  }
+  runSameTempoLibraryScan().catch(function(err){
+    console.warn('[SameTempoScan]', err);
+    sameTempoScanState.active = false;
+    updateSameTempoScanButton();
+    setSameTempoStatus('扫描中断，请重试', 'fail');
+  });
+}
+async function runSameTempoLibraryScan() {
+  var pool = sameTempoScanPool();
+  var pending = pool.filter(function(song){ return !(getCachedSongBpm(song) > 0); });
+  if (!pool.length) {
+    setSameTempoStatus('本地库还是空的，先导入文件夹', 'fail');
+    return;
+  }
+  if (!pending.length) {
+    setSameTempoStatus('本地库 ' + pool.length + ' 首都已有节奏缓存', '');
+    updateSameTempoScanButton();
+    return;
+  }
+  var token = ++sameTempoScanState.token;
+  sameTempoScanState.active = true;
+  sameTempoScanState.done = 0;
+  sameTempoScanState.total = pending.length;
+  sameTempoScanState.ok = 0;
+  sameTempoScanState.fail = 0;
+  updateSameTempoScanButton();
+  updateSameTempoModal();
+  for (var i = 0; i < pending.length; i++) {
+    // 关弹窗、点停止、开始生成都会让 token 失效,循环随即退出。
+    // 退出前落盘,已经扫出来的部分不白扫。
+    if (token !== sameTempoScanState.token) { saveSameTempoIndex(); return; }
+    var song = pending[i];
+    setSameTempoStatus('扫描节奏 ' + (i + 1) + '/' + pending.length + ' · ' + (song.name || '本地歌曲'), 'warn');
+    var bpm = 0;
+    try {
+      bpm = await scanSongTempoForIndex(song);
+    } catch (e) {
+      bpm = 0;
+    }
+    if (token !== sameTempoScanState.token) { saveSameTempoIndex(); return; }
+    if (bpm > 0) sameTempoScanState.ok++;
+    else sameTempoScanState.fail++;
+    sameTempoScanState.done = i + 1;
+    // 每 8 首落一次盘:中途退出最多丢 8 首,又不至于每首都 stringify 整份索引。
+    if (sameTempoScanState.done % 8 === 0) saveSameTempoIndex();
+    updateSameTempoScanButton();
+    // 让出主线程,避免整轮扫描把界面卡住。
+    await yieldToIdle(160);
+  }
+  saveSameTempoIndex();
+  if (token !== sameTempoScanState.token) return;
+  sameTempoScanState.active = false;
+  updateSameTempoScanButton();
+  var msg = '扫描完成 · 新建 ' + sameTempoScanState.ok + ' 首节奏缓存';
+  if (sameTempoScanState.fail) msg += '，' + sameTempoScanState.fail + ' 首失败';
+  setSameTempoStatus(msg, sameTempoScanState.fail ? 'warn' : '');
+  updateSameTempoModal();
+}
+// 把能量值映射成 1~5 档,给结果列表画“越往下越上头”的能量条。
+// 填充率制的能量多数落在 0.15~0.70,把这段拉满 1~5 档,视觉区分更明显。
 function sameTempoEnergyLevel(energy) {
   if (!(energy >= 0)) return 3;
-  // 密度制能量多数落在 0.25~0.75，把这段拉满 1~5 档，视觉区分更明显。
-  var lvl = Math.round(1 + Math.max(0, Math.min(1, (energy - 0.25) / 0.5)) * 4);
+  var lvl = Math.round(1 + Math.max(0, Math.min(1, (energy - 0.15) / 0.55)) * 4);
   return Math.max(1, Math.min(5, lvl));
 }
 function renderSameTempoResults() {
@@ -14332,15 +14671,23 @@ function updateSameTempoModal() {
   var seedBpm = sameTempoState.seedBpm > 0 ? Math.round(sameTempoState.seedBpm) : 0;
   if (heading) heading.textContent = sameTempoState.mode === 'result' ? '过渡歌单' : '生成过渡歌单';
   if (sub) {
+    var poolText = sameTempoState.source === 'playlist'
+      ? '当前歌单'
+      : (sameTempoState.scope === 'folder' ? '当前文件夹'
+        : (sameTempoState.scope === 'online' ? '本地库 + 已听在线' : '全部本地'));
     sub.textContent = seedBpm
-      ? ('参考：' + seedName + ' · ' + seedBpm + ' BPM')
-      : ('参考：' + seedName + ' · 生成 10-20 首相近速度本地歌');
+      ? ('参考：' + seedName + ' · ' + seedBpm + ' BPM · ' + poolText)
+      : ('参考：' + seedName + ' · 从' + poolText + '按能量爬升生成 10-20 首');
   }
   if (options) options.style.display = sameTempoState.mode === 'setup' ? 'grid' : 'none';
   if (queueBtn) queueBtn.style.display = sameTempoState.mode === 'result' && sameTempoState.results.length ? '' : 'none';
   if (primary) {
     if (sameTempoState.active) {
       primary.textContent = '生成中...';
+      primary.disabled = true;
+    } else if (sameTempoScanState.active) {
+      // 扫描和生成都要抢 beatMapBusy,同一时间只能跑一个。
+      primary.textContent = '扫描中...';
       primary.disabled = true;
     } else if (sameTempoState.mode === 'result' && sameTempoState.results.length) {
       primary.textContent = '替换队列并播放';
@@ -14367,13 +14714,15 @@ function setSameTempoCount(count) {
   updateSameTempoOptionButtons();
 }
 function setSameTempoScope(scope) {
-  sameTempoState.scope = scope === 'folder' ? 'folder' : 'all';
+  sameTempoState.scope = (scope === 'folder' || scope === 'online') ? scope : 'all';
   updateSameTempoOptionButtons();
 }
 function closeSameTempoModal() {
   sameTempoState.token++;
   sameTempoState.active = false;
   sameTempoState.open = false;
+  // 扫描是长任务,关窗即中断,不留后台占用。
+  if (sameTempoScanState.active) stopSameTempoLibraryScan();
   closeGsapModal(document.getElementById('same-tempo-modal'));
 }
 function openSameTempoGenerator(entry, songOverride) {
@@ -14432,6 +14781,11 @@ function openSameTempoGenerator(entry, songOverride) {
 }
 async function startSameTempoGeneration() {
   if (sameTempoState.active) return;
+  // 扫描和生成都要抢 beatMapBusy,不能并行。
+  if (sameTempoScanState.active) {
+    showToast('正在扫描本地库节奏，先停止或等它结束');
+    return;
+  }
   var seed = sameTempoState.seedSong;
   if (!seed || !sameTempoSongKey(seed)) {
     setSameTempoStatus('缺少参考歌曲', 'fail');
@@ -20465,13 +20819,6 @@ function openTrackDetailModal(type, songOverride) {
     var detailEmptyText = detailMetadata && detailMetadata.provider === 'kugou'
       ? '当前本地歌曲匹配到小狗，但暂未接入小狗评论接口'
       : '当前歌曲暂无评论入口';
-    var localMatchButton = song && song.type === 'local'
-      ? '<button class="fx-mini-btn ghost" type="button" style="flex:0 0 auto;width:auto;min-width:92px" onclick="openLocalMatchModal()">'
-        + (detailMetadata ? '重新匹配在线歌曲' : '匹配在线歌曲') + '</button>'
-      : '';
-    var sameTempoButton = song && song.type === 'local'
-      ? '<button class="fx-mini-btn ghost" type="button" style="flex:0 0 auto;width:auto;min-width:92px" onclick="openSameTempoGenerator(\'detail\')">过渡 15 首</button>'
-      : '';
     var detailEmptyAction = song && song.type === 'local'
       ? '<div style="margin-top:10px"><button class="fx-mini-btn ghost" type="button" onclick="openLocalMatchModal()">匹配在线歌曲</button></div>'
       : '';
@@ -20494,8 +20841,6 @@ function openTrackDetailModal(type, songOverride) {
         (getCustomCoverForSong(song) ? '<span class="detail-chip">自定义封面</span>' : '') +
         (hasCustomLyricForSong(song) ? '<span class="detail-chip">自定义歌词</span>' : '') +
         (detailMetadata ? '<span class="detail-chip">已匹配' + escHtml(localMatchProviderLabel(detailMetadata.provider)) + '</span>' : '') +
-        localMatchButton +
-        sameTempoButton +
       '</div>' +
       '<div class="detail-section"><div class="detail-section-head"><div class="detail-section-title">' + detailCommentTitle + '</div></div><div id="song-comments">' + (detailCanLoadComments ? '<div class="detail-loading">正在载入评论...</div>' : '<div class="detail-empty">' + detailEmptyText + detailEmptyAction + '</div>') + '</div></div>';
     if (detailCanLoadComments) {
