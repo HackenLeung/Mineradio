@@ -42,6 +42,7 @@
     'js/modules/03-beat/02-podcast-dj-analysis.js',
     'js/modules/03-beat/03-local-beat-cache-modal.js',
     'js/modules/03-beat/04-beat-map-runtime.js',
+    'js/modules/03-beat/04a-same-tempo-playlist.js',
     'js/modules/03-beat/05-cover-loading-crop.js',
     'js/modules/03-beat/06-sonic-audio-monitor.js',
     'js/modules/04-shelf/00-layout-hover.js',

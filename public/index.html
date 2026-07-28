@@ -751,6 +751,15 @@
               title="把当前完整 Mineradio 放到 Windows 桌面；右上控制器可显示、隐藏桌面图标，Esc 退出">
               <span>完整桌面模式<em class="fx-dev-badge">试验</em></span><span class="dot"></span></div>
           </div>
+          <div class="fx-section-label">智能过渡</div>
+          <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
+            <button type="button" data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')">镜面</button>
+            <button type="button" data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')">频谱</button>
+            <button type="button" data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')">方块</button>
+            <button type="button" data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')">右滑</button>
+            <button type="button" data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
+            <button type="button" data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
+          </div>
           <div class="fx-section-label">桌面 / 壁纸</div>
           <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72"
               max="1.55" step="0.01"><output></output></div>
@@ -1059,6 +1068,7 @@
       <div id="local-pane" style="display:none">
         <div class="queue-toolbar local-library-toolbar">
           <div id="local-library-chip" class="queue-chip">未导入本地文件夹</div>
+          <button class="fx-mini-btn ghost" type="button" onclick="openSameTempoGenerator()">过渡歌单</button>
           <button class="fx-mini-btn ghost" type="button" onclick="openLocalFolderImport()">添加文件夹</button>
         </div>
         <label class="local-library-search-wrap">
@@ -1215,6 +1225,7 @@
     </svg>
     <button id="bottom-handle" type="button" aria-label="展开播放器控制台" title="播放器控制台"><span></span></button>
     <div id="bottom-bar">
+      <div id="smart-transition-chip" class="smart-transition-chip" aria-live="polite">智能过渡</div>
       <div id="mini-queue-popover" class="mini-queue-popover" onclick="event.stopPropagation()">
         <div class="mini-queue-head">
           <div>
@@ -1677,6 +1688,27 @@
       </div>
     </div>
 
+    <div id="same-tempo-modal" class="modal-mask">
+      <div class="modal same-tempo-modal">
+        <h2>过渡歌单</h2>
+        <div id="same-tempo-sub" class="same-tempo-sub">从本地库按速度与能量生成连续队列</div>
+        <div class="same-tempo-options">
+          <button id="same-tempo-count-10" class="same-tempo-option" type="button" onclick="setSameTempoCount(10)">10 首</button>
+          <button id="same-tempo-count-15" class="same-tempo-option active" type="button" onclick="setSameTempoCount(15)">15 首</button>
+          <button id="same-tempo-count-20" class="same-tempo-option" type="button" onclick="setSameTempoCount(20)">20 首</button>
+          <button id="same-tempo-scope-all" class="same-tempo-option active" type="button" onclick="setSameTempoScope('all')">全部本地</button>
+          <button id="same-tempo-scope-folder" class="same-tempo-option" type="button" onclick="setSameTempoScope('folder')">当前文件夹</button>
+        </div>
+        <div id="same-tempo-status" class="same-tempo-status"></div>
+        <div id="same-tempo-list" class="same-tempo-list"></div>
+        <div class="btn-row">
+          <button class="modal-btn" type="button" onclick="closeSameTempoModal()">关闭</button>
+          <button id="same-tempo-queue-btn" class="modal-btn" type="button" onclick="applySameTempoPlaylist(false)" hidden>加入队列</button>
+          <button id="same-tempo-primary-btn" class="modal-btn primary" type="button" onclick="startSameTempoGeneration()">开始生成</button>
+        </div>
+      </div>
+    </div>
+
     <div id="local-beat-modal" class="modal-mask">
       <div class="modal local-beat-modal">
         <h2>本地节奏分析</h2>
@@ -1761,6 +1793,9 @@
     </div>
 
     <div id="toast"></div>
+    <div id="smart-transition-visual" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
     <div id="cuefield-feedback" aria-live="polite" aria-label="Cuefield AutoMix 反馈">
       <div class="cuefield-feedback-kicker">CUEFIELD · LOCAL FEEDBACK</div>
       <div class="cuefield-feedback-title">这次自动过渡顺滑吗？</div>

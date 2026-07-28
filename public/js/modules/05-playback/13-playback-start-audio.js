@@ -814,6 +814,8 @@ function playAlbumGaplessNextOnEnded(token) {
 
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
+  var transitionHandoff = !!(opts.cuefieldAutoMix && opts.preloadedAudio);
+  var transitionPreviousAudio = transitionHandoff ? audio : null;
   if (song && !song.localUrl && typeof ensureFreshLocalPlaybackUrl === 'function') {
     await ensureFreshLocalPlaybackUrl(song);
   }
@@ -828,7 +830,11 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   if (localCover) loadCoverFromUrl(localCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: !firstVisualPlay });
   updateCustomCoverButton();
   document.getElementById('trial-banner').classList.remove('show');
-  if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
+  if (transitionHandoff) {
+    if (transitionPreviousAudio) transitionPreviousAudio.onended = null;
+    audio = opts.preloadedAudio;
+    if (typeof claimCuefieldPreparedAudioForPlayback === 'function') claimCuefieldPreparedAudioForPlayback(audio);
+  } else if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
   else {
     audioFadeSerial++;
     clearAudioFadeTimers();
@@ -840,7 +846,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   bindPlaybackProgressEvents(audio);
   applyVolumeToAudio();
   await applyAudioOutputDevice(audio);
-  audio.src = song.localUrl;
+  if (!transitionHandoff) audio.src = song.localUrl;
   audio.__mineradioQueueItemKey = queueItemKey(song);
   audio.__mineradioTrackSwitchToken = token;
   updatePlaybackProgressUi();
@@ -875,7 +881,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   };
   scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);
   if (resumeAt > 0) pendingPlaybackResumeAt = 0;
-  audio.load();
+  if (!transitionHandoff) audio.load();
   currentBeatMap = null;
   beatMapNextIdx = 0;
   resetAudioVisualState();
@@ -886,7 +892,15 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   djBeatMapToken++;
   resetDjBeatMapState();
   setDjModeActive(false);
-  var playbackStarted = await playAudio({ manual: !!opts.manual, silent: !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery });
+  var playbackStarted = await playAudio({
+    manual: !!opts.manual,
+    silent: !!opts.startupAutoplay || !opts.manual,
+    startupAutoplay: !!opts.startupAutoplay,
+    trackSwitch: true,
+    resumeRecovery: !!opts.resumeRecovery,
+    fade: transitionHandoff ? false : opts.fade,
+    preserveGain: transitionHandoff
+  });
   if (!playbackStarted) {
     forcePlaybackControlsInteractive();
     if (opts.startupAutoplay) {
@@ -900,6 +914,15 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   }
   forcePlaybackControlsInteractive();
   beginListenSession(song, null);
+  if (transitionHandoff && transitionPreviousAudio && transitionPreviousAudio !== audio) {
+    setTimeout(function () {
+      try {
+        transitionPreviousAudio.pause();
+        transitionPreviousAudio.removeAttribute('src');
+        transitionPreviousAudio.load();
+      } catch (_) { }
+    }, 160);
+  }
   if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
   fetchLyric(song, token);
   safeRenderQueuePanel('play-local-queue', { scrollCurrent: miniQueueOpen });
