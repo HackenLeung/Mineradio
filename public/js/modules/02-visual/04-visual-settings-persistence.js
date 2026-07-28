@@ -206,6 +206,7 @@ function readSavedLyricLayout() {
     }
     var savedBgColor = normalizeHexColor(raw.backgroundColor || '#000000', '#000000');
     var savedBgOpacity = clampRange(raw.backgroundOpacity == null ? fxDefaults.backgroundOpacity : Number(raw.backgroundOpacity), 0, 1);
+    var savedWallpaperEngineDim = clampRange(raw.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : Number(raw.wallpaperEngineDim), 0, 0.85);
     var savedWindowBgOpacity = clampRange(raw.windowBackgroundOpacity == null ? fxDefaults.windowBackgroundOpacity : Number(raw.windowBackgroundOpacity), 0, 1);
     var savedBgGlassOpacity = clampRange(raw.backgroundGlassOpacity == null ? fxDefaults.backgroundGlassOpacity : Number(raw.backgroundGlassOpacity), 0, 1);
     var savedBgCropX = layoutNumber(raw.backgroundMediaCropX, fxDefaults.backgroundMediaCropX, 0, 100);
@@ -306,6 +307,7 @@ function readSavedLyricLayout() {
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
       backgroundOpacity: savedBgOpacity,
+      wallpaperEngineDim: savedWallpaperEngineDim,
       windowBackgroundOpacity: savedWindowBgOpacity,
       backgroundGlassOpacity: savedBgGlassOpacity,
       controlGlassChromaticOffset: savedGlassOffset,
@@ -520,6 +522,7 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     backgroundColor: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundColorCover: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundOpacity: ['backgroundOpacity', 'backgroundColorMode', 'backgroundColorCustom'],
+    wallpaperEngineDim: ['wallpaperEngineDim'],
     windowBackgroundOpacity: ['windowBackgroundOpacity'],
     backgroundGlassOpacity: ['backgroundGlassOpacity'],
     backgroundImage: ['backgroundImage', 'backgroundMedia', 'backgroundAlbumCover'],
@@ -792,6 +795,7 @@ function saveLyricLayout(opts) {
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),
       backgroundOpacity: clampRange(fx.backgroundOpacity == null ? fxDefaults.backgroundOpacity : Number(fx.backgroundOpacity), 0, 1),
+      wallpaperEngineDim: clampRange(fx.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : Number(fx.wallpaperEngineDim), 0, 0.85),
       windowBackgroundOpacity: clampRange(fx.windowBackgroundOpacity == null ? fxDefaults.windowBackgroundOpacity : Number(fx.windowBackgroundOpacity), 0, 1),
       backgroundGlassOpacity: clampRange(fx.backgroundGlassOpacity == null ? fxDefaults.backgroundGlassOpacity : Number(fx.backgroundGlassOpacity), 0, 1),
       controlGlassChromaticOffset: layoutNumber(fx.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 30, 140),

@@ -41,6 +41,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('bg-media-preview', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
         fxConsoleItem('wallpaper-engine-value', 'Wallpaper Engine', '壁纸库 识别 导入 恢复原背景', false),
         fxConsoleItem('fx-bgopacity', '背景透明度', '背景强度'),
+        fxConsoleItem('fx-wallpaperenginedim', '壁纸暗度', 'Wallpaper Engine 明暗'),
         fxConsoleItem('fx-bgcropx', '裁切左右', '背景水平 位置'),
         fxConsoleItem('fx-bgcropy', '裁切上下', '背景垂直 位置'),
         fxConsoleItem('fx-bgzoom', '裁切缩放', '背景放大 缩小')

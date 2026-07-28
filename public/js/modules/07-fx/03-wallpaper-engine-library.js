@@ -43,6 +43,15 @@ var wallpaperEngineRenderLimit = 240;
 var wallpaperEngineRuntimeError = '';
 var wallpaperEngineProjectDetailsId = '';
 var WALLPAPER_ENGINE_SWITCH_FADE_MS = 440;
+
+function applyWallpaperEngineDim() {
+  var value = clampRange(
+    fx && fx.wallpaperEngineDim != null ? Number(fx.wallpaperEngineDim) : Number(fxDefaults.wallpaperEngineDim),
+    0,
+    0.85
+  );
+  document.documentElement.style.setProperty('--wallpaper-engine-dim', value.toFixed(3));
+}
 var WALLPAPER_ENGINE_RENDER_BATCH = 240;
 var WALLPAPER_ENGINE_PREPARED_STREAM_TTL_MS = 12000;
 var WALLPAPER_ENGINE_FIRST_FRAME_TIMEOUT_MS = 8000;
@@ -2301,6 +2310,7 @@ function bindWallpaperEngineLibraryEvents() {
 }
 
 function initializeWallpaperEngineLibrary() {
+  applyWallpaperEngineDim();
   bindWallpaperEngineLibraryEvents();
   updateWallpaperEngineEntryUi();
   if (!wallpaperEngineSelection.active) return;

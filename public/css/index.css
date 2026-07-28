@@ -872,6 +872,23 @@ body.wallpaper-engine-dwm-active.wallpaper-engine-glass-sampler-ready #wallpaper
   visibility: visible
 }
 
+#wallpaper-engine-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 0s linear 180ms
+}
+
+body.wallpaper-engine-active #wallpaper-engine-dim {
+  opacity: var(--wallpaper-engine-dim, .18);
+  visibility: visible;
+  transition-delay: 0s
+}
+
 #wallpaper-engine-image,
 #wallpaper-engine-video,
 #wallpaper-engine-freeze {

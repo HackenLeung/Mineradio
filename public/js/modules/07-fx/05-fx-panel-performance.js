@@ -253,6 +253,7 @@ function updateFxInputs() {
   setRange('fx-sonicfloatmax', fx.sonicGroundFloatingMaxSize);
   setRange('fx-sonicfloatspeed', fx.sonicGroundFloatingSpeed);
   setRange('fx-bgopacity', fx.backgroundOpacity == null ? 1 : fx.backgroundOpacity);
+  setRange('fx-wallpaperenginedim', fx.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : fx.wallpaperEngineDim);
   setRange('fx-bgcropx', fx.backgroundMediaCropX == null ? fxDefaults.backgroundMediaCropX : fx.backgroundMediaCropX);
   setRange('fx-bgcropy', fx.backgroundMediaCropY == null ? fxDefaults.backgroundMediaCropY : fx.backgroundMediaCropY);
   setRange('fx-bgzoom', fx.backgroundMediaZoom == null ? fxDefaults.backgroundMediaZoom : fx.backgroundMediaZoom);
@@ -473,6 +474,7 @@ function resetFxSliderValue(id, key, btn) {
   setRange(id, fx[key]);
   if (key === 'coverResolution') applyCoverParticleResolution(fx[key], { reload: true });
   if (key === 'backgroundOpacity' || key === 'windowBackgroundOpacity' || key === 'backgroundGlassOpacity' || key === 'backgroundMediaCropX' || key === 'backgroundMediaCropY' || key === 'backgroundMediaZoom') updateCustomBackgroundControls();
+  if (key === 'wallpaperEngineDim' && typeof applyWallpaperEngineDim === 'function') applyWallpaperEngineDim();
   if (key === 'controlGlassChromaticOffset') applyControlGlassChromaticOffset();
   if (/^playlistPanel/.test(key)) applyPlaylistPanelFxSettings();
   syncFxUniforms();
@@ -542,7 +544,7 @@ function fxPanelTargetForNode(node, current) {
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
   if (id === 'fx-advanced' || node.classList.contains('fx-actions')) return 'advanced';
   if (node.classList.contains('lyric-color-row') || node.classList.contains('cover-color-pop') || node.classList.contains('color-lab-pop') || node.classList.contains('cover-color-loupe')) return 'appearance';
-  if (inputId === 'fx-bgopacity' || inputId === 'fx-bgcropx' || inputId === 'fx-bgcropy' || inputId === 'fx-bgzoom' || inputId === 'fx-windowbgopacity' || inputId === 'fx-bgglassopacity' || inputId === 'fx-glassaberration' || /^fx-playlist/.test(inputId)) return 'appearance';
+  if (inputId === 'fx-bgopacity' || inputId === 'fx-wallpaperenginedim' || inputId === 'fx-bgcropx' || inputId === 'fx-bgcropy' || inputId === 'fx-bgzoom' || inputId === 'fx-windowbgopacity' || inputId === 'fx-bgglassopacity' || inputId === 'fx-glassaberration' || /^fx-playlist/.test(inputId)) return 'appearance';
   if (inputId === 'fx-lyricglow' || inputId === 'fx-lyricbgadapt') return 'lyrics';
   if (/^fx-sonic/.test(inputId)) return 'motion';
   if (/^fx-(intensity|depth|coverres|cineshake|shelf)/.test(inputId)) return 'motion';
@@ -773,6 +775,7 @@ function relabelFxPanelControls() {
   setFxSliderLabel('fx-cineshake', '电影镜头');
   setFxSliderLabel('fx-lyricglow', '溢光强度');
   setFxSliderLabel('fx-bgopacity', '背景透明度');
+  setFxSliderLabel('fx-wallpaperenginedim', '壁纸暗度');
   setFxSliderLabel('fx-glassaberration', '玻璃色差');
   setFxSliderLabel('fx-playlistblur', '左栏雾面');
   setFxSliderLabel('fx-playlistdensity', '左栏遮挡');

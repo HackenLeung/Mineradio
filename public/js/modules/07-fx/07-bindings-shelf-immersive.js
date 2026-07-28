@@ -18,7 +18,7 @@ function bindFxPanel() {
     ['fx-sonicwegain', 'sonicWorkshopInputGain'], ['fx-sonicweaudio', 'sonicWorkshopAudioIntensity'], ['fx-sonicwerange', 'sonicWorkshopResponseRange'], ['fx-sonicwepeak', 'sonicWorkshopPeakIntensity'],
     ['fx-sonicsubbass', 'sonicGroundSubBass'], ['fx-sonicbass', 'sonicGroundBass'], ['fx-soniclowmid', 'sonicGroundLowMid'], ['fx-sonicmid', 'sonicGroundMid'], ['fx-sonichighmid', 'sonicGroundHighMid'], ['fx-sonicpresence', 'sonicGroundPresence'], ['fx-sonicbrilliance', 'sonicGroundBrilliance'], ['fx-sonicair', 'sonicGroundAir'],
     ['fx-sonicglow', 'sonicGroundGlow'], ['fx-sonicfloatcount', 'sonicGroundFloatingCount'], ['fx-sonicfloatintensity', 'sonicGroundFloatingIntensity'], ['fx-sonicfloatmin', 'sonicGroundFloatingMinSize'], ['fx-sonicfloatmax', 'sonicGroundFloatingMaxSize'], ['fx-sonicfloatspeed', 'sonicGroundFloatingSpeed'],
-    ['fx-bgopacity', 'backgroundOpacity'], ['fx-bgcropx', 'backgroundMediaCropX'], ['fx-bgcropy', 'backgroundMediaCropY'], ['fx-bgzoom', 'backgroundMediaZoom'], ['fx-windowbgopacity', 'windowBackgroundOpacity'], ['fx-bgglassopacity', 'backgroundGlassOpacity'], ['fx-glassaberration', 'controlGlassChromaticOffset'],
+    ['fx-bgopacity', 'backgroundOpacity'], ['fx-wallpaperenginedim', 'wallpaperEngineDim'], ['fx-bgcropx', 'backgroundMediaCropX'], ['fx-bgcropy', 'backgroundMediaCropY'], ['fx-bgzoom', 'backgroundMediaZoom'], ['fx-windowbgopacity', 'windowBackgroundOpacity'], ['fx-bgglassopacity', 'backgroundGlassOpacity'], ['fx-glassaberration', 'controlGlassChromaticOffset'],
     ['fx-playlistblur', 'playlistPanelGlassBlur'], ['fx-playlistdensity', 'playlistPanelGlassDensity'], ['fx-playlistopen', 'playlistPanelOpenDuration'], ['fx-playlistclose', 'playlistPanelCloseDuration'],
     ['fx-desktoplyricssize', 'desktopLyricsSize'], ['fx-desktoplyricsopacity', 'desktopLyricsOpacity'], ['fx-desktoplyricsy', 'desktopLyricsY'], ['fx-wallpaperopacity', 'wallpaperOpacity'],
     ['fx-shelfsize', 'shelfSize'], ['fx-shelfx', 'shelfOffsetX'], ['fx-shelfy', 'shelfOffsetY'], ['fx-shelfz', 'shelfOffsetZ'], ['fx-shelfangle', 'shelfAngleY'], ['fx-shelfopacity', 'shelfOpacity'], ['fx-shelfbgalpha', 'shelfBgOpacity'],
@@ -71,6 +71,10 @@ function bindFxPanel() {
         fx.backgroundColorMode = 'custom';
         fx.backgroundColorCustom = true;
         updateCustomBackgroundControls();
+      }
+      if (pair[1] === 'wallpaperEngineDim') {
+        fx.wallpaperEngineDim = clampRange(fx.wallpaperEngineDim, 0, 0.85);
+        if (typeof applyWallpaperEngineDim === 'function') applyWallpaperEngineDim();
       }
       if (pair[1] === 'backgroundMediaCropX' || pair[1] === 'backgroundMediaCropY') {
         fx[pair[1]] = Math.round(clampRange(fx[pair[1]], 0, 100));
