@@ -674,6 +674,7 @@ function clearQueue() {
   safeShelfRebuild('clear-queue');
   updateCustomCoverButton();
   updateCustomLyricControls();
+  if (typeof syncMediaSessionState === 'function') syncMediaSessionState();
   updateEmptyHomeVisibility({ forceLoad: false });
 }
 function removeFromQueue(idx) {

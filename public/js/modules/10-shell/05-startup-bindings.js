@@ -4,6 +4,8 @@ applySavedLyricPaletteState();
 bindQualityControl();
 bindAudioOutputControls();
 bindVolumeControls();
+bindMediaSessionActions();
+syncMediaSessionState();
 initControlGlassSurface();
 bindPlayerControlAnimations();
 scheduleUiWarmTask(function () {

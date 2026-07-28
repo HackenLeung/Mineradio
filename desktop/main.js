@@ -13,6 +13,7 @@ const {
 const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
 const { CubeRemoteRuntime } = require('./cube-remote-runtime');
+const { DesktopLyricsWindowState } = require('./desktop-lyrics-window-state');
 const {
   LoginEasterEggGate,
   LOGIN_EASTER_EGG_GATE_VERSION,
@@ -157,6 +158,13 @@ const QISHUI_OFFICIAL_CLIENT_DATA_DIRS = (process.env.QISHUI_OFFICIAL_CLIENT_DAT
 // derived path lookup or Electron can recompute userData below the cache root.
 app.setName(APP_NAME);
 const STABLE_USER_DATA_PATH = path.join(app.getPath('appData'), APP_NAME);
+const desktopLyricsWindowState = new DesktopLyricsWindowState({
+  fs,
+  path,
+  screen,
+  userDataPath: STABLE_USER_DATA_PATH,
+});
+desktopLyricsUserBounds = desktopLyricsWindowState.getBounds();
 
 function migrateLegacyPortableUserData() {
   const sources = [];
@@ -4527,8 +4535,8 @@ function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
     : screen.getPrimaryDisplay();
   const bounds = display.bounds;
   const yRatio = clampNumber(payload.y, 0.08, 0.92, 0.76);
-  const width = Math.round(Math.min(Math.max(880, bounds.width * 0.72), bounds.width - 96));
-  const height = Math.round(Math.min(Math.max(340, bounds.height * 0.38), 560, bounds.height - 96));
+  const width = Math.round(Math.min(Math.max(760, bounds.width * 0.46), 1040, bounds.width - 96));
+  const height = Math.round(Math.min(Math.max(210, bounds.height * 0.22), 240, bounds.height - 96));
   return {
     x: Math.round(bounds.x + (bounds.width - width) / 2),
     y: Math.round(bounds.y + bounds.height * yRatio - height / 2),
@@ -4538,18 +4546,7 @@ function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
 }
 
 function constrainDesktopLyricsBounds(bounds) {
-  const display = screen.getDisplayMatching(bounds);
-  const area = display.bounds;
-  const next = {
-    ...bounds,
-    width: Math.round(Math.min(Math.max(320, bounds.width), area.width)),
-    height: Math.round(Math.min(Math.max(180, bounds.height), area.height)),
-  };
-  const maxX = area.x + Math.max(0, area.width - next.width);
-  const maxY = area.y + Math.max(0, area.height - next.height);
-  next.x = Math.round(clampNumber(next.x, area.x, maxX, area.x));
-  next.y = Math.round(clampNumber(next.y, area.y, maxY, area.y));
-  return next;
+  return desktopLyricsWindowState.constrain(bounds);
 }
 
 function setDesktopLyricsBounds(bounds) {
@@ -4573,7 +4570,7 @@ function setDesktopLyricsBounds(bounds) {
 
 function rememberDesktopLyricsBounds() {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || desktopLyricsProgrammaticMove) return;
-  desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+  desktopLyricsUserBounds = desktopLyricsWindowState.remember(desktopLyricsWindow.getBounds());
 }
 
 function applyDesktopLyricsMouseBehavior() {
@@ -4716,7 +4713,10 @@ function createDesktopLyricsWindow(payload = {}) {
   const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
   const opacityChanged = Object.prototype.hasOwnProperty.call(payload || {}, 'opacity')
     && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
-  if (yChanged) desktopLyricsUserBounds = null;
+  if (yChanged) {
+    desktopLyricsWindowState.clear();
+    desktopLyricsUserBounds = null;
+  }
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
     if (yChanged) {
       positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged });
@@ -4773,18 +4773,19 @@ function createDesktopLyricsWindow(payload = {}) {
   return desktopLyricsWindow;
 }
 
-function closeDesktopLyricsWindow() {
-  desktopLyricsState = { ...desktopLyricsState, enabled: false };
+function closeDesktopLyricsWindow(options = {}) {
+  const preserveEnabled = options.preserveEnabled === true;
+  if (!preserveEnabled) desktopLyricsState = { ...desktopLyricsState, enabled: false };
   desktopLyricsPointerCapture = false;
   desktopLyricsMouseIgnored = null;
   desktopLyricsHotBounds = null;
   stopDesktopLyricsMousePoller();
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    sendDesktopLyricsState();
+    if (!preserveEnabled) sendDesktopLyricsState();
     desktopLyricsWindow.close();
   }
   desktopLyricsWindow = null;
-  broadcastDesktopLyricsEnabledState(false);
+  if (options.silent !== true) broadcastDesktopLyricsEnabledState(false);
 }
 
 function nativeWindowHandleDecimal(win) {
@@ -5900,7 +5901,7 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
       y: Math.round(bounds.y + clampNumber(dy, -160, 160, 0)),
     };
     desktopLyricsWindow.setBounds(next, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+    desktopLyricsUserBounds = desktopLyricsWindowState.remember(desktopLyricsWindow.getBounds(), { immediate: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_MOVE_FAILED' };
@@ -6588,7 +6589,8 @@ if (!gotSingleInstanceLock) {
     stopMemoryAutoTimer();
     unregisterFullDesktopEscapeShortcut();
     unregisterMineradioGlobalHotkeys();
-    closeDesktopLyricsWindow();
+    desktopLyricsWindowState.dispose();
+    closeDesktopLyricsWindow({ preserveEnabled: true, silent: true });
     cubeRemoteRuntime.dispose();
     if (localServer && localServer.close) localServer.close();
     if (tray) {

@@ -191,6 +191,7 @@ function playbackTransitionHasAudibleNextDeck() {
 function bindPlaybackProgressEvents(audioEl) {
   if (!audioEl || audioEl._mineradioProgressBound) return;
   audioEl._mineradioProgressBound = true;
+  if (typeof bindMediaSessionToAudio === 'function') bindMediaSessionToAudio(audioEl);
   ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'play', 'pause', 'emptied'].forEach(function (name) {
     audioEl.addEventListener(name, updatePlaybackProgressUi);
   });

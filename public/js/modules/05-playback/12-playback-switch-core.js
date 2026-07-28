@@ -17,6 +17,7 @@ function syncPlaybackStateFromAudioEvent(reason) {
   var isPlaying = !!(audio && audio.src && !audio.paused && !audio.ended);
   playing = isPlaying;
   setPlayIcon(isPlaying);
+  if (typeof syncMediaSessionState === 'function') syncMediaSessionState();
   if (!isPlaying) hideLoading();
   if (reason === 'play' || reason === 'playing') {
     switchPlaybackVisualToEmily();
