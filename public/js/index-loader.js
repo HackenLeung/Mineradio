@@ -103,6 +103,7 @@
     'js/modules/10-shell/02-peek-panels-upload.js',
     'js/modules/10-shell/03-splash.js',
     'js/modules/10-shell/04-desktop-overlay-fullscreen.js',
+    'js/modules/10-shell/04a-cube-remote-controller.js',
     'js/modules/10-shell/05-startup-bindings.js',
     'js/modules/11-main-loop.js',
   ];

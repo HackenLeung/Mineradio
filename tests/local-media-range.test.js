@@ -75,4 +75,3 @@ run().then(() => {
   console.error(error && error.stack || error);
   server.close(() => process.exit(1));
 });
-

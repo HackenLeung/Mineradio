@@ -119,7 +119,9 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-desktoplyricssize', '桌面歌词大小', '桌面字号'),
         fxConsoleItem('fx-desktoplyricsopacity', '桌面歌词透明度', '桌面歌词透明'),
         fxConsoleItem('fx-desktoplyricsy', '桌面歌词高度', '桌面位置'),
-        fxConsoleItem('desktop-lyrics-fps-seg', '桌面歌词帧率', '24 30 60 120 无上限 FPS')
+        fxConsoleItem('desktop-lyrics-fps-seg', '桌面歌词帧率', '24 30 60 120 无上限 FPS'),
+        fxConsoleItem('t-cubeRemote', '音乐遥控器', '悬浮 魔方 条形 月白 播放控制'),
+        fxConsoleItem('cube-remote-skin-seg', '遥控器样式', '魔方 条形 月白')
       ] }
     ]
   },

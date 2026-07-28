@@ -28,7 +28,6 @@ function saveSameTempoIndex() {
     localStorage.setItem(SAME_TEMPO_INDEX_STORE_KEY, JSON.stringify(payload));
   } catch (_) { }
 }
-
 function sameTempoSongKey(song) {
   return typeof beatMapSongKey === 'function' ? String(beatMapSongKey(song) || '') : '';
 }
@@ -341,4 +340,3 @@ function applySameTempoPlaylist(playNow) {
   closeSameTempoModal();
   showToast('已加入队列 ' + songs.length + ' 首');
 }
-

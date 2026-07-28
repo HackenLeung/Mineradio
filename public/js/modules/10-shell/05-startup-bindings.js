@@ -21,6 +21,7 @@ applyStartupAutoplayUi();
 applyControlsAutoHidePreference();
 applyDesktopLyricsState(false);
 applyWallpaperModeState(false);
+bindCubeRemoteController();
 setShelfMode(fx.shelf);
 if (fx.shelf === 'side') setShelfPinnedOpen(!!fx.shelfPinnedOpen, true, false);
 var restoredPlaybackAtStartup = restoreLastPlaybackSnapshot();

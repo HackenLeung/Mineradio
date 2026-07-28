@@ -47,7 +47,6 @@ test('BPM normalization tolerates half-time and double-time maps', () => {
   assert.equal(bpmFromMap({ gridStep: 0.5 }), 120);
   assert.equal(distance(87, 174), 0);
 });
-
 test('transition playlist keeps the seed first and builds an energy arc', () => {
   const bpm = { seed: 120, a: 119, b: 121, c: 124, d: 116, e: 128, f: 112 };
   const energy = { seed: 0.2, a: 0.24, b: 0.31, c: 0.43, d: 0.52, e: 0.66, f: 0.78 };
@@ -79,4 +78,3 @@ test('same-tempo module is loaded in order and limits expensive fallback analysi
   assert.match(source, /\.slice\(0, 6\)/);
   assert.match(source, /writeBeatDiskCache\(diskKey, map, song, 'same-tempo'\)/);
 });
-

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>音乐遥控器</title>
+  <link rel="stylesheet" href="/cube-remote.css">
+</head>
+<body data-skin="cube">
+  <section id="skin-cube" class="skin cube-skin" aria-label="音乐魔方遥控器">
+    <button class="cube-pad pad-up main-button" data-command="toggle-main" title="打开或隐藏主程序" aria-label="打开或隐藏主程序">
+      <svg class="main-show" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9h16M7 7h.1M10 7h.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <svg class="main-hide" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 13h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <button class="cube-pad pad-left" data-command="previous" title="上一首" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.9 6 8.1 5.8V6.2Z"/></svg></button>
+    <button class="cube-pad pad-right" data-command="next" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="m6 17.8 8.1-5.8L6 6.2zm9.6-11.8H18v12h-2.4z"/></svg></button>
+    <button class="cube-pad pad-down lyrics-button" data-command="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词"><span>词</span></button>
+    <div class="cube-center drag-handle">
+      <button class="cover-button" data-command="toggle-play" title="播放" aria-label="播放">
+        <img class="cover" alt="" draggable="false">
+        <span class="cover-shade"></span>
+        <svg class="play-symbol" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg>
+        <svg class="pause-symbol" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+      </button>
+      <label class="cube-volume-wrap" title="音量">
+        <svg viewBox="0 0 24 24"><path d="M11 5 6.5 9H3v6h3.5l4.5 4zM14.5 8.5a5 5 0 0 1 0 7M17 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <input class="volume-input" type="range" min="0" max="1" step="0.01" value="0.85" aria-label="音量">
+      </label>
+    </div>
+  </section>
+
+  <section id="skin-bar" class="skin bar-skin" aria-label="条形音乐遥控器">
+    <button class="bar-cover cover-button drag-handle" data-command="toggle-play" title="播放" aria-label="播放">
+      <img class="cover" alt="" draggable="false"><span class="cover-shade"></span>
+      <svg class="play-symbol" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg>
+      <svg class="pause-symbol" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+    </button>
+    <div class="bar-meta drag-handle"><strong data-field="title">未播放</strong><span data-field="artist"></span></div>
+    <div class="bar-actions">
+      <button data-command="previous" title="上一首" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6Z"/></svg></button>
+      <button data-command="next" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6zm10-12h2v12h-2z"/></svg></button>
+      <button class="lyrics-button" data-command="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词">词</button>
+      <button class="main-button" data-command="toggle-main" title="打开或隐藏主程序" aria-label="打开或隐藏主程序"><svg class="main-show" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM8 9h8M8 12h5"/></svg><svg class="main-hide" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM9 12h6"/></svg></button>
+    </div>
+  </section>
+
+  <section id="skin-moon" class="skin moon-skin" aria-label="星稀月白音乐遥控器">
+    <button class="moon-cover cover-button drag-handle" data-command="toggle-play" title="播放" aria-label="播放">
+      <img class="cover" alt="" draggable="false"><span class="cover-shade"></span>
+      <svg class="play-symbol" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg>
+      <svg class="pause-symbol" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/></svg>
+    </button>
+    <div class="moon-meta drag-handle"><strong data-field="title">未播放</strong><span data-field="artist"></span></div>
+    <div class="moon-actions">
+      <button data-command="previous" title="上一首" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6Z"/></svg></button>
+      <button class="main-button" data-command="toggle-main" title="打开或隐藏主程序" aria-label="打开或隐藏主程序"><svg class="main-show" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM8 9h8M8 12h5"/></svg><svg class="main-hide" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM9 12h6"/></svg></button>
+      <button data-command="next" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6zm10-12h2v12h-2z"/></svg></button>
+      <button class="lyrics-button" data-command="toggle-lyrics" title="桌面歌词" aria-label="桌面歌词">词</button>
+    </div>
+  </section>
+  <script src="/cube-remote.js"></script>
+</body>
+</html>

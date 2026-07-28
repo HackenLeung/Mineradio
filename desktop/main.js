@@ -12,6 +12,7 @@ const {
 } = require('./wallpaper-engine-library');
 const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
+const { CubeRemoteRuntime } = require('./cube-remote-runtime');
 const {
   LoginEasterEggGate,
   LOGIN_EASTER_EGG_GATE_VERSION,
@@ -216,6 +217,22 @@ const fullDesktopModeRuntime = new FullDesktopModeRuntime({
   beforePassive: ({ win, reason }) => prepareWallpaperEngineProjectPreviewBeforeDesktopEmbedding(win, reason),
   requestReconcile: (reason) => reconcileFullDesktopMode(reason),
   onStatus: (status) => broadcastDesktopWallpaperStatus(status),
+});
+const cubeRemoteRuntime = new CubeRemoteRuntime({
+  BrowserWindow,
+  ipcMain,
+  screen,
+  spawn,
+  fs,
+  path,
+  preloadPath: path.join(__dirname, 'overlay-preload.js'),
+  userDataPath: STABLE_USER_DATA_PATH,
+  getOverlayUrl: (page) => overlayUrl(page),
+  getMainWindow: () => mainWindow,
+  focusMainWindow: () => focusMainWindow(),
+  toggleMainWindow: () => toggleMainWindowFromCube(),
+  isAppQuitting: () => appQuitting,
+  logger: console,
 });
 let wallpaperEngineCaptureSourceId = '';
 let wallpaperEngineCaptureGrant = null;
@@ -2075,6 +2092,23 @@ function focusMainWindow() {
   resetMainWindowZoom();
   mainWindow.focus();
   sendWindowState(mainWindow);
+  return true;
+}
+
+async function toggleMainWindowFromCube() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const desktopMode = fullDesktopModeRuntime.getStatus('cube-remote-toggle-main');
+  if (desktopMode.enabled === true) {
+    const result = await setFullDesktopModeInteractive(desktopMode.interactive !== true, 'cube-remote-toggle-main');
+    return !!(result && (result.interactive === true || result.status && result.status.interactive === true));
+  }
+  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindow.hide();
+    sendWindowState(mainWindow);
+    scheduleAppMemoryTrim('cube-remote-hide', 2200);
+    return false;
+  }
+  focusMainWindow();
   return true;
 }
 
@@ -4827,6 +4861,7 @@ async function closeWallpaperWindow(reason = 'disabled') {
 
 function closeOverlayWindows(reason = 'overlay-close') {
   closeDesktopLyricsWindow();
+  cubeRemoteRuntime.close({ preserveEnabled: true });
   return closeWallpaperWindow(reason).catch((error) => {
     console.warn('[FullDesktopMode] close failed:', error && error.message || error);
   });
@@ -6554,6 +6589,7 @@ if (!gotSingleInstanceLock) {
     unregisterFullDesktopEscapeShortcut();
     unregisterMineradioGlobalHotkeys();
     closeDesktopLyricsWindow();
+    cubeRemoteRuntime.dispose();
     if (localServer && localServer.close) localServer.close();
     if (tray) {
       try { tray.destroy(); } catch (e) {}

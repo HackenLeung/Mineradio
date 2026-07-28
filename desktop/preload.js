@@ -88,6 +88,21 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   setDesktopLyricsEnabled: (enabled, payload) => ipcRenderer.invoke('mineradio-desktop-lyrics-set-enabled', !!enabled, payload || {}),
   updateDesktopLyrics: (payload) => ipcRenderer.invoke('mineradio-desktop-lyrics-update', payload || {}),
+  getCubeRemoteSettings: () => ipcRenderer.invoke('mineradio-cube-remote-get-settings'),
+  setCubeRemoteEnabled: (enabled, payload) => ipcRenderer.invoke('mineradio-cube-remote-set-enabled', !!enabled, payload || {}),
+  updateCubeRemote: (payload) => ipcRenderer.invoke('mineradio-cube-remote-update', payload || {}),
+  onCubeRemoteCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-cube-remote-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-cube-remote-command', listener);
+  },
+  onCubeRemoteEnabledState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-cube-remote-enabled-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-cube-remote-enabled-state', listener);
+  },
   onDesktopLyricsLockState: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});
