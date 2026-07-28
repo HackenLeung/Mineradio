@@ -190,6 +190,70 @@ const WEATHER_DEFAULT_LOCATION = {
 
 const updateDownloadJobs = new Map();
 
+// Local-library files are exposed through opaque, process-local ids. The
+// renderer never receives a file:// URL, and callers cannot turn this route
+// into an arbitrary filesystem reader by guessing a path.
+const localMediaIndex = new Map();
+const localMediaPathIds = new Map();
+
+function registerLocalMediaPath(filePath) {
+  const target = path.resolve(String(filePath || ''));
+  if (!target) return '';
+  let id = localMediaPathIds.get(target);
+  if (!id) {
+    id = crypto.randomBytes(18).toString('base64url');
+    localMediaPathIds.set(target, id);
+  }
+  localMediaIndex.set(id, target);
+  return id;
+}
+
+function streamRegisteredLocalMedia(req, res, target) {
+  let stat;
+  try {
+    stat = fs.statSync(target);
+  } catch (_) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
+  if (!stat.isFile()) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
+
+  let start = 0;
+  let end = Math.max(0, stat.size - 1);
+  let status = 200;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(req.headers.range || '');
+  if (match) {
+    start = match[1] ? Math.max(0, Number(match[1])) : 0;
+    end = match[2] ? Math.min(end, Number(match[2])) : end;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= stat.size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+      res.end();
+      return;
+    }
+    status = 206;
+  }
+
+  const headers = {
+    'Content-Type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream',
+    'Content-Length': String(Math.max(0, end - start + 1)),
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, max-age=3600',
+    'Access-Control-Allow-Origin': '*',
+  };
+  if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  fs.createReadStream(target, { start, end }).on('error', () => res.destroy()).pipe(res);
+}
+
 function loadListenSyncJournal() {
   try {
     const parsed = JSON.parse(fs.readFileSync(LISTEN_SYNC_JOURNAL_FILE, 'utf8'));
@@ -265,8 +329,19 @@ const MIME = {
   '.json': 'application/json',
   '.png':  'image/png',
   '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico':  'image/x-icon',
   '.svg':  'image/svg+xml',
+  '.mp3':  'audio/mpeg',
+  '.flac': 'audio/flac',
+  '.wav':  'audio/wav',
+  '.ogg':  'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.m4a':  'audio/mp4',
+  '.mp4':  'audio/mp4',
+  '.aac':  'audio/aac',
+  '.webm': 'audio/webm',
 };
 
 // ---------- Cookie 持久化 ----------
@@ -5278,6 +5353,18 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  if (pn === '/api/local-media') {
+    const id = String(url.searchParams.get('id') || '');
+    const target = localMediaIndex.get(id);
+    if (!target || (req.method !== 'GET' && req.method !== 'HEAD')) {
+      res.writeHead(target ? 405 : 404);
+      res.end(target ? 'Method not allowed' : 'Not found');
+      return;
+    }
+    streamRegisteredLocalMedia(req, res, target);
+    return;
+  }
+
   if (LOGIN_EASTER_EGG_PROTECTED_ROUTES.has(pn) && !loginEasterEggGateUnlocked()) {
     sendJSON(res, {
       ok: false,
@@ -7289,5 +7376,6 @@ server.listen(PORT, HOST, () => {
 });
 
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
+server.registerLocalMediaPath = registerLocalMediaPath;
 
 module.exports = server;

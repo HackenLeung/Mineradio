@@ -200,6 +200,8 @@ function animatePlaylistPanelCurrentTab(panel, opts) {
     animateVisiblePanelList(document.getElementById('queue-list'), '.queue-item', panel, '.queue-item.now', { scrollActive: opts.scrollActive !== false });
   } else if (queueViewTab === 'playlists') {
     animateVisiblePanelList(document.getElementById('pl-list'), '.pl-card', panel);
+  } else if (queueViewTab === 'local') {
+    animateVisiblePanelList(document.getElementById('local-library-list'), '.local-library-folder,.local-library-song', panel);
   } else {
     animateVisiblePanelList(document.getElementById('podcast-list'), '.pl-card', panel);
   }
@@ -225,12 +227,17 @@ function switchPlaylistTab(tab, opts) {
   if (playlistTab) playlistTab.classList.toggle('active', tab === 'playlists');
   var podcastTab = document.getElementById('tab-podcast');
   if (podcastTab) podcastTab.classList.toggle('active', tab === 'podcasts');
+  var localTab = document.getElementById('tab-local');
+  if (localTab) localTab.classList.toggle('active', tab === 'local');
   var queuePane = document.getElementById('queue-pane');
   var playlistPane = document.getElementById('pl-pane');
   if (queuePane) queuePane.style.display = tab === 'queue' ? '' : 'none';
   if (playlistPane) playlistPane.style.display = tab === 'playlists' ? '' : 'none';
   var podcastPane = document.getElementById('podcast-pane');
   if (podcastPane) podcastPane.style.display = tab === 'podcasts' ? '' : 'none';
+  var localPane = document.getElementById('local-pane');
+  if (localPane) localPane.style.display = tab === 'local' ? '' : 'none';
+  if (tab === 'local') renderLocalLibraryPanel();
   if ((tab === 'playlists' || tab === 'podcasts') && opts.refresh !== false) refreshUserPlaylists();
   if (opts.animate !== false) animatePlaylistPanelCurrentTab(document.getElementById('playlist-panel'));
 }

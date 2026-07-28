@@ -437,6 +437,114 @@ function closeTrackDetailModal() {
     detailCommentSubmitBusy = false;
   });
 }
+function localDetailOnlineSubject(song) {
+  if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) return song;
+  return typeof localOnlineSongForMetadata === 'function' ? (localOnlineSongForMetadata(song) || song) : song;
+}
+var localMatchModalState = { song: null, provider: 'netease', candidates: [], loading: false };
+function ensureLocalMatchModal() {
+  var mask = document.getElementById('local-match-modal');
+  if (mask) return mask;
+  mask = document.createElement('div');
+  mask.id = 'local-match-modal';
+  mask.className = 'modal-mask';
+  mask.setAttribute('role', 'dialog');
+  mask.setAttribute('aria-modal', 'true');
+  mask.innerHTML = '<div class="modal local-match-modal"><div class="local-match-head"><div><div class="fx-sub">LOCAL METADATA</div><h2>匹配在线歌曲</h2></div><button type="button" class="local-match-close" aria-label="关闭" onclick="closeLocalMatchModal()">×</button></div>' +
+    '<div id="local-match-provider-tabs" class="local-match-provider-tabs"></div>' +
+    '<div class="local-match-search"><input id="local-match-query" type="search" autocomplete="off" placeholder="歌名 歌手"><button id="local-match-search-btn" type="button" onclick="searchLocalMatchCandidates()">搜索</button></div>' +
+    '<div id="local-match-status" class="local-match-status"></div><div id="local-match-results" class="local-match-results"></div></div>';
+  mask.addEventListener('click', function (event) { if (event.target === mask) closeLocalMatchModal(); });
+  document.body.appendChild(mask);
+  var input = mask.querySelector('#local-match-query');
+  input.addEventListener('keydown', function (event) { if (event.key === 'Enter') searchLocalMatchCandidates(); });
+  return mask;
+}
+function renderLocalMatchProviderTabs() {
+  var target = document.getElementById('local-match-provider-tabs');
+  if (!target) return;
+  var providers = [{ key: 'netease', label: '网易云' }, { key: 'qq', label: 'QQ' }, { key: 'kugou', label: '酷狗' }, { key: 'qishui', label: '汽水' }, { key: 'spotify', label: 'Spotify' }];
+  target.innerHTML = providers.map(function (item) {
+    return '<button type="button" class="' + (item.key === localMatchModalState.provider ? 'active' : '') + '" onclick="setLocalMatchProvider(\'' + item.key + '\')">' + item.label + '</button>';
+  }).join('');
+}
+function setLocalMatchProvider(provider) {
+  localMatchModalState.provider = typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(provider) : provider;
+  renderLocalMatchProviderTabs();
+  searchLocalMatchCandidates();
+}
+function openLocalMatchModal(song) {
+  song = song || currentCoverSong();
+  if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) { showToast('请选择本地歌曲'); return; }
+  localMatchModalState.song = song;
+  localMatchModalState.provider = typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease';
+  if (localMatchModalState.provider === 'local') localMatchModalState.provider = 'netease';
+  localMatchModalState.candidates = [];
+  var mask = ensureLocalMatchModal();
+  renderLocalMatchProviderTabs();
+  mask.querySelector('#local-match-query').value = localMetadataQuery(song);
+  mask.querySelector('#local-match-results').innerHTML = '';
+  mask.querySelector('#local-match-status').textContent = '选择平台后搜索并确认正确版本';
+  openGsapModal(mask);
+  searchLocalMatchCandidates();
+}
+function closeLocalMatchModal() {
+  closeGsapModal(document.getElementById('local-match-modal'));
+}
+async function searchLocalMatchCandidates() {
+  var song = localMatchModalState.song;
+  var queryEl = document.getElementById('local-match-query');
+  var resultsEl = document.getElementById('local-match-results');
+  var statusEl = document.getElementById('local-match-status');
+  if (!song || !queryEl || !resultsEl) return;
+  var query = String(queryEl.value || '').trim();
+  if (!query) { statusEl.textContent = '请输入歌名或歌手'; return; }
+  localMatchModalState.loading = true;
+  statusEl.textContent = '正在搜索...';
+  resultsEl.innerHTML = '<div class="detail-loading">正在搜索候选歌曲...</div>';
+  try {
+    var candidates = await fetchLocalMetadataCandidates(song, query, localMatchModalState.provider);
+    candidates = candidates.map(function (candidate) { return { song: candidate, score: localMetadataMatchScore(song, candidate, query) }; })
+      .sort(function (a, b) { return b.score - a.score; }).slice(0, 20).map(function (item) { return item.song; });
+    localMatchModalState.candidates = candidates;
+    statusEl.textContent = candidates.length ? ('找到 ' + candidates.length + ' 个候选') : '没有找到候选歌曲';
+    resultsEl.innerHTML = candidates.length ? candidates.map(function (candidate, index) {
+      var cover = songCoverSrc(candidate, 88);
+      return '<button type="button" class="local-match-result" onclick="applyLocalMatchCandidate(' + index + ')">' +
+        (cover ? '<img src="' + escHtml(cover) + '" alt="">' : '<span class="local-match-cover"></span>') +
+        '<span><strong>' + escHtml(candidate.name || candidate.title || '') + '</strong><small>' + escHtml((candidate.artist || '未知歌手') + (candidate.album ? (' · ' + candidate.album) : '')) + '</small></span><b>使用</b></button>';
+    }).join('') : '<div class="detail-empty">换一个关键词再试</div>';
+  } catch (error) {
+    console.warn('[LocalMatchSearch]', error);
+    statusEl.textContent = '搜索失败，请检查当前平台登录或网络状态';
+    resultsEl.innerHTML = '<div class="detail-empty">搜索失败</div>';
+  } finally { localMatchModalState.loading = false; }
+}
+function applyLocalMatchCandidate(index) {
+  var song = localMatchModalState.song;
+  var candidate = localMatchModalState.candidates[index];
+  if (!song || !candidate) return;
+  var provider = localMatchModalState.provider;
+  var metadata = {
+    provider: provider,
+    id: candidate.id || '', mid: candidate.mid || candidate.songmid || '', songmid: candidate.songmid || candidate.mid || '',
+    hash: candidate.hash || candidate.audioHash || '', albumAudioId: candidate.albumAudioId || candidate.album_audio_id || candidate.mixSongId || '',
+    mixSongId: candidate.mixSongId || candidate.albumAudioId || '', name: candidate.name || candidate.title || '', artist: candidate.artist || '',
+    album: candidate.album || '', cover: candidate.cover || candidate.picUrl || candidate.albumCover || '', duration: Number(candidate.duration) || 0,
+    manualMatched: true
+  };
+  syncLocalMetadata(song, metadata);
+  applyLocalOnlineMetadata(song, metadata, trackSwitchToken);
+  if (currentLocalSong && currentLocalSong.localKey === song.localKey) {
+    var cover = localLibraryCover(song);
+    if (cover) loadCoverFromUrl(cover, { trackToken: trackSwitchToken, deferHeavy: false, delay: 0, timeout: 600, seamlessTrackSwitch: true });
+    fetchLyric(song, trackSwitchToken);
+  }
+  safeRenderQueuePanel('local-manual-match', { scrollCurrent: miniQueueOpen });
+  renderLocalLibraryPanel();
+  closeLocalMatchModal();
+  showToast('已绑定 ' + (provider === 'netease' ? '网易云' : provider) + ' 在线信息');
+}
 function openTrackDetailModal(type, songOverride) {
   var song = songOverride || currentCoverSong();
   if (!song) { showToast('先播放或选择一首歌'); return; }
@@ -449,7 +557,7 @@ function openTrackDetailModal(type, songOverride) {
   var title = song.name || '当前歌曲';
   var artists = currentArtistNames(song);
   var seq = ++trackDetailSeq;
-  detailCommentSong = song;
+  detailCommentSong = localDetailOnlineSubject(song);
   if (type === 'album') {
     var albumUrl = albumDetailUrlForSong(song);
     var albumTitle = song.album || (song.type === 'podcast' ? (song.radioName || 'Podcast') : '未知专辑');
@@ -595,7 +703,8 @@ function openTrackDetailModal(type, songOverride) {
     }
   } else {
     heading.textContent = '歌曲详情';
-    var commentConfig = detailCommentsConfig(song);
+    var commentSubject = localDetailOnlineSubject(song);
+    var commentConfig = detailCommentsConfig(commentSubject);
     var detailCommentTitle = commentConfig ? commentConfig.title : (songSourceLabel(song) + '评论');
     var detailCanLoadComments = !!(commentConfig && commentConfig.readUrl);
     var detailEmptyText = detailCanLoadComments ? '暂无评论' : '当前平台暂无评论接口';
@@ -617,12 +726,13 @@ function openTrackDetailModal(type, songOverride) {
       (isSongLiked(song) ? '<span class="detail-chip">红心喜欢</span>' : '') +
       (getCustomCoverForSong(song) ? '<span class="detail-chip">自定义封面</span>' : '') +
       (hasCustomLyricForSong(song) ? '<span class="detail-chip">自定义歌词</span>' : '') +
+      ((song.type === 'local' || song.source === 'local') ? '<button class="detail-action-toggle" type="button" onclick="openLocalMatchModal(currentCoverSong())">匹配在线信息</button>' : '') +
       '</div>' +
       '<div class="detail-section"><div class="detail-section-head"><div class="detail-section-title">' + detailCommentTitle + '</div></div>' +
       renderDetailCommentComposer(commentConfig) +
       '<div id="song-comments">' + (detailCanLoadComments ? '<div class="detail-loading">正在载入评论...</div>' : '<div class="detail-empty">' + detailEmptyText + '</div>') + '</div></div>';
     if (detailCanLoadComments) {
-      loadDetailComments(song, seq);
+      loadDetailComments(commentSubject, seq);
     }
   }
   bindTrackDetailScrollers();

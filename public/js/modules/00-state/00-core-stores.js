@@ -20,6 +20,7 @@ var lastStrongDrop = 0;           // 用于 burst 预设的强 drop 时刻
 
 var lyricsLines = [], lyricsTranslationLines = [], lyricsVisible = false, lyricsHasNativeKaraoke = false, lyricsTimingSource = 'none', lyricsTranslationSource = 'none';
 var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleBusy = false;
+var localLibrarySongs = [], localFolderPlaylists = [];
 var searchMode = 'song', podcastResults = [], podcastPrograms = [], podcastCurrentRadio = null;
 var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
 var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
@@ -151,6 +152,8 @@ var FX_FAB_AUTO_HIDE_STORE_KEY = 'mineradio-fx-fab-auto-hide-v1';
 var CONTROLS_AUTO_HIDE_STORE_KEY = 'mineradio-controls-auto-hide-v1';
 var FREE_CAMERA_STORE_KEY = 'mineradio-free-camera-v1';
 var HOTKEY_SETTINGS_STORE_KEY = 'mineradio-hotkey-settings-v1';
+var LOCAL_LIBRARY_FOLDERS_STORE_KEY = 'mineradio-local-library-folders-v2';
+var LOCAL_METADATA_STORE_KEY = 'mineradio-local-metadata-v1';
 var VISUAL_GUIDE_SEEN_STORE_KEY = 'mineradio-visual-guide-seen-v2';
 var CLOSE_BEHAVIOR_STORE_KEY = 'mineradio-close-behavior-v1';
 var LAST_PLAYBACK_STORE_KEY = 'mineradio-last-playback-v1';
@@ -193,6 +196,9 @@ var audioOutputMirrorSyncTimer = 0;
 var playbackQualityRuntimeCaps = {};
 var coverCropState = null, coverCropBound = false;
 var currentLocalSong = null;
+var localFolderLyricMatchState = { active: false, folderIndex: -1, total: 0, done: 0, matched: 0, failed: 0 };
+var localLibrarySearchQuery = '';
+var localLibraryDetailState = { folderIndex: -1, renderLimit: 80 };
 var lyricSourceMode = 'original';
 var originalLyricsState = { lines: [], hasNativeKaraoke: false, timingSource: 'none', translationLines: [], translationSource: 'none' };
 var localBeatAnalysis = { song: null, audioUrl: '', mode: 'mr', active: false, token: 0 };

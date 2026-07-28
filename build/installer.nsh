@@ -80,6 +80,8 @@
 !macroend
 
 !macro customInstall
+  Delete "$INSTDIR\app-update.yml"
+  Delete "$INSTDIR\resources\app-update.yml"
   FileOpen $0 "$INSTDIR\${MINERADIO_INSTALL_MARKER}" w
   ${IfNot} ${Errors}
     FileWrite $0 "Mineradio install root$\r$\n"

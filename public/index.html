@@ -1032,6 +1032,7 @@
         <div class="panel-tabs">
           <button id="tab-queue" class="panel-tab active" onclick="switchPlaylistTab('queue')">当前队列</button>
           <button id="tab-pl" class="panel-tab" onclick="switchPlaylistTab('playlists')">我的歌单</button>
+          <button id="tab-local" class="panel-tab" onclick="switchPlaylistTab('local')">本地音乐</button>
           <button id="tab-podcast" class="panel-tab" onclick="switchPlaylistTab('podcasts')">我的播客</button>
         </div>
       </div>
@@ -1054,6 +1055,17 @@
             style="height:26px;padding:0 10px;font-size:11px">刷新</button>
         </div>
         <div id="pl-list" style="margin-top:6px"></div>
+      </div>
+      <div id="local-pane" style="display:none">
+        <div class="queue-toolbar local-library-toolbar">
+          <div id="local-library-chip" class="queue-chip">未导入本地文件夹</div>
+          <button class="fx-mini-btn ghost" type="button" onclick="openLocalFolderImport()">添加文件夹</button>
+        </div>
+        <label class="local-library-search-wrap">
+          <span class="sr-only">搜索本地音乐</span>
+          <input id="local-library-search" type="search" placeholder="搜索歌曲、歌手、专辑或路径" autocomplete="off">
+        </label>
+        <div id="local-library-list" class="local-library-list"></div>
       </div>
       <div id="podcast-pane" style="display:none">
         <div class="queue-toolbar">

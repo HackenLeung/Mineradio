@@ -814,6 +814,9 @@ function playAlbumGaplessNextOnEnded(token) {
 
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
+  if (song && !song.localUrl && typeof ensureFreshLocalPlaybackUrl === 'function') {
+    await ensureFreshLocalPlaybackUrl(song);
+  }
   if (!song || !song.localUrl) {
     showToast('本地文件已失效，请重新导入后继续');
     forcePlaybackControlsInteractive();
@@ -821,6 +824,8 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   }
   currentLocalSong = song;
   playQueue[idx] = song;
+  var localCover = typeof localLibraryCover === 'function' ? localLibraryCover(song) : (song.customCover || song.sidecarCover || song.embeddedCover || song.cover || '');
+  if (localCover) loadCoverFromUrl(localCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: !firstVisualPlay });
   updateCustomCoverButton();
   document.getElementById('trial-banner').classList.remove('show');
   if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
@@ -858,6 +863,14 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     currentLocalSong.duration = duration;
     if (playQueue[idx]) playQueue[idx].duration = duration;
     if (lyricSourceMode === 'custom') applyCustomLyricState(currentLocalSong, true);
+    if (typeof resolveLocalOnlineMetadata === 'function') {
+      resolveLocalOnlineMetadata(currentLocalSong, token).then(function () {
+        if (token !== trackSwitchToken) return;
+        var resolvedCover = typeof localLibraryCover === 'function' ? localLibraryCover(currentLocalSong) : currentLocalSong.cover;
+        if (resolvedCover) loadCoverFromUrl(resolvedCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: true });
+        fetchLyric(currentLocalSong, token);
+      }).catch(function () { });
+    }
     safeRenderQueuePanel('local-metadata', { scrollCurrent: miniQueueOpen });
   };
   scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);
@@ -888,8 +901,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   forcePlaybackControlsInteractive();
   beginListenSession(song, null);
   if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
-  setOriginalLyricsState(withLyricFallback([]), false, 'fallback');
-  applyPreferredLyricsForCurrent(true);
+  fetchLyric(song, token);
   safeRenderQueuePanel('play-local-queue', { scrollCurrent: miniQueueOpen });
   scheduleShelfRebuild('play-local-queue', true);
   scheduleAlbumGaplessPreloadForCurrent(token, 'local-started');

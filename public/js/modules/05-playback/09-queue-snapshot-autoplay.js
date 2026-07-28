@@ -17,11 +17,13 @@ function playbackRestoreSongSnapshot(song) {
     'spotifyId', 'spotifyUri', 'spotifyUrl', 'uri', 'albumUri',
     'hash', 'fileHash', 'audioHash', 'albumId', 'album_id', 'albumMid', 'albummid', 'albumAudioId', 'album_audio_id', 'mixSongId', 'hqHash', 'sqHash', 'resHash',
     'name', 'title', 'artist', 'album', 'cover', 'duration', 'durationMs', 'dt', 'fee',
-    'playable', 'playbackMode', 'recommendationSource', 'programId', 'radioId', 'radioName', 'localKey'
+    'playable', 'playbackMode', 'recommendationSource', 'programId', 'radioId', 'radioName', 'localKey',
+    'localPath', 'localFolderPath', 'localFolderName', 'sidecarCover', 'embeddedCover', 'localLyricText', 'embeddedLyrics'
   ].forEach(function (key) {
     if (song[key] != null && song[key] !== '') snap[key] = song[key];
   });
   if (Array.isArray(song.artists)) snap.artists = song.artists.slice(0, 6);
+  if (song.onlineMetadata && typeof song.onlineMetadata === 'object') snap.onlineMetadata = Object.assign({}, song.onlineMetadata);
   if (song.type === 'local' || song.localKey) snap.localMissing = true;
   return snap;
 }
@@ -45,8 +47,8 @@ function saveLastPlaybackSnapshot(force, reason) {
   var durationSec = getPlaybackDurationSeconds();
   var currentSec = getPlaybackCurrentSeconds();
   if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
-  var queue = Array.isArray(playQueue) ? playQueue.slice(0, 120).map(playbackRestoreSongSnapshot).filter(function (item) { return item && (item.id || item.mid || item.localKey || item.name); }) : [];
-  var payload = {
+  var packedQueue = Array.isArray(playQueue) ? playQueue.map(playbackRestoreSongSnapshot).filter(function (item) { return item && (item.id || item.mid || item.localKey || item.name); }) : [];
+  function payloadForQueue(queue) { return {
     version: 1,
     savedAt: now,
     reason: reason || '',
@@ -54,13 +56,24 @@ function saveLastPlaybackSnapshot(force, reason) {
     currentTime: Math.max(0, Number(currentSec) || 0),
     duration: Math.max(0, Number(durationSec) || playbackDurationFromSong(song) || 0),
     playing: !!(audio && !audio.paused && !audio.ended),
+    playMode: playMode || 'loop',
     current: playbackRestoreSongSnapshot(song),
     queue: queue
-  };
-  try {
-    localStorage.setItem(LAST_PLAYBACK_STORE_KEY, JSON.stringify(payload));
-    lastPlaybackSnapshotSavedAt = now;
-  } catch (e) { }
+  }; }
+  var limits = [packedQueue.length, 1000, 500, 200, 80];
+  for (var limitIndex = 0; limitIndex < limits.length; limitIndex++) {
+    var limit = Math.min(limits[limitIndex], packedQueue.length);
+    var start = limit >= packedQueue.length ? 0 : Math.max(0, Math.min(currentIdx - Math.floor(limit / 2), packedQueue.length - limit));
+    try {
+      var payload = payloadForQueue(packedQueue.slice(start, start + limit));
+      payload.currentIdx = Math.max(0, currentIdx - start);
+      localStorage.setItem(LAST_PLAYBACK_STORE_KEY, JSON.stringify(payload));
+      lastPlaybackSnapshotSavedAt = now;
+      return;
+    } catch (error) {
+      if (limitIndex === limits.length - 1) console.warn('[PlaybackSnapshotSave]', error);
+    }
+  }
 }
 function applyRestoredPlaybackProgressUi(snapshot) {
   snapshot = snapshot || {};
@@ -80,12 +93,8 @@ function restoreLastPlaybackSnapshot() {
   restoredLastPlaybackSnapshot = snapshot;
   startupRestoreHomePending = !startupAutoplayPreference;
   pendingPlaybackResumeAt = startupResumeSecondsFromSnapshot(snapshot);
-  if (isLocal) {
-    currentLocalSong = current;
-    currentIdx = -1;
-    playQueue = [];
-  } else {
-    var queue = Array.isArray(snapshot.queue) ? snapshot.queue.map(function (song) { return hydrateCustomCover(Object.assign({}, song)); }).filter(function (song) { return song && (song.id || song.mid || song.name); }) : [];
+  {
+    var queue = Array.isArray(snapshot.queue) ? snapshot.queue.map(function (song) { return hydrateCustomCover(Object.assign({}, song)); }).filter(function (song) { return song && (song.id || song.mid || song.localKey || song.name); }) : [];
     if (!queue.length) queue = [current];
     var idx = Math.max(0, Math.min(queue.length - 1, Number(snapshot.currentIdx) || 0));
     if (!queue[idx] || queueItemKey(queue[idx]) !== queueItemKey(current)) {
@@ -98,15 +107,16 @@ function restoreLastPlaybackSnapshot() {
     }
     playQueue = queue;
     currentIdx = idx;
-    currentLocalSong = null;
+    currentLocalSong = isLocal ? playQueue[currentIdx] : null;
   }
+  if (snapshot.playMode) playMode = snapshot.playMode;
   var shownSong = currentCoverSong() || current;
   if (shownSong) {
     updateControlTrackInfo(shownSong);
     var titleEl = document.getElementById('thumb-title');
     var artistEl = document.getElementById('thumb-artist');
     if (titleEl) titleEl.textContent = shownSong.name || shownSong.title || '上一首';
-    if (artistEl) artistEl.textContent = isLocal ? '本地文件 · 需要重新导入' : (shownSong.artist || songSourceLabel(shownSong));
+    if (artistEl) artistEl.textContent = isLocal ? ((shownSong.artist || '本地文件') + ' · 正在恢复文件夹') : (shownSong.artist || songSourceLabel(shownSong));
     var thumbWrap = document.getElementById('thumb-wrap');
     if (thumbWrap) thumbWrap.classList.add('visible');
     if (!isLocal && shownSong.cover) {

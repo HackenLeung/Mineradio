@@ -47,11 +47,20 @@ module.exports = async function afterPack(context) {
   const productName = context.packager.appInfo.productName || appName;
   const companyName = context.packager.appInfo.companyName || productName;
   const exePath = path.join(context.appOutDir, `${appName}.exe`);
+  const appUpdateConfigPath = path.join(context.appOutDir, 'resources', 'app-update.yml');
   const iconPath = path.join(context.packager.info.buildResourcesDir, 'icon.ico');
   const rceditPath = resolveRcedit(context.packager.projectDir);
 
   if (!fs.existsSync(exePath)) throw new Error(`Mineradio executable was not found: ${exePath}`);
   if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
+
+  // Mineradio owns its update downloader and cache path. Shipping the
+  // electron-builder updater manifest recreates an unrelated LocalAppData
+  // cache that older local builds could not clean up.
+  if (fs.existsSync(appUpdateConfigPath)) {
+    fs.rmSync(appUpdateConfigPath, { force: true });
+    console.log('  - removed unused app-update.yml');
+  }
 
   const version = context.packager.appInfo.version;
   console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
