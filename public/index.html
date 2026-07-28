@@ -179,6 +179,7 @@
           <input id="home-dashboard-video-input" type="file" accept=".mp4,video/mp4" hidden aria-hidden="true">
         </div>
 
+        <div class="home-dashboard-right">
         <div class="home-grid home-quick-grid" aria-label="常用音乐入口">
           <button class="home-card home-card-featured" data-home-tone="search" type="button"
             onclick="resumeHomeDashboardPlayback()">
@@ -268,6 +269,17 @@
               <span class="home-radio-entry-art" aria-hidden="true"><i></i><i></i></span>
               <span class="home-next-arrow" aria-hidden="true">›</span>
             </button>
+
+            <button class="home-insight-card home-ranking-entry home-podcast-entry" type="button"
+              onclick="openHomeDashboardPodcasts()" aria-label="打开热门播客">
+              <span class="home-ranking-entry-copy">
+                <span class="home-insight-kicker">PODCASTS · 播客</span>
+                <span class="home-ranking-entry-title">热门播客与电台</span>
+                <span class="home-ranking-entry-sub">使用上游播客频道浏览与播放长内容</span>
+              </span>
+              <span class="home-radio-entry-art" aria-hidden="true"><i></i><i></i></span>
+              <span class="home-next-arrow" aria-hidden="true">›</span>
+            </button>
           </div>
 
           <div class="home-legacy-rail" aria-hidden="true">
@@ -275,6 +287,7 @@
             <div id="home-rail-note"></div>
             <div id="home-tile-row" class="home-tile-row"></div>
           </div>
+        </div>
         </div>
       </div>
     </section>

@@ -1260,6 +1260,11 @@ function openHomeDashboardRadio() {
   openHomePlatformRecommendations();
 }
 
+function openHomeDashboardPodcasts() {
+  if (typeof setSearchMode === 'function') setSearchMode('podcast');
+  if (typeof loadPodcastHot === 'function') loadPodcastHot();
+}
+
 function scheduleHomeDashboardRefresh() {
   if (homeDashboardRefreshTimer) {
     clearTimeout(homeDashboardRefreshTimer);
