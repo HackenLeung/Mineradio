@@ -13,6 +13,10 @@ function hideAIDepthChip() {
 function loadCoverFromUrl(directUrl, opts) {
   opts = opts || {};
   var preserveOnSwitch = !!(opts.trackSwitch || opts.seamlessCover || opts.seamlessTrackSwitch);
+  if (typeof isInlineCoverSrc === 'function' && isInlineCoverSrc(directUrl)) {
+    applyCoverDataUrl(directUrl, opts);
+    return;
+  }
   if (!directUrl || typeof directUrl !== 'string' || !/^https?:\/\//i.test(directUrl)) {
     if (!coverApplyStillCurrent(opts)) return;
     if (preserveOnSwitch && uniforms.uHasCover.value > 0.5) {
@@ -148,6 +152,7 @@ function coverCanvasToDataUrl(cv) {
 function applyCoverDataUrl(dataUrl, opts) {
   opts = opts || {};
   if (!dataUrl) return;
+  var preserveOnSwitch = !!(opts.trackSwitch || opts.seamlessCover || opts.seamlessTrackSwitch);
   var img = new Image();
   img.decoding = 'async';
   img.onload = function () {
@@ -155,6 +160,18 @@ function applyCoverDataUrl(dataUrl, opts) {
     var cv = makeSquareCoverCanvas(img, coverTextureSizeForResolution(fx.coverResolution));
     setAlbumBackground(dataUrl);
     applyCoverCanvas(cv, dataUrl, Object.assign({}, opts, { coverSourceKind: 'data', coverSource: dataUrl }));
+  };
+  img.onerror = function () {
+    if (!coverApplyStillCurrent(opts)) return;
+    if (preserveOnSwitch && uniforms.uHasCover.value > 0.5) return;
+    currentCoverSource = null;
+    coverProcessToken++;
+    uniforms.uHasCover.value = 0;
+    setCoverDepthState(0, 0, 1);
+    resetFloatColorsToIdle();
+    setAlbumBackground('');
+    document.getElementById('thumb-cover').removeAttribute('src');
+    setControlCoverSrc('');
   };
   img.src = dataUrl;
 }

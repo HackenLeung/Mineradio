@@ -135,6 +135,7 @@ function togglePlaylistPanel(force) {
   if (force === false) el.classList.remove('show');
   else if (force === true) el.classList.add('show');
   else el.classList.toggle('show');
+  if (typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
   if (el.classList.contains('show')) {
     markPlaylistPanelMotion(el, playlistPanelMotionMs('open'));
     var runPlaylistOpenAnimation = shouldAnimatePlaylistPanelOpen(el);
@@ -153,6 +154,8 @@ function closePlaylistPanelSoft(reason) {
   if (typeof resetSecondaryPlaylistEdgeGuard === 'function') resetSecondaryPlaylistEdgeGuard();
   panel.classList.add('playlist-panel-closing');
   panel.classList.remove('peek', 'show');
+  var detailPanel = document.getElementById('playlist-detail-panel');
+  if (detailPanel) detailPanel.classList.remove('show');
   markPlaylistPanelMotion(panel, playlistPanelMotionMs('close'));
   setTimeout(function () { panel.classList.remove('playlist-panel-closing'); }, playlistPanelMotionMs('close') + 80);
   return true;
@@ -167,6 +170,7 @@ function applyPlaylistPanelPinState(openPanel) {
       setPeek(panel, true, 'pl');
     }
   }
+  if (typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
   if (btn) {
     btn.classList.toggle('active', !!playlistPanelPinned);
     btn.title = playlistPanelPinned ? '取消常开歌单' : '常开歌单';
@@ -239,6 +243,7 @@ function switchPlaylistTab(tab, opts) {
   if (localPane) localPane.style.display = tab === 'local' ? '' : 'none';
   if (tab === 'local') renderLocalLibraryPanel();
   if ((tab === 'playlists' || tab === 'podcasts') && opts.refresh !== false) refreshUserPlaylists();
+  if (typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
   if (opts.animate !== false) animatePlaylistPanelCurrentTab(document.getElementById('playlist-panel'));
 }
 function setMiniQueueOpen(open) {
@@ -475,6 +480,7 @@ function renderQueuePanel(opts) {
       '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub"><button class="queue-artist-link" type="button" onclick="event.stopPropagation();openQueueArtist(' + i + ')">' + escHtml(song.artist || '未知歌手') + '</button></div></div>' +
       '<div class="qi-act">' +
       '<button class="' + (isSongLiked(song) ? 'liked' : '') + '" onclick="event.stopPropagation();toggleLikeQueueIndex(' + i + ')" title="' + (isSongLiked(song) ? '取消红心' : '红心喜欢') + '">' + heartIconSvg() + '</button>' +
+      (typeof queueSongFileActionHtml === 'function' ? queueSongFileActionHtml(song, i) : '') +
       '<button class="queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
       '<button onclick="event.stopPropagation();collectQueueIndex(' + i + ')" title="收藏到歌单">' + playlistPlusIconSvg() + '</button>' +
       '<button onclick="event.stopPropagation();removeFromQueue(' + i + ')" title="移除">×</button>' +

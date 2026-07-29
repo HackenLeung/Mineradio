@@ -301,12 +301,18 @@ function readSavedLyricLayout() {
         raw.uiAccentColor || fxDefaults.uiAccentColor || '#ffffff',
         fxDefaults.uiAccentColor || '#ffffff'
       ),
-      homeAccentColor: normalizeHexColor(raw.homeAccentColor || '#00f5d4'),
+      homeAccentColor: normalizeHexColor(
+        /^#00f5d4$/i.test(String(raw.homeAccentColor || ''))
+          ? (fxDefaults.homeAccentColor || '#ffffff')
+          : (raw.homeAccentColor || fxDefaults.homeAccentColor || '#ffffff'),
+        fxDefaults.homeAccentColor || '#ffffff'
+      ),
       homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a'),
       visualIconColor: normalizeHexColor(raw.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
       backgroundOpacity: savedBgOpacity,
+      wallpaperEngineLink: raw.wallpaperEngineLink === true,
       wallpaperEngineDim: savedWallpaperEngineDim,
       windowBackgroundOpacity: savedWindowBgOpacity,
       backgroundGlassOpacity: savedBgGlassOpacity,
@@ -393,6 +399,7 @@ function readSavedLyricLayout() {
       sonicWorkshopRippleColor: normalizeHexColor(raw.sonicWorkshopRippleColor || fxDefaults.sonicWorkshopRippleColor || '#f8d8ff', fxDefaults.sonicWorkshopRippleColor || '#f8d8ff'),
       sonicWorkshopPeakColorMode: raw.sonicWorkshopPeakColorMode === 'custom' ? 'custom' : 'cover',
       sonicWorkshopPeakColor: normalizeHexColor(raw.sonicWorkshopPeakColor || fxDefaults.sonicWorkshopPeakColor || '#99c4ff', fxDefaults.sonicWorkshopPeakColor || '#99c4ff'),
+      desktopLock: raw.desktopLock === true,
       wallpaperMode: false,
       wallpaperOpacity: clampRange(raw.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(raw.wallpaperOpacity), 0.35, 1),
       wallpaperFps: normalizeWallpaperFps(raw.wallpaperFps),
@@ -522,6 +529,7 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     backgroundColor: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundColorCover: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundOpacity: ['backgroundOpacity', 'backgroundColorMode', 'backgroundColorCustom'],
+    wallpaperEngineLink: ['wallpaperEngineLink'],
     wallpaperEngineDim: ['wallpaperEngineDim'],
     windowBackgroundOpacity: ['windowBackgroundOpacity'],
     backgroundGlassOpacity: ['backgroundGlassOpacity'],
@@ -712,7 +720,7 @@ function saveLyricLayout(opts) {
       lyricLayoutSaveTimer = null;
       lyricLayoutSaveOpts = null;
     }
-    var presetForSave = startupVisualPreviewActive && !playing && currentIdx < 0
+    var presetForSave = startupVisualPreviewActive && !playing
       ? playbackVisualPreset
       : clampRange(Number(fx.preset) || 0, 0, presetMeta.length - 1);
     var autosavePayload = {
@@ -789,12 +797,13 @@ function saveLyricLayout(opts) {
         fx.uiAccentColor || fxDefaults.uiAccentColor || '#ffffff',
         fxDefaults.uiAccentColor || '#ffffff'
       ),
-      homeAccentColor: normalizeHexColor(fx.homeAccentColor || '#00f5d4'),
+      homeAccentColor: normalizeHexColor(fx.homeAccentColor || fxDefaults.homeAccentColor || '#ffffff'),
       homeIconColor: normalizeHexColor(fx.homeIconColor || '#f4d28a', '#f4d28a'),
       visualIconColor: normalizeHexColor(fx.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),
       backgroundOpacity: clampRange(fx.backgroundOpacity == null ? fxDefaults.backgroundOpacity : Number(fx.backgroundOpacity), 0, 1),
+      wallpaperEngineLink: fx.wallpaperEngineLink === true,
       wallpaperEngineDim: clampRange(fx.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : Number(fx.wallpaperEngineDim), 0, 0.85),
       windowBackgroundOpacity: clampRange(fx.windowBackgroundOpacity == null ? fxDefaults.windowBackgroundOpacity : Number(fx.windowBackgroundOpacity), 0, 1),
       backgroundGlassOpacity: clampRange(fx.backgroundGlassOpacity == null ? fxDefaults.backgroundGlassOpacity : Number(fx.backgroundGlassOpacity), 0, 1),
@@ -881,6 +890,7 @@ function saveLyricLayout(opts) {
       sonicWorkshopRippleColor: normalizeHexColor(fx.sonicWorkshopRippleColor || fxDefaults.sonicWorkshopRippleColor || '#f8d8ff', fxDefaults.sonicWorkshopRippleColor || '#f8d8ff'),
       sonicWorkshopPeakColorMode: fx.sonicWorkshopPeakColorMode === 'custom' ? 'custom' : 'cover',
       sonicWorkshopPeakColor: normalizeHexColor(fx.sonicWorkshopPeakColor || fxDefaults.sonicWorkshopPeakColor || '#99c4ff', fxDefaults.sonicWorkshopPeakColor || '#99c4ff'),
+      desktopLock: fx.desktopLock === true,
       wallpaperMode: false,
       wallpaperOpacity: clampRange(fx.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(fx.wallpaperOpacity), 0.35, 1),
       wallpaperFps: normalizeWallpaperFps(fx.wallpaperFps),

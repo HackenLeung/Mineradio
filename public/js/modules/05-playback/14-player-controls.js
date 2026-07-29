@@ -557,8 +557,8 @@ async function togglePlay() {
     if (audio.paused || audio.ended) {
       await attemptAudioPlay({ manual: true });
     } else {
-      if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting && typeof resetCuefieldAutoMix === 'function') {
-        resetCuefieldAutoMix('manual-pause');
+      if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting && typeof resetSmartCrossfade === 'function') {
+        resetSmartCrossfade('manual-pause');
       }
       if (
         typeof albumGaplessState !== 'undefined'

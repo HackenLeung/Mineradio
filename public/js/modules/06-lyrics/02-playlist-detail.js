@@ -1,4 +1,5 @@
 var playlistPanelDetailState = { key: '', loading: false, loadingMore: false, playlist: null, tracks: [], token: 0, total: 0, nextOffset: 0, hasMore: false, scrollTop: 0, controller: null, warmTimer: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, error: '', message: '' };
+var playlistPanelDetailScrollRaf = 0;
 function queueVirtualSpacerHtml(height) {
   height = Math.max(0, Math.round(Number(height) || 0));
   return height ? '<div class="queue-virtual-spacer" aria-hidden="true" style="height:' + height + 'px"></div>' : '';
@@ -181,6 +182,7 @@ function playlistPanelDetailRowsHtml(options) {
       imgTag +
       '<div style="flex:1;min-width:0"><div class="pl-detail-row-title">' + escHtml(song.name || '') + '</div>' +
       '<button type="button" class="pl-detail-row-artist" data-pl-detail-artist="' + i + '">' + escHtml(song.artist || '未知歌手') + '</button></div>' +
+      (typeof onlineDetailDownloadActionHtml === 'function' ? onlineDetailDownloadActionHtml(song, i) : '') +
       '</div>';
   }).join('');
   rows += '<div class="pl-detail-virtual-spacer" aria-hidden="true" style="height:' + (Math.max(0, tracks.length - end) * PLAYLIST_DETAIL_ROW_STEP) + 'px"></div>';
@@ -281,7 +283,7 @@ function playlistPanelDetailHtml(pl, provider, detailWindow) {
   var collectionButton = canUncollect
     ? '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-collection="0">取消收藏</button>'
     : '';
-  return '<div class="pl-inline-detail" data-pl-detail="' + escHtml(key) + '" style="height:' + playlistPanelDetailShellHeight() + 'px">' +
+  return '<div class="pl-inline-detail" data-pl-detail="' + escHtml(key) + '">' +
     '<div class="pl-detail-sticky">' +
     '<div class="pl-detail-head">' + img + '<div style="flex:1;min-width:0"><div class="pl-detail-title">' + escHtml(pl.name || '歌单详情') + '</div><div class="pl-detail-sub">' + escHtml((expectedTotal || tracks.length || 0) + ' 首 · ' + (pl.creator || playlistProviderName(provider))) + '</div></div><div class="pl-detail-count">' + (loading && !tracks.length ? '载入中' : (tracks.length + (expectedTotal > tracks.length ? '/' + expectedTotal : ''))) + '</div></div>' +
     '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button>' + collectionButton + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
@@ -290,38 +292,48 @@ function playlistPanelDetailHtml(pl, provider, detailWindow) {
     '</div>';
 }
 function renderPlaylistPanelDetailState() {
-  renderUserPlaylistsList();
+  renderUserPlaylistsList({ animate: false, preserveScroll: true });
+  renderPlaylistPanelDetailPanel();
+}
+function renderPlaylistPanelDetailPanel() {
+  var panel = document.getElementById('playlist-detail-panel');
+  if (!panel) return;
+  var mainPanel = document.getElementById('playlist-panel');
+  var canShow = !!(mainPanel && (mainPanel.classList.contains('peek') || mainPanel.classList.contains('show') || mainPanel.classList.contains('pinned')));
+  if (queueViewTab === 'local' && !simpleSearchNorm(localLibrarySearchQuery || '') && localLibraryDetailState.folderIndex >= 0 && typeof localLibraryDetailHtml === 'function') {
+    panel.innerHTML = localLibraryDetailHtml();
+    panel.classList.toggle('show', canShow);
+    bindPlaylistPanelDetailScroller();
+    return;
+  }
+  var st = playlistPanelDetailState;
+  if (!st || !st.key || queueViewTab !== 'playlists') {
+    panel.classList.remove('show');
+    panel.innerHTML = '';
+    return;
+  }
+  var parts = st.key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  var fallback = { id: parts.slice(1).join(':'), provider: provider, name: '歌单详情' };
+  panel.innerHTML = playlistPanelDetailHtml(st.playlist || fallback, provider, {
+    scrollTop: panel.scrollTop,
+    viewport: Math.max(420, panel.clientHeight || 620)
+  });
+  panel.classList.toggle('show', canShow);
+  bindPlaylistPanelDetailScroller();
 }
 function scrollPlaylistPanelToTop() {
-  var panel = document.getElementById('playlist-panel');
+  var panel = document.getElementById('playlist-detail-panel') || document.getElementById('playlist-panel');
   if (!panel) return;
   try { panel.scrollTo({ top: 0, behavior: 'smooth' }); }
   catch (e) { panel.scrollTop = 0; }
 }
 function scrollPlaylistPanelDetailIntoView(key) {
-  var panel = document.getElementById('playlist-panel');
+  var panel = document.getElementById('playlist-detail-panel');
   if (!panel || !key) return;
   requestAnimationFrame(function () {
-    var detail = null;
-    Array.prototype.some.call(panel.querySelectorAll('[data-pl-detail]'), function (node) {
-      if (node.getAttribute('data-pl-detail') === key) {
-        detail = node;
-        return true;
-      }
-      return false;
-    });
-    if (!detail) return;
-    var anchor = detail.previousElementSibling || detail;
-    var toolbar = panel.querySelector('.queue-toolbar');
-    var safeOffset = 126;
-    if (toolbar) {
-      var toolbarTop = 82;
-      try { toolbarTop = parseFloat(getComputedStyle(toolbar).top) || toolbarTop; } catch (e) { }
-      safeOffset = Math.max(safeOffset, toolbarTop + toolbar.offsetHeight + 12);
-    }
-    var top = Math.max(0, anchor.offsetTop - safeOffset);
-    try { panel.scrollTo({ top: top, behavior: 'smooth' }); }
-    catch (e) { panel.scrollTop = top; }
+    try { panel.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (e) { panel.scrollTop = 0; }
   });
 }
 function cancelPlaylistPanelDetailRequest() {
@@ -347,10 +359,20 @@ function appendPlaylistPanelDetailTracks(target, incoming) {
 }
 function renderPlaylistPanelDetailRows() {
   if (!playlistPanelDetailState.key) return;
-  renderUserPlaylistsList({ animate: false, preserveScroll: true });
+  renderPlaylistPanelDetailPanel();
 }
 function bindPlaylistPanelDetailScroller() {
-  // 歌单详情与左栏共用 #playlist-panel 的单一滚动轴；行窗口由外层滚动位置驱动。
+  var panel = document.getElementById('playlist-detail-panel');
+  if (!panel || panel.__playlistDetailScrollBound) return;
+  panel.__playlistDetailScrollBound = true;
+  panel.addEventListener('scroll', function () {
+    maybeGrowPlaylistPanelDetailRenderLimit();
+    if (queueViewTab !== 'playlists' || !playlistPanelDetailState.key || playlistPanelDetailScrollRaf) return;
+    playlistPanelDetailScrollRaf = requestAnimationFrame(function () {
+      playlistPanelDetailScrollRaf = 0;
+      renderPlaylistPanelDetailPanel();
+    });
+  }, { passive: true });
 }
 async function loadMorePlaylistPanelDetailTracks(reason) {
   var st = playlistPanelDetailState;
@@ -506,12 +528,14 @@ function growPlaylistPanelDetailRenderLimit(amount) {
   return loadMorePlaylistPanelDetailTracks('manual');
 }
 function maybeGrowPlaylistPanelDetailRenderLimit() {
-  var panel = document.getElementById('playlist-panel');
-  var detail = panel && panel.querySelector('.pl-inline-detail[data-pl-detail]');
-  if (!panel || !detail || !playlistPanelDetailState.hasMore || playlistPanelDetailState.loadingMore) return;
-  var panelRect = panel.getBoundingClientRect();
-  var detailRect = detail.getBoundingClientRect();
-  if (detailRect.bottom <= panelRect.bottom + PLAYLIST_DETAIL_ROW_STEP * 8) loadMorePlaylistPanelDetailTracks('scroll');
+  var panel = document.getElementById('playlist-detail-panel');
+  if (!panel || !panel.classList.contains('show')) return;
+  if (queueViewTab === 'local') {
+    if (typeof maybeGrowLocalLibraryDetailRenderLimit === 'function') maybeGrowLocalLibraryDetailRenderLimit();
+    return;
+  }
+  if (!playlistPanelDetailState.hasMore || playlistPanelDetailState.loadingMore) return;
+  if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - PLAYLIST_DETAIL_ROW_STEP * 8) loadMorePlaylistPanelDetailTracks('scroll');
 }
 function resetPlaylistPanelRenderLimit() {
   playlistPanelRenderLimit = PLAYLIST_PANEL_BATCH_SIZE;
@@ -528,15 +552,7 @@ function playlistPanelGroupKey(pl) {
   return normalizePlaylistProvider(pl && pl.provider);
 }
 function playlistPanelBuildVirtualEntries() {
-  var detailSig = [
-    playlistPanelDetailState.key || '',
-    playlistPanelDetailState.loading ? 1 : 0,
-    playlistPanelDetailState.loadingMore ? 1 : 0,
-    playlistPanelDetailState.tracks && playlistPanelDetailState.tracks.length || 0,
-    playlistPanelDetailState.total || 0,
-    playlistPanelDetailState.hasMore ? 1 : 0,
-    playlistPanelDetailState.error || ''
-  ].join('|');
+  var detailSig = playlistPanelDetailState.key || '';
   if (playlistPanelVirtualCache.revision === playlistCatalogRevision &&
       playlistPanelVirtualCache.detailKey === playlistPanelDetailState.key &&
       playlistPanelVirtualCache.detailSig === detailSig) return playlistPanelVirtualCache;
@@ -558,10 +574,6 @@ function playlistPanelBuildVirtualEntries() {
     entries.push({ type: 'label', key: key, label: labels[key] || key, height: 31 });
     items.forEach(function (entry) {
       entries.push({ type: 'card', pl: entry.pl, sourceIndex: entry.sourceIndex, height: 69 });
-      var cardKey = playlistPanelKey(normalizePlaylistProvider(entry.pl.provider), entry.pl.id);
-      if (playlistPanelDetailState.key === cardKey) {
-        entries.push({ type: 'detail', pl: entry.pl, provider: normalizePlaylistProvider(entry.pl.provider), height: playlistPanelDetailShellHeight() });
-      }
     });
   });
   var offsets = [0];
@@ -665,16 +677,11 @@ function renderUserPlaylistsList(opts) {
     var entry = cache.entries[entryIndex];
     if (entry.type === 'label') html += '<div class="pl-section-label">' + entry.label + '</div>';
     else if (entry.type === 'card') html += playlistCardHtml(entry.pl, entry.sourceIndex);
-    else if (entry.type === 'detail') {
-      var entryTop = cache.offsets[entryIndex] || 0;
-      var detailRowScrollTop = Math.max(0, visibleTop - entryTop - PLAYLIST_DETAIL_OUTER_CHROME_HEIGHT);
-      html += playlistPanelDetailHtml(entry.pl, entry.provider, { scrollTop: detailRowScrollTop, viewport: viewport });
-    }
   }
   html += '<div class="playlist-virtual-spacer" aria-hidden="true" style="height:' + Math.round(bottomHeight) + 'px"></div>' + playlistCatalogFooterHtml();
   $pl.innerHTML = html;
   if (panel && opts.preserveScroll) panel.scrollTop = keepTop;
-  bindPlaylistPanelDetailScroller();
+  renderPlaylistPanelDetailPanel();
   if (typeof requestNextPlaylistCatalogPage === 'function' && end >= cache.entries.length - 8) requestNextPlaylistCatalogPage('panel-near-end');
   if (opts.animate && seq === playlistRenderSeq) animateVisiblePanelList($pl, '.pl-card', document.getElementById('playlist-panel'));
 }
@@ -709,6 +716,15 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
     growPlaylistPanelRenderLimit();
     return;
   }
+  var card = e.target && e.target.closest ? e.target.closest('.pl-card') : null;
+  if (!card) return;
+  var provider = card.getAttribute('data-playlist-provider') || 'netease';
+  var pid = card.getAttribute('data-playlist-id') || '';
+  openPlaylistPanelDetail(provider, pid, card.getAttribute('data-playlist-title') || '');
+});
+
+var playlistDetailPanelEl = document.getElementById('playlist-detail-panel');
+if (playlistDetailPanelEl) playlistDetailPanelEl.addEventListener('click', function (e) {
   var detailLoadMore = e.target && e.target.closest ? e.target.closest('[data-pl-detail-load-more]') : null;
   if (detailLoadMore) {
     e.preventDefault();
@@ -716,11 +732,46 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
     growPlaylistPanelDetailRenderLimit();
     return;
   }
+  var localLoadMore = e.target && e.target.closest ? e.target.closest('[data-local-detail-load-more]') : null;
+  if (localLoadMore) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof growLocalLibraryDetailRenderLimit === 'function') growLocalLibraryDetailRenderLimit();
+    return;
+  }
   var detailTop = e.target && e.target.closest ? e.target.closest('[data-pl-detail-top]') : null;
   if (detailTop) {
     e.preventDefault();
     e.stopPropagation();
     scrollPlaylistPanelToTop();
+    return;
+  }
+  var playLocalDetail = e.target && e.target.closest ? e.target.closest('[data-local-detail-play]') : null;
+  if (playLocalDetail) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof playLocalLibraryDetail === 'function') playLocalLibraryDetail();
+    return;
+  }
+  var localArtist = e.target && e.target.closest ? e.target.closest('[data-local-detail-artist]') : null;
+  if (localArtist) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof openLocalLibraryDetailArtist === 'function') openLocalLibraryDetailArtist(Number(localArtist.getAttribute('data-local-detail-artist')));
+    return;
+  }
+  var localFolder = e.target && e.target.closest ? e.target.closest('[data-local-detail-folder]') : null;
+  if (localFolder) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof showLocalLibraryDetailSongInFolder === 'function') showLocalLibraryDetailSongInFolder(Number(localFolder.getAttribute('data-local-detail-folder')));
+    return;
+  }
+  var localRow = e.target && e.target.closest ? e.target.closest('[data-local-detail-row]') : null;
+  if (localRow) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof playLocalLibraryDetailTrack === 'function') playLocalLibraryDetailTrack(Number(localRow.getAttribute('data-local-detail-row')));
     return;
   }
   var playDetail = e.target && e.target.closest ? e.target.closest('[data-pl-detail-play]') : null;
@@ -744,16 +795,17 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
     openPlaylistPanelDetailArtist(Number(artist.getAttribute('data-pl-detail-artist')));
     return;
   }
+  var download = e.target && e.target.closest ? e.target.closest('[data-pl-detail-download]') : null;
+  if (download) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof downloadSongFromDetail === 'function') downloadSongFromDetail(Number(download.getAttribute('data-pl-detail-download')));
+    return;
+  }
   var row = e.target && e.target.closest ? e.target.closest('[data-pl-detail-row]') : null;
   if (row) {
     e.preventDefault();
     e.stopPropagation();
     playPlaylistPanelDetailTrack(Number(row.getAttribute('data-pl-detail-row')));
-    return;
   }
-  var card = e.target && e.target.closest ? e.target.closest('.pl-card') : null;
-  if (!card) return;
-  var provider = card.getAttribute('data-playlist-provider') || 'netease';
-  var pid = card.getAttribute('data-playlist-id') || '';
-  openPlaylistPanelDetail(provider, pid, card.getAttribute('data-playlist-title') || '');
 });

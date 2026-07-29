@@ -567,6 +567,7 @@ function animate() {
   // 通用转场脉冲: 只作为切换预设时的短促提亮。
   uniforms.uBurstAmt.value *= 0.90;
   tickPresetTransition();
+  if (typeof tickSmartCoverTransition === 'function') tickSmartCoverTransition(now);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.uniforms-preset', visualUniformPerfStart);
 
   var coverLayerPerfStart = performance.now();

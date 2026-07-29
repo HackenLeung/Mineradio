@@ -75,18 +75,22 @@ async function analyzeAudioBeats(audioUrl, durationSec, token, options) {
 
     // 帧化能量 (10ms 窗口)
     var winSize = Math.floor(sr * 0.010);
+    var frameSampleStride = options.lowImpact ? 3 : 1;
+    var frameYieldInterval = options.lowImpact ? 180 : 520;
     async function makeFrameEnergy(pcm) {
       var frames = Math.floor(pcm.length / winSize);
       var out = new Float32Array(frames);
       for (var f = 0; f < frames; f++) {
         var s = 0;
+        var samples = 0;
         var off2 = f * winSize;
-        for (var i = 0; i < winSize; i++) {
+        for (var i = 0; i < winSize; i += frameSampleStride) {
           var v = pcm[off2 + i];
           s += v * v;
+          samples++;
         }
-        out[f] = Math.sqrt(s / winSize);
-        if (f > 0 && f % 520 === 0) {
+        out[f] = Math.sqrt(s / Math.max(1, samples));
+        if (f > 0 && f % frameYieldInterval === 0) {
           await yieldToPaint();
           if (token !== beatMapToken) return null;
         }

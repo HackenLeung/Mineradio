@@ -9,6 +9,9 @@ var HOME_DASHBOARD_VIDEO_STORE = 'media';
 var HOME_DASHBOARD_VIDEO_BLOB_ID = 'home-hero-video';
 var HOME_DASHBOARD_VIDEO_META_KEY = 'mineradio-home-dashboard-video-meta-v1';
 var HOME_DASHBOARD_VIDEO_MAX_BYTES = 300 * 1024 * 1024;
+var HOME_DASHBOARD_WEATHER_CITY_KEY = 'mineradio-weather-city';
+var HOME_DASHBOARD_IMAGE_KEY = 'mineradio-daily-review-image-v1';
+var HOME_DASHBOARD_CUSTOM_KEY = 'mineradio-home-custom-v1';
 var homeDashboardVideoDbPromise = null;
 var homeDashboardVideoObjectUrl = '';
 var homeDashboardVideoLoadToken = 0;
@@ -16,6 +19,16 @@ var homeDashboardVideoAttachBusy = false;
 var homeDashboardVideoDecodeFailed = false;
 var homeDashboardVideoPowerObserver = null;
 var homeDashboardVideoControlsBound = false;
+var homeDashboardWeatherTimer = 0;
+var homeDashboardWeatherToken = 0;
+var homeDashboardWeatherPromise = null;
+var homeDashboardWeatherState = {
+  loading: false,
+  loaded: false,
+  city: (function () { try { return localStorage.getItem(HOME_DASHBOARD_WEATHER_CITY_KEY) || '上海'; } catch (_) { return '上海'; } })(),
+  weather: null,
+  error: ''
+};
 var homePlatformRecommendationControlsBound = false;
 var homePlatformRecommendationDailyRenderRaf = 0;
 var HOME_PLATFORM_DAILY_ROW_HEIGHT = 84;
@@ -41,6 +54,176 @@ var HOME_DASHBOARD_REVIEW_DEFAULTS = [
   { text: '答案在路上，自由在风里。', source: '每日热评' },
   { text: '让今天的声音，从你喜欢的地方开始。', source: 'Mineradio' },
 ];
+
+var HOME_DASHBOARD_CUSTOM_DEFAULT = {
+  text: '愿你在自己的世界里闪闪发光，也能照亮偶然路过的人。',
+  source: '每日热评',
+  positionX: 50,
+  positionY: 50,
+  zoom: 100,
+  showWeather: true
+};
+
+function homeDashboardClamp(value, min, max) {
+  value = Number(value);
+  return Math.max(min, Math.min(max, isFinite(value) ? value : min));
+}
+
+function normalizeHomeDashboardCustom(value) {
+  value = value && typeof value === 'object' ? value : {};
+  return {
+    text: String(value.text || HOME_DASHBOARD_CUSTOM_DEFAULT.text).trim() || HOME_DASHBOARD_CUSTOM_DEFAULT.text,
+    source: String(value.source == null ? HOME_DASHBOARD_CUSTOM_DEFAULT.source : value.source).trim(),
+    positionX: homeDashboardClamp(value.positionX == null ? 50 : value.positionX, 0, 100),
+    positionY: homeDashboardClamp(value.positionY == null ? 50 : value.positionY, 0, 100),
+    zoom: homeDashboardClamp(value.zoom == null ? 100 : value.zoom, 100, 180),
+    showWeather: value.showWeather !== false
+  };
+}
+
+function readHomeDashboardCustom() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(HOME_DASHBOARD_CUSTOM_KEY) || 'null');
+    if (saved && typeof saved === 'object') return normalizeHomeDashboardCustom(saved);
+  } catch (_) { }
+  var first = homeDashboardReadReviews()[0];
+  return normalizeHomeDashboardCustom(first || HOME_DASHBOARD_CUSTOM_DEFAULT);
+}
+
+function homeDashboardCustomImage() {
+  try { return localStorage.getItem(HOME_DASHBOARD_IMAGE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function writeHomeDashboardCustom(value, image) {
+  try {
+    if (image) localStorage.setItem(HOME_DASHBOARD_IMAGE_KEY, image);
+    else localStorage.removeItem(HOME_DASHBOARD_IMAGE_KEY);
+    localStorage.setItem(HOME_DASHBOARD_CUSTOM_KEY, JSON.stringify(normalizeHomeDashboardCustom(value)));
+    return true;
+  } catch (error) {
+    console.warn('[HomeDashboardCustomSave]', error);
+    return false;
+  }
+}
+
+function homeDashboardFiniteWeather(value) {
+  if (value == null || value === '') return null;
+  var number = Number(value);
+  return isFinite(number) ? number : null;
+}
+
+function homeDashboardHasWeather(weather) {
+  return !!(weather && homeDashboardFiniteWeather(weather.temperature) !== null);
+}
+
+function homeDashboardWeatherTitle() {
+  var weather = homeDashboardWeatherState.weather;
+  var city = weather && weather.location && weather.location.name || homeDashboardWeatherState.city || '上海';
+  var temperature = homeDashboardFiniteWeather(weather && weather.temperature);
+  if (temperature === null) return city + ' · 天气暂不可用';
+  return city + ' · ' + Math.round(temperature) + '° · ' + (weather.label || '天气');
+}
+
+function homeDashboardWeatherMetaHtml() {
+  var weather = homeDashboardWeatherState.weather || {};
+  var items = [];
+  var apparent = homeDashboardFiniteWeather(weather.apparentTemperature);
+  var humidity = homeDashboardFiniteWeather(weather.humidity);
+  var wind = homeDashboardFiniteWeather(weather.windSpeed);
+  if (apparent !== null) items.push('体感 ' + Math.round(apparent) + '°');
+  if (humidity !== null) items.push('湿度 ' + Math.round(humidity) + '%');
+  if (wind !== null) items.push('风速 ' + Math.round(wind) + ' km/h');
+  return items.map(function (item) { return '<span class="home-weather-pill">' + escHtml(item) + '</span>'; }).join('');
+}
+
+function homeDashboardWeatherStatus() {
+  if (homeDashboardWeatherState.loading) return (homeDashboardWeatherState.city || '当前位置') + ' · 正在更新';
+  return homeDashboardWeatherTitle();
+}
+
+function homeDashboardWeatherUrl(options) {
+  options = options || {};
+  var params = [];
+  if (options.lat != null && options.lon != null) {
+    params.push('lat=' + encodeURIComponent(options.lat));
+    params.push('lon=' + encodeURIComponent(options.lon));
+    params.push('city=' + encodeURIComponent(options.city || '当前位置'));
+  } else params.push('city=' + encodeURIComponent(options.city || homeDashboardWeatherState.city || '上海'));
+  params.push('timezone=' + encodeURIComponent(options.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'auto'));
+  params.push('t=' + Date.now());
+  return '/api/weather/radio?' + params.join('&');
+}
+
+async function loadHomeDashboardWeather(force, options) {
+  options = options || {};
+  if (homeDashboardWeatherState.loading && homeDashboardWeatherPromise && !force) return homeDashboardWeatherPromise;
+  if (homeDashboardWeatherState.loaded && !force && options.lat == null && !options.city) return homeDashboardWeatherState;
+  var token = ++homeDashboardWeatherToken;
+  homeDashboardWeatherState.loading = true;
+  homeDashboardWeatherState.error = '';
+  renderHomeDashboardHero();
+  var request = (async function () {
+    try {
+      var data = await apiJson(homeDashboardWeatherUrl(options), { timeoutMs: 14000 });
+      if (token !== homeDashboardWeatherToken) return homeDashboardWeatherState;
+      if (!data || data.ok !== true || !homeDashboardHasWeather(data.weather)) throw new Error(data && data.error || 'WEATHER_UNAVAILABLE');
+      homeDashboardWeatherState.weather = data.weather;
+      homeDashboardWeatherState.loaded = true;
+      var resolvedCity = data.weather && data.weather.location && data.weather.location.name || options.city;
+      if (resolvedCity) {
+        homeDashboardWeatherState.city = resolvedCity;
+        localStorage.setItem(HOME_DASHBOARD_WEATHER_CITY_KEY, resolvedCity);
+      }
+    } catch (error) {
+      console.warn('[HomeDashboardWeather]', error);
+      if (token === homeDashboardWeatherToken) {
+        homeDashboardWeatherState.weather = null;
+        homeDashboardWeatherState.loaded = false;
+        homeDashboardWeatherState.error = 'WEATHER_FAILED';
+      }
+    } finally {
+      if (token === homeDashboardWeatherToken) {
+        homeDashboardWeatherState.loading = false;
+        renderHomeDashboardHero();
+      }
+    }
+    return homeDashboardWeatherState;
+  })();
+  homeDashboardWeatherPromise = request;
+  try { return await request; }
+  finally { if (homeDashboardWeatherPromise === request) homeDashboardWeatherPromise = null; }
+}
+
+async function locateHomeDashboardWeather() {
+  var previousCity = homeDashboardWeatherState.city || '上海';
+  try {
+    var data = await apiJson('/api/weather/ip-location?t=' + Date.now(), { timeoutMs: 12000 });
+    var location = data && data.location;
+    if (!location || !isFinite(Number(location.latitude)) || !isFinite(Number(location.longitude))) throw new Error(data && data.error || 'IP_LOCATION_FAILED');
+    homeDashboardWeatherState.city = location.city || '当前位置';
+    await loadHomeDashboardWeather(true, {
+      lat: location.latitude,
+      lon: location.longitude,
+      city: location.city || '当前位置',
+      timezone: location.timezone || ''
+    });
+    homeDashboardNotify('已定位到 ' + homeDashboardWeatherState.city);
+  } catch (error) {
+    console.warn('[HomeDashboardLocation]', error);
+    homeDashboardWeatherState.city = previousCity;
+    homeDashboardNotify('定位不可用，可以手动填写城市');
+  }
+  return homeDashboardWeatherState;
+}
+
+async function setHomeDashboardWeatherCity(city) {
+  city = String(city || '').trim();
+  if (!city) return homeDashboardWeatherState;
+  homeDashboardWeatherState.city = city;
+  try { localStorage.setItem(HOME_DASHBOARD_WEATHER_CITY_KEY, city); } catch (_) { }
+  homeDashboardWeatherState.loaded = false;
+  return loadHomeDashboardWeather(true, { city: city });
+}
 
 function homeDashboardSvgText(text) {
   return String(text || '')
@@ -388,19 +571,156 @@ function bindHomeDashboardVideoControls() {
   window.addEventListener('pagehide', function () { homeDashboardReleaseVideoSource(true); });
 }
 
+function openHomeDashboardImagePicker(onSelect) {
+  var input = document.getElementById('home-dashboard-image-input');
+  if (!input) {
+    input = document.createElement('input');
+    input.id = 'home-dashboard-image-input';
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.hidden = true;
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var image = String(reader.result || '');
+        var callback = input._homeDashboardImageCallback;
+        input._homeDashboardImageCallback = null;
+        if (typeof callback === 'function') callback(image);
+        else if (writeHomeDashboardCustom(readHomeDashboardCustom(), image)) {
+          homeDashboardHeroFingerprint = '';
+          renderHomeDashboardHero();
+          homeDashboardNotify('首页图片已更换');
+        } else homeDashboardNotify('图片保存失败，请换一张较小的图片');
+      };
+      reader.readAsDataURL(file);
+    });
+    document.body.appendChild(input);
+  }
+  input._homeDashboardImageCallback = typeof onSelect === 'function' ? onSelect : null;
+  input.click();
+}
+
+function openHomeDashboardEditor() {
+  var previous = document.getElementById('home-dashboard-editor-mask');
+  if (previous) previous.remove();
+  var config = readHomeDashboardCustom();
+  var pendingImage = homeDashboardCustomImage();
+  var mask = document.createElement('div');
+  mask.id = 'home-dashboard-editor-mask';
+  mask.className = 'playlist-select-mask';
+  mask.innerHTML =
+    '<div class="playlist-select-dialog home-dashboard-editor-dialog" role="dialog" aria-modal="true" aria-label="自定义首页">' +
+      '<div class="playlist-select-head"><div><strong>自定义首页</strong><br><small>固定显示你保存的图片、文字和天气</small></div><button class="fx-mini-btn ghost" data-home-editor-close="1">关闭</button></div>' +
+      '<div class="home-dashboard-editor-preview"><div class="daily-review-media" id="home-dashboard-preview-media"></div><div class="home-dashboard-editor-preview-copy"><strong id="home-dashboard-preview-text"></strong><small id="home-dashboard-preview-source"></small><span id="home-dashboard-preview-weather"></span></div></div>' +
+      '<div class="home-dashboard-editor-fields"><div class="home-dashboard-editor-main">' +
+        '<label class="home-dashboard-editor-field"><span>首页文案</span><textarea id="home-dashboard-editor-text" class="playlist-import-input" maxlength="180"></textarea></label>' +
+        '<label class="home-dashboard-editor-field"><span>署名（可留空）</span><input id="home-dashboard-editor-source" class="playlist-import-input" type="text" maxlength="40"></label>' +
+      '</div><div class="home-dashboard-editor-media">' +
+        '<div class="home-dashboard-editor-image-actions"><button class="fx-mini-btn" id="home-dashboard-editor-image">选择图片</button><button class="fx-mini-btn ghost" id="home-dashboard-editor-image-clear">清除图片</button></div>' +
+        '<label class="home-dashboard-editor-adjust"><span>左右</span><input id="home-dashboard-editor-x" type="range" min="0" max="100" step="1"><output></output></label>' +
+        '<label class="home-dashboard-editor-adjust"><span>上下</span><input id="home-dashboard-editor-y" type="range" min="0" max="100" step="1"><output></output></label>' +
+        '<label class="home-dashboard-editor-adjust"><span>缩放</span><input id="home-dashboard-editor-zoom" type="range" min="100" max="180" step="1"><output></output></label>' +
+      '</div></div>' +
+      '<div class="home-dashboard-weather-settings"><div class="home-dashboard-weather-head"><div><strong>天气</strong><small id="home-dashboard-weather-editor-status"></small></div><label><input id="home-dashboard-editor-show-weather" type="checkbox"> 首页显示</label></div>' +
+        '<div class="home-dashboard-weather-controls"><input id="home-dashboard-editor-city" class="playlist-import-input" type="text" maxlength="40" placeholder="城市名"><button id="home-dashboard-editor-locate" class="fx-mini-btn ghost" type="button">定位</button><button id="home-dashboard-editor-weather-refresh" class="fx-mini-btn" type="button">更新</button></div>' +
+      '</div><div class="playlist-import-actions"><button class="fx-mini-btn ghost" data-home-editor-close="1">取消</button><button class="fx-mini-btn" id="home-dashboard-editor-save">保存</button></div>' +
+    '</div>';
+  document.body.appendChild(mask);
+  var textInput = mask.querySelector('#home-dashboard-editor-text');
+  var sourceInput = mask.querySelector('#home-dashboard-editor-source');
+  var positionX = mask.querySelector('#home-dashboard-editor-x');
+  var positionY = mask.querySelector('#home-dashboard-editor-y');
+  var zoom = mask.querySelector('#home-dashboard-editor-zoom');
+  var showWeather = mask.querySelector('#home-dashboard-editor-show-weather');
+  var cityInput = mask.querySelector('#home-dashboard-editor-city');
+  textInput.value = config.text;
+  sourceInput.value = config.source;
+  positionX.value = config.positionX;
+  positionY.value = config.positionY;
+  zoom.value = config.zoom;
+  showWeather.checked = config.showWeather;
+  cityInput.value = homeDashboardWeatherState.city || '上海';
+  function pendingConfig() {
+    return normalizeHomeDashboardCustom({
+      text: textInput.value,
+      source: sourceInput.value,
+      positionX: positionX.value,
+      positionY: positionY.value,
+      zoom: zoom.value,
+      showWeather: showWeather.checked
+    });
+  }
+  function updatePreview() {
+    var next = pendingConfig();
+    var media = mask.querySelector('#home-dashboard-preview-media');
+    media.style.backgroundImage = pendingImage ? 'url("' + cssImageUrl(pendingImage) + '")' : 'none';
+    media.style.backgroundPosition = next.positionX + '% ' + next.positionY + '%';
+    media.style.transform = 'scale(' + next.zoom / 100 + ')';
+    mask.querySelector('#home-dashboard-preview-text').textContent = '“' + next.text + '”';
+    mask.querySelector('#home-dashboard-preview-source').textContent = next.source ? '— ' + next.source : '';
+    var weatherPreview = mask.querySelector('#home-dashboard-preview-weather');
+    weatherPreview.hidden = !next.showWeather;
+    weatherPreview.textContent = homeDashboardWeatherTitle();
+    positionX.nextElementSibling.textContent = Math.round(next.positionX) + '%';
+    positionY.nextElementSibling.textContent = Math.round(next.positionY) + '%';
+    zoom.nextElementSibling.textContent = Math.round(next.zoom) + '%';
+    mask.querySelector('#home-dashboard-weather-editor-status').textContent = homeDashboardWeatherStatus();
+  }
+  [textInput, sourceInput, positionX, positionY, zoom, showWeather].forEach(function (input) { input.addEventListener('input', updatePreview); });
+  mask.addEventListener('click', function (event) {
+    if (event.target === mask || event.target.closest('[data-home-editor-close]')) mask.remove();
+  });
+  mask.querySelector('#home-dashboard-editor-image').addEventListener('click', function () {
+    openHomeDashboardImagePicker(function (image) { pendingImage = image; updatePreview(); });
+  });
+  mask.querySelector('#home-dashboard-editor-image-clear').addEventListener('click', function () { pendingImage = ''; updatePreview(); });
+  mask.querySelector('#home-dashboard-editor-locate').addEventListener('click', async function () {
+    var button = this; button.disabled = true; button.textContent = '定位中';
+    try { await locateHomeDashboardWeather(); cityInput.value = homeDashboardWeatherState.city || cityInput.value; }
+    finally { button.disabled = false; button.textContent = '定位'; updatePreview(); }
+  });
+  mask.querySelector('#home-dashboard-editor-weather-refresh').addEventListener('click', async function () {
+    var city = String(cityInput.value || '').trim();
+    if (!city) { cityInput.focus(); return; }
+    var button = this; button.disabled = true; button.textContent = '更新中';
+    try { await setHomeDashboardWeatherCity(city); }
+    finally { button.disabled = false; button.textContent = '更新'; updatePreview(); }
+  });
+  mask.querySelector('#home-dashboard-editor-save').addEventListener('click', function () {
+    if (!String(textInput.value || '').trim()) { homeDashboardNotify('首页文案不能为空'); textInput.focus(); return; }
+    if (!writeHomeDashboardCustom(pendingConfig(), pendingImage)) { homeDashboardNotify('保存失败，请换一张较小的图片'); return; }
+    homeDashboardHeroFingerprint = '';
+    renderHomeDashboardHero();
+    mask.remove();
+    homeDashboardNotify('自定义首页已保存');
+  });
+  updatePreview();
+  if (!homeDashboardWeatherState.loaded && !homeDashboardWeatherState.loading) {
+    loadHomeDashboardWeather(false).then(function () { if (document.body.contains(mask)) updatePreview(); });
+  }
+}
+
 function renderHomeDashboardHero() {
   var hero = document.querySelector('#empty-home .home-hero');
   if (!hero) return;
-  var review = homeDashboardSelectedReview();
-  var fingerprint = homeDashboardDayNumber() + '|' + homeDashboardReviewOffset + '|' + review.text + '|' + review.source;
-  if (!hero.querySelector('.daily-review-card')) {
+  var config = readHomeDashboardCustom();
+  var image = homeDashboardCustomImage();
+  var weather = homeDashboardWeatherState.weather;
+  var fingerprint = [config.text, config.source, config.positionX, config.positionY, config.zoom, config.showWeather, image.length, homeDashboardWeatherState.loading, homeDashboardWeatherTitle()].join('|');
+  if (!hero.querySelector('.daily-review-card') || !hero.querySelector('.daily-review-media')) {
     hero.innerHTML = '<div class="daily-review-card">' +
+      '<div class="daily-review-media"></div>' +
       '<div id="daily-review-date" class="daily-review-date"></div>' +
       '<div id="daily-review-time" class="daily-review-time">--:--</div>' +
+      '<div class="daily-review-weather"><div class="daily-review-weather-kicker">当前天气</div><div class="daily-review-weather-title"></div><div class="daily-review-weather-meta"></div></div>' +
       '<div class="daily-review-quote"></div>' +
       '<div class="daily-review-source"></div>' +
       '<div class="daily-review-actions">' +
-      '<button type="button" onclick="homeDashboardNextReview()">换一条</button>' +
+      '<button type="button" onclick="openHomeDashboardImagePicker()">更换图片</button>' +
+      '<button type="button" onclick="openHomeDashboardEditor()">编辑内容</button>' +
       '<button id="home-dashboard-video-choose" type="button" onclick="openHomeDashboardVideoPicker()">选择 MP4</button>' +
       '<button id="home-dashboard-video-clear" type="button" onclick="clearHomeDashboardVideo()" hidden>移除视频</button>' +
       '<button type="button" onclick="openHomePlayerConsole()">展开播放器控制台</button>' +
@@ -413,12 +733,34 @@ function renderHomeDashboardHero() {
     homeDashboardHeroFingerprint = fingerprint;
     var quote = hero.querySelector('.daily-review-quote');
     var source = hero.querySelector('.daily-review-source');
-    if (quote) quote.textContent = '“' + review.text + '”';
-    if (source) source.textContent = '— ' + (review.source || '每日热评');
+    var media = hero.querySelector('.daily-review-media');
+    if (media) {
+      media.style.backgroundImage = image ? 'url("' + cssImageUrl(image) + '")' : '';
+      media.style.backgroundPosition = config.positionX + '% ' + config.positionY + '%';
+      media.style.transform = 'scale(' + config.zoom / 100 + ')';
+      media.classList.toggle('has-image', !!image);
+    }
+    if (quote) quote.textContent = '“' + config.text + '”';
+    if (source) { source.textContent = config.source ? '— ' + config.source : ''; source.hidden = !config.source; }
+    var weatherRoot = hero.querySelector('.daily-review-weather');
+    if (weatherRoot) {
+      weatherRoot.hidden = !config.showWeather;
+      weatherRoot.classList.toggle('is-loading', homeDashboardWeatherState.loading);
+      var weatherTitle = weatherRoot.querySelector('.daily-review-weather-title');
+      var weatherMeta = weatherRoot.querySelector('.daily-review-weather-meta');
+      if (weatherTitle) weatherTitle.textContent = homeDashboardWeatherState.loading ? (homeDashboardWeatherState.city + ' · 正在更新') : homeDashboardWeatherTitle();
+      if (weatherMeta) weatherMeta.innerHTML = homeDashboardHasWeather(weather) ? homeDashboardWeatherMetaHtml() : '';
+    }
   }
   homeDashboardRenderVideoActions();
   homeDashboardUpdateVideoPower();
   homeDashboardUpdateClock();
+  if (config.showWeather && !homeDashboardWeatherState.loaded && !homeDashboardWeatherState.loading && !homeDashboardWeatherTimer) {
+    homeDashboardWeatherTimer = setTimeout(function () {
+      homeDashboardWeatherTimer = 0;
+      if (emptyHomeActive && !document.hidden) loadHomeDashboardWeather(false);
+    }, 520);
+  }
 }
 
 function homeDashboardNextReview() {
@@ -535,9 +877,15 @@ function renderHomeDashboardQuickCards() {
   if (!grid) return;
   var summary = typeof homeListenSummary === 'function' ? homeListenSummary() : {};
   var recent = summary && summary.recent || null;
-  var current = homeDashboardCurrentSong();
+  var recentSnapshot = typeof readLastPlaybackSnapshot === 'function' ? readLastPlaybackSnapshot() : null;
+  var recentSnapshotQueue = recentSnapshot && Array.isArray(recentSnapshot.queue) ? recentSnapshot.queue : [];
+  var recentSnapshotIndex = recentSnapshotQueue.length
+    ? Math.max(0, Math.min(recentSnapshotQueue.length - 1, Number(recentSnapshot.currentIdx) || 0))
+    : -1;
+  var recentSnapshotSong = recentSnapshotIndex >= 0 ? recentSnapshotQueue[recentSnapshotIndex] : (recentSnapshot && recentSnapshot.current);
   var daily = homeDiscoverState && homeDiscoverState.songs && homeDiscoverState.songs[0] || null;
-  var continueItem = current || recent;
+  var continueItem = recentSnapshotSong || recent;
+  var recentHistory = listenStatsState && Array.isArray(listenStatsState.history) ? listenStatsState.history : [];
   var localSongs = homeDashboardLocalSongs();
   var localCount = localSongs.length;
   var accountPlaylistCount = homeDiscoverState && Array.isArray(homeDiscoverState.playlists) ? homeDiscoverState.playlists.length : 0;
@@ -545,10 +893,12 @@ function renderHomeDashboardQuickCards() {
   var libraryCount = localCount + accountPlaylistCount + ownPlaylistCount;
   var cards = [
     {
-      label: 'CONTINUE',
-      title: continueItem && (continueItem.name || continueItem.title) || '开始听歌',
-      sub: continueItem ? (homeDashboardSubtitle(continueItem) || recent && (recent.artist || recent.source) || '继续当前队列') : '从音乐库或每日推荐开始',
-      cover: homeDashboardSongCover(current, 360) || recent && recent.cover || '',
+      label: 'CONTINUE LISTENING',
+      title: continueItem && (continueItem.name || continueItem.title) || '继续听',
+      sub: recentSnapshotSong
+        ? ('上次队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · ' + (homeDashboardSubtitle(recentSnapshotSong) || '恢复上次进度'))
+        : (continueItem ? (homeDashboardSubtitle(continueItem) || '继续最近一次有效聆听') : '完整听过一首歌后会出现在这里'),
+      cover: continueItem && continueItem.cover || '',
       action: 'resumeHomeDashboardPlayback()',
       tone: 'search',
       className: 'home-card-featured',
@@ -574,9 +924,11 @@ function renderHomeDashboardQuickCards() {
     {
       label: 'RECENT',
       title: '最近播放',
-      sub: recent ? ((recent.name || '最近一首') + (recent.artist ? ' · ' + recent.artist : '')) : '播放过的歌曲会出现在这里',
+      sub: recentHistory.length
+        ? (recentHistory.length + ' 首记录 · ' + (recent && (recent.name || recent.title) || '查看最近播放'))
+        : '播放过的歌曲会出现在这里',
       cover: recent && recent.cover || '',
-      action: 'playHomeRecent()',
+      action: "openHomeListenRanking('recent')",
       tone: 'playlist',
       className: 'home-card-quick',
     },
@@ -603,18 +955,9 @@ function resumeHomeDashboardPlayback() {
   homeForcedOpen = false;
   homeSuppressed = false;
   if (typeof setHomeControlsLocked === 'function') setHomeControlsLocked(false);
-  if (playQueue && playQueue.length && currentIdx >= 0 && playQueue[currentIdx]) {
-    if (typeof forcePlaybackControlsInteractive === 'function') forcePlaybackControlsInteractive();
-    if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility();
-    if (playing || audio && !audio.paused) return;
-    if (typeof togglePlay === 'function') {
-      Promise.resolve(togglePlay()).catch(function (error) { console.warn('[HomeDashboardResume]', error); });
-    }
-    return;
-  }
   var recent = typeof homeListenSummary === 'function' ? homeListenSummary().recent : null;
-  if (recent && typeof playHomeRecent === 'function') {
-    Promise.resolve(playHomeRecent(recent)).catch(function (error) { console.warn('[HomeDashboardRecent]', error); });
+  if (typeof playHomeRecentQueue === 'function') {
+    Promise.resolve(playHomeRecentQueue(recent)).catch(function (error) { console.warn('[HomeDashboardRecent]', error); });
     return;
   }
   if (typeof playHomeDaily === 'function') playHomeDaily();
@@ -681,13 +1024,14 @@ function homeDashboardListenDurationText(milliseconds) {
 }
 
 function homeDashboardNextQueueInfo() {
-  if (playQueue && playQueue.length) {
-    var index = currentIdx >= 0 ? (currentIdx + 1) % playQueue.length : 0;
+  if (playQueue && playQueue.length && currentIdx < 0) {
+    return { song: playQueue[0], index: 0, queued: true };
+  }
+  if (playQueue && playQueue.length > 1 && currentIdx >= 0) {
+    var index = (currentIdx + 1) % playQueue.length;
     return { song: playQueue[index], index: index, queued: true };
   }
-  var discoverSong = homeDiscoverState && homeDiscoverState.songs && homeDiscoverState.songs[0] || null;
-  var localSong = homeDashboardLocalSongs()[0] || null;
-  return { song: discoverSong || localSong || null, index: 0, queued: false };
+  return { song: null, index: -1, queued: false };
 }
 
 function homeDashboardSongKey(song) {
@@ -802,11 +1146,11 @@ function renderHomeInsightDock() {
   var sub = document.getElementById('home-next-sub');
   var cover = document.getElementById('home-next-cover');
   var card = document.getElementById('home-next-card');
-  if (title) title.textContent = song ? (song.name || song.title || '未知歌曲') : '队列里还没有歌曲';
-  if (sub) sub.textContent = song ? (homeDashboardSubtitle(song) || '点击播放') : '点击打开音乐库';
+  if (title) title.textContent = song ? (song.name || song.title || '未知歌曲') : '暂无下一首';
+  if (sub) sub.textContent = song ? (homeDashboardSubtitle(song) || '点击播放') : '请先添加歌曲到播放队列';
   var coverUrl = homeDashboardSongCover(song, 220);
   if (cover) homeDashboardSetStableBackgroundImage(cover, coverUrl);
-  if (card) card.setAttribute('aria-label', song ? ('播放下一首：' + (song.name || song.title || '未知歌曲')) : '打开音乐库');
+  if (card) card.setAttribute('aria-label', song ? ('播放下一首：' + (song.name || song.title || '未知歌曲')) : '暂无下一首，打开音乐库');
   renderHomeDashboardDiscovery();
 }
 
@@ -821,18 +1165,6 @@ function playHomeNextFromDock() {
       manual: true,
       context: { type: 'home-next', playlistName: '接下来播放' },
     })).catch(function (error) { console.warn('[HomeDashboardNext]', error); });
-    return;
-  }
-  if (next.song) {
-    playQueue = [cloneSong(next.song)];
-    currentIdx = 0;
-    if (typeof safeRenderQueuePanel === 'function') safeRenderQueuePanel('home-dashboard-next');
-    if (typeof safeShelfRebuild === 'function') safeShelfRebuild('home-dashboard-next', true);
-    if (typeof forcePlaybackControlsInteractive === 'function') forcePlaybackControlsInteractive();
-    Promise.resolve(playQueueAt(0, {
-      manual: true,
-      context: { type: 'home-next', playlistName: '首页推荐' },
-    })).catch(function (error) { console.warn('[HomeDashboardStart]', error); });
     return;
   }
   openHomeDashboardLibrary();

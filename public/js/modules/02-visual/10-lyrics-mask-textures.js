@@ -23,8 +23,9 @@ function beginLyricMaskLayoutBuild(input, layoutOverride) {
   var payload = normalizeStageLyricPayload(input);
   if (!payload) payload = { entries: [{ text: '', role: 'current', alpha: 1, scale: 1 }], activeLine: 0, text: '', combinedText: '' };
   var baseCanvasW = 2048;
-  var rendererMaxTexture = renderer && renderer.capabilities && renderer.capabilities.maxTextureSize ? renderer.capabilities.maxTextureSize : 4096;
-  var maxCanvasW = Math.max(baseCanvasW, Math.min(6144, rendererMaxTexture || 4096));
+  // Keep the old fixed lyric frame: long sentences must shrink first and then
+  // compress horizontally instead of widening the texture beyond the screen.
+  var maxCanvasW = baseCanvasW;
   var entries = payload && payload.entries && payload.entries.length ? payload.entries : [{ text: '', role: 'current', alpha: 1, scale: 1 }];
   var desiredLines = Math.max(1, entries.length);
   var H = desiredLines > 9 ? 1344 : (desiredLines > 8 ? 1216 : (desiredLines > 7 ? 1088 : (desiredLines > 6 ? 960 : (desiredLines > 5 ? 832 : (desiredLines > 4 ? 704 : (desiredLines > 3 ? 608 : (desiredLines > 2 ? 512 : 384)))))));
@@ -109,7 +110,7 @@ function finalizeLyricMaskLayoutBuild(state) {
   var maxCanvasW = state.maxCanvasW;
   var H = state.canvasHeight;
   var ctx = state.ctx;
-  var maxWidth = baseCanvasW - 88;
+  var maxWidth = baseCanvasW - 190;
   var fontSize = isFinite(state.lockedFontSize) && state.lockedFontSize > 0 ? clampRange(state.lockedFontSize, 42, 160) : 128;
   var widest = 1;
   function measureWidestAtSize(size) {
@@ -161,10 +162,21 @@ function finalizeLyricMaskLayoutBuild(state) {
   }
   var widestEntry = entries[widestMeasureIndex] || {};
   widest = Math.max(1, lyricMeasureTextAtSize(ctx, lines[widestMeasureIndex] || '', fontSize * (widestEntry.scale || 1), lyricEntryWeight(widestEntry)));
-  var canvasWidthPad = Math.max(220, fontSize * 2.2);
-  var neededCanvasW = Math.ceil(Math.min(maxCanvasW, Math.max(baseCanvasW, widest + canvasWidthPad)));
-  var W = neededCanvasW;
-  var drawMaxWidth = W - 48;
+  var W = maxCanvasW;
+  var drawMaxWidth = maxWidth;
+  // Row lyrics pass a stable font size so every line keeps the same baseline.
+  // Treat it as a ceiling, not a hard lock: otherwise long Latin lines remain
+  // at 128px and are squeezed into an unreadably narrow horizontal scale.
+  var preferredScaleX = 0.78;
+  var minimumReadableFont = state.maxLines > 2 ? 36 : 32;
+  if (widest > drawMaxWidth / preferredScaleX && fontSize > minimumReadableFont) {
+    var proportionalFont = fontSize * drawMaxWidth / Math.max(1, widest * preferredScaleX);
+    var fittedFont = Math.max(minimumReadableFont, Math.floor(proportionalFont / 2) * 2);
+    if (fittedFont < fontSize) {
+      fontSize = fittedFont;
+      widest = Math.max(1, lyricMeasureTextAtSize(ctx, lines[widestMeasureIndex] || '', fontSize * (widestEntry.scale || 1), lyricEntryWeight(widestEntry)));
+    }
+  }
   ctx.font = lyricFontCss(fontSize);
   var width = Math.min(drawMaxWidth, widest);
   var fitScaleX = widest > drawMaxWidth ? Math.max(0.01, drawMaxWidth / widest) : 1;

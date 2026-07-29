@@ -156,6 +156,7 @@ var LOCAL_LIBRARY_FOLDERS_STORE_KEY = 'mineradio-local-library-folders-v2';
 var LOCAL_METADATA_STORE_KEY = 'mineradio-local-metadata-v1';
 var VISUAL_GUIDE_SEEN_STORE_KEY = 'mineradio-visual-guide-seen-v2';
 var CLOSE_BEHAVIOR_STORE_KEY = 'mineradio-close-behavior-v1';
+var CLOSE_BEHAVIOR_DEFAULT_MIGRATION_KEY = 'mineradio-close-behavior-default-v2';
 var LAST_PLAYBACK_STORE_KEY = 'mineradio-last-playback-v1';
 var STARTUP_AUTOPLAY_STORE_KEY = 'mineradio-startup-autoplay-v1';
 var STARTUP_FAST_SKIP_STORE_KEY = 'mineradio-startup-fast-skip-v1';
@@ -171,7 +172,7 @@ var HOTKEY_ACTIONS = [
   { key: 'volumeUp', label: '音量增加', category: '音量', local: 'ArrowUp', global: 'Ctrl+Alt+ArrowUp' },
   { key: 'volumeDown', label: '音量降低', category: '音量', local: 'ArrowDown', global: 'Ctrl+Alt+ArrowDown' },
   { key: 'toggleFullscreen', label: '全屏', category: '窗口', local: 'KeyF', global: 'Ctrl+Alt+KeyF' },
-  { key: 'toggleDesktopInteraction', label: '切换完整桌面模式', category: '窗口', local: '', global: 'Ctrl+Shift+KeyM' },
+  { key: 'toggleDesktopInteraction', label: '锁定到桌面 / 恢复窗口', category: '窗口', local: '', global: 'Ctrl+Shift+KeyM' },
   { key: 'toggleDesktopLyrics', label: '桌面歌词', category: '歌词', local: 'Alt+KeyL', global: 'Ctrl+Alt+KeyL' }
 ];
 var hotkeyCaptureState = null;

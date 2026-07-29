@@ -60,6 +60,13 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
+  updateTrayPlayback: (payload) => ipcRenderer.invoke('mineradio-tray-playback-update', payload || {}),
+  onTrayCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-tray-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-tray-command', listener);
+  },
   copyText: (text) => {
     clipboard.writeText(String(text || ''));
     return { ok: true };
@@ -73,6 +80,10 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   resolveLocalMusicFile: (filePath, options) => ipcRenderer.invoke('mineradio-local-music-resolve-file', String(filePath || ''), options || {}),
   flushLocalAudioMetadataCache: () => ipcRenderer.invoke('mineradio-local-audio-metadata-cache-flush'),
   showLocalMusicInFolder: (filePath) => ipcRenderer.invoke('mineradio-local-music-show-in-folder', String(filePath || '')),
+  openDownloadDir: () => ipcRenderer.invoke('mineradio-download-open-dir'),
+  getDownloadDir: () => ipcRenderer.invoke('mineradio-download-get-dir'),
+  setDownloadDir: () => ipcRenderer.invoke('mineradio-download-set-dir'),
+  resetDownloadDir: () => ipcRenderer.invoke('mineradio-download-reset-dir'),
   getLocalLyricsCache: (cacheKey) => ipcRenderer.invoke('mineradio-local-lyrics-cache-get', String(cacheKey || '')),
   setLocalLyricsCache: (cacheKey, payload) => ipcRenderer.invoke('mineradio-local-lyrics-cache-set', String(cacheKey || ''), payload || {}),
   getLocalOnlineMetadataCache: () => ipcRenderer.invoke('mineradio-local-online-metadata-cache-get'),
@@ -118,6 +129,13 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
   getWallpaperModeStatus: () => ipcRenderer.invoke('mineradio-wallpaper-get-status'),
+  setDesktopLocked: (enabled) => ipcRenderer.invoke('mineradio-main-desktop-lock', enabled === true),
+  onDesktopLockState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-main-desktop-lock-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-main-desktop-lock-state', listener);
+  },
   updateDesktopIconShields: (payload) => ipcRenderer.send('mineradio-full-desktop-icon-shields', payload || {}),
   setDesktopSoftwareLocked: (locked) => ipcRenderer.invoke('mineradio-full-desktop-set-software-lock', locked === true),
   setDesktopIconsVisible: (visible) => ipcRenderer.invoke('mineradio-full-desktop-set-icons-visible', visible !== false),

@@ -7,8 +7,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const integration = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/18-cuefield-automix-integration.js'), 'utf8');
+const integrationPath = path.join(root, 'public/js/modules/05-playback/18-smart-transition-integration.js');
+const integration = fs.readFileSync(integrationPath, 'utf8');
 const playback = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/13-playback-start-audio.js'), 'utf8');
+const loader = fs.readFileSync(path.join(root, 'public/js/index-loader.js'), 'utf8');
+const particles = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/00-pointer-cover-particles.js'), 'utf8');
+const mainLoop = fs.readFileSync(path.join(root, 'public/js/modules/11-main-loop.js'), 'utf8');
 
 function namedFunctionSource(text, name) {
   const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(text);
@@ -52,28 +56,137 @@ function fakeMedia() {
   };
 }
 
-test('smart transition and CueField AutoMix are mutually exclusive', () => {
+test('smart transition owns the crossfade path without the removed upstream AutoMix modules', () => {
   const setSmart = namedFunctionSource(integration, 'setSmartTransitionStyle');
-  const toggleCuefield = namedFunctionSource(integration, 'toggleCuefieldAutoMix');
-  const prepare = namedFunctionSource(integration, 'runCuefieldAutoMixPrepare');
-  const execute = namedFunctionSource(integration, 'executeCuefieldAutoMix');
-  assert.match(setSmart, /disableCuefieldAutoMixForSmartTransition/);
-  assert.match(toggleCuefield, /setSmartTransitionStyle\('off', true\)/);
-  assert.match(integration, /function cuefieldAutoMixEffectiveEnabled\([\s\S]*cuefieldAutoMixEnabled && !isSmartTransitionEnabled\(\)/);
-  assert.match(prepare, /if \(cuefieldAutoMixBlockedByAlbumGapless\(currentIndex\)\) return/);
-  assert.match(prepare, /if \(!cuefieldEnabled \|\| !cuefieldAutoMix\)[\s\S]*prepareSmartTransitionFallback/,
-    'smart transition must bypass the upstream planner when it owns the transition');
-  assert.match(execute, /prepareCuefieldPendingAudio\(pending\)/);
-  assert.match(execute, /runCuefieldTimeline\(pending, nextMedia, transitionContext\)/);
-  assert.match(execute, /cuefieldAutoMix:\s*true/);
+  const prepare = namedFunctionSource(integration, 'runSmartCrossfadePrepare');
+  const execute = namedFunctionSource(integration, 'executeSmartCrossfade');
+  assert.equal(fs.existsSync(path.join(root, 'public/js/modules/05-playback/16-cuefield-automix-core.js')), false);
+  assert.equal(fs.existsSync(path.join(root, 'public/js/modules/05-playback/17-cuefield-timeline-executor.js')), false);
+  assert.match(loader, /18-smart-transition-integration\.js/);
+  assert.doesNotMatch(loader, /cuefield|automix/i);
+  assert.doesNotMatch(integration, /cuefield|automix/i);
+  assert.match(setSmart, /scheduleSmartCrossfadePrepare/);
+  assert.match(prepare, /if \(smartCrossfadeBlockedByAlbumGapless\(currentIndex\)\) return/);
+  assert.match(prepare, /prepareSmartTransitionFallback\(token, currentIndex\)/);
+  assert.match(execute, /prepareSmartTransitionPendingAudio\(pending\)/);
+  assert.match(execute, /runSmartTransitionTimeline\(pending, nextMedia, transitionContext\)/);
+  assert.match(execute, /smartTransitionHandoff:\s*true/);
   assert.match(execute, /smartTransition:\s*isSmartTransition/);
-  assert.match(playback, /transitionHandoff = !!\(opts\.cuefieldAutoMix && opts\.preloadedAudio\)/);
-  assert.match(playback, /claimCuefieldPreparedAudioForPlayback\(audio\)/);
+  assert.match(playback, /transitionHandoff = !!\(opts\.smartTransitionHandoff && opts\.preloadedAudio\)/);
+  assert.match(playback, /claimSmartTransitionPreparedAudioForPlayback\(audio\)/);
+});
+
+test('smart transition has exclusive ownership while album gapless resumes when it is disabled', () => {
+  const canAdvanceSource = namedFunctionSource(playback, 'albumGaplessQueueCanAdvance');
+  const setStyleSource = namedFunctionSource(integration, 'setSmartTransitionStyle');
+  assert.match(canAdvanceSource, /isSmartTransitionEnabled\(\)\) return false/);
+  assert.match(setStyleSource, /restoreAlbumGaplessOutgoingIfCurrent/);
+  assert.match(setStyleSource, /clearAlbumGaplessPreload\('smart-transition-enabled'\)/);
+
+  const sandbox = {
+    isSmartTransitionEnabled: () => true,
+    albumGaplessState: { enabled: true, albumKey: 'album:1' },
+    playMode: 'order',
+    playQueue: [{}, {}],
+    albumGaplessSongKey: () => 'album:1',
+  };
+  const canAdvance = vm.runInNewContext(`(${canAdvanceSource})`, sandbox);
+  assert.equal(canAdvance(0), false);
+  sandbox.isSmartTransitionEnabled = () => false;
+  assert.equal(canAdvance(0), true);
+});
+
+test('smart transition drives the real cover-particle shader and commits the decoded cover at handoff', () => {
+  const execute = namedFunctionSource(integration, 'executeSmartCrossfade');
+  assert.match(particles, /uSmartCoverTex/);
+  assert.match(particles, /uSmartCoverT/);
+  assert.match(particles, /uSmartCoverMode/);
+  assert.match(particles, /vec3 smartCoverMixColor\(/);
+  assert.match(particles, /float smartCoverMask\(/);
+  assert.ok((particles.match(/smartCoverMixColor\(/g) || []).length >= 4);
+  assert.match(particles, /uSmartCoverMode, uBloomSize/);
+  assert.doesNotMatch(particles, /replace\('uniform float uMouseActive, uPixel, uColorMixT, uLoading;'/);
+  assert.match(mainLoop, /tickSmartCoverTransition\(now\)/);
+  assert.match(execute, /startSmartCoverTransition\(playQueue\[pending\.nextIndex\]/);
+  assert.match(execute, /commitSmartCoverTextureForHandoff\(playQueue\[pending\.nextIndex\]\)/);
+  assert.match(execute, /coverCommitted:\s*coverCommitted/);
+  assert.match(playback, /qualitySwitch \|\| opts\.coverCommitted/);
+  assert.match(playback, /localCover && !opts\.coverCommitted/);
+});
+
+test('local transition reuses a valid local URL without resolving the file again', async () => {
+  const descriptorSource = namedFunctionSource(integration, 'smartCrossfadeAudioDescriptor');
+  let resolveCalls = 0;
+  const sandbox = {
+    smartTransitionSongKey: () => 'local:one',
+    smartTransitionAudioDescriptorCache: {},
+    ensureFreshLocalPlaybackUrl: () => { resolveCalls += 1; return true; },
+    Promise,
+    Date,
+  };
+  const descriptorFor = vm.runInNewContext(`(${descriptorSource})`, sandbox);
+  const descriptor = await descriptorFor({ type: 'local', localUrl: 'mineradio-local://one', localMissing: false });
+  assert.equal(resolveCalls, 0);
+  assert.equal(descriptor.proxyUrl, 'mineradio-local://one');
+  assert.equal(descriptor.local, true);
+
+  sandbox.smartTransitionAudioDescriptorCache = {};
+  await descriptorFor({ type: 'local', localUrl: 'mineradio-local://stale', localMissing: true });
+  assert.equal(resolveCalls, 1);
+});
+
+test('local transition preload stays on direct volume until main-player handoff', () => {
+  const prepareSource = namedFunctionSource(integration, 'prepareSmartTransitionPendingAudio');
+  let graphCalls = 0;
+  const created = [];
+  function FakeAudio() {
+    const media = {
+      src: '',
+      volume: 1,
+      muted: false,
+      readyState: 1,
+      load() {},
+      addEventListener() {},
+    };
+    created.push(media);
+    return media;
+  }
+  const sandbox = {
+    smartTransitionPendingDescriptor: pending => pending.audioUrl,
+    stopSmartTransitionPreparedAudio() {},
+    smartTransitionTimelineExecution: () => ({ bStart: 0 }),
+    smartTransitionCreatePreparedAudioGraph() { graphCalls += 1; },
+    smartTransitionWriteIncomingGain(media, value) { media.volume = value; },
+    smartTransitionSetMediaTime() {},
+    smartCrossfadePreparedAudio: null,
+    Audio: FakeAudio,
+  };
+  const prepare = vm.runInNewContext(`(${prepareSource})`, sandbox);
+  const pending = {
+    audioUrl: {
+      proxyUrl: 'mineradio-local://one',
+      playbackData: { url: 'mineradio-local://one', local: true },
+      local: true,
+    },
+  };
+  const media = prepare(pending);
+  assert.equal(graphCalls, 0);
+  assert.equal(media.__mineradioPreparedAudioGraph, undefined);
+  assert.equal(media.__mineradioSmartTransitionDirectVolume, true);
+  assert.equal(media.volume, 0);
+  assert.equal(media.src, 'mineradio-local://one');
+});
+
+test('local handoff carries the incoming deck gain into the main playback envelope', () => {
+  const localPlayback = namedFunctionSource(playback, 'playLocalQueueSong');
+  assert.match(localPlayback, /transitionAdoptedGain = transitionHandoff \? clampRange\(Number\(audio\.volume\) \|\| 0, 0, 1\) : 0/);
+  assert.match(localPlayback, /if \(transitionHandoff\) setAudioOutputGainImmediate\(transitionAdoptedGain\)/);
+  assert.match(localPlayback, /else applyVolumeToAudio\(\)/);
 });
 
 test('prepared media must advance its clock before a transition can continue', async () => {
-  const waitForProgress = vm.runInNewContext(`(${namedFunctionSource(integration, 'waitForCuefieldPlaybackProgress')})`, {
-    cuefieldTransitionStillCurrent: () => true,
+  const waitForProgress = vm.runInNewContext(`(${namedFunctionSource(integration, 'waitForSmartTransitionPlaybackProgress')})`, {
+    smartTransitionTransitionStillCurrent: () => true,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -109,7 +222,7 @@ test('adopted media must keep advancing after it becomes the main player', async
     Math,
   };
   const waitForProgress = vm.runInNewContext(
-    `(${namedFunctionSource(integration, 'waitForAdoptedCuefieldPlaybackProgress')})`,
+    `(${namedFunctionSource(integration, 'waitForAdoptedSmartTransitionPlaybackProgress')})`,
     sandbox,
   );
   setTimeout(() => {
@@ -124,14 +237,14 @@ test('adopted media must keep advancing after it becomes the main player', async
 });
 
 test('failed start has timeout, clock-stall detection, and ordinary playback fallback', () => {
-  const execute = namedFunctionSource(integration, 'executeCuefieldAutoMix');
-  const recover = namedFunctionSource(integration, 'recoverCuefieldAutoMixEndedOutgoing');
-  assert.match(execute, /cuefieldPromiseWithTimeout\(nextMedia\.play\(\), 3600/);
-  assert.match(execute, /waitForCuefieldPlaybackProgress/);
-  assert.match(execute, /waitForAdoptedCuefieldPlaybackProgress/);
+  const execute = namedFunctionSource(integration, 'executeSmartCrossfade');
+  const recover = namedFunctionSource(integration, 'recoverSmartCrossfadeEndedOutgoing');
+  assert.match(execute, /smartTransitionPromiseWithTimeout\(nextMedia\.play\(\), 3600/);
+  assert.match(execute, /waitForSmartTransitionPlaybackProgress/);
+  assert.match(execute, /waitForAdoptedSmartTransitionPlaybackProgress/);
   assert.match(execute, /SMART_TRANSITION_CLOCK_STALLED/);
-  assert.match(execute, /replaceAudioElementForGraphRecovery\('cuefield-handoff-fallback'/);
-  assert.match(execute, /runCuefieldNormalFallback/);
+  assert.match(execute, /replaceAudioElementForGraphRecovery\('smart-transition-handoff-fallback'/);
+  assert.match(execute, /runSmartTransitionNormalFallback/);
   assert.match(recover, /trackSwitchToken !== token/);
   assert.match(recover, /currentIdx !== index/);
   assert.match(recover, /nextTrack\(false\)/);

@@ -139,6 +139,27 @@ test('enabling creates one hardened overlay, resizes skins, and persists positio
   assert.equal(mainWindow.webContents.sent.at(-1)[0], 'mineradio-cube-remote-enabled-state');
 });
 
+test('persisted enabled state restores the remote before renderer hydration', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-cube-restore-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'cube-remote.json'), JSON.stringify({
+    enabled: true,
+    skin: 'cube',
+    bounds: { x: 420, y: 260, width: 136, height: 136 },
+  }), 'utf8');
+  FakeWindow.instances.length = 0;
+  const { runtime } = makeRuntime(directory);
+
+  assert.deepEqual(runtime.restore(), { ok: true, enabled: true, skin: 'cube' });
+  assert.ok(runtime.window);
+  assert.equal(runtime.window.loadedUrl, 'http://127.0.0.1:3000/cube-remote.html');
+  assert.deepEqual(runtime.window.getBounds(), { x: 420, y: 260, width: 136, height: 136 });
+  assert.equal(FakeWindow.instances.length, 2);
+
+  runtime.restore();
+  assert.equal(FakeWindow.instances.length, 2);
+});
+
 test('IPC accepts only the main or remote sender and forwards bounded commands', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-cube-ipc-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -164,6 +185,7 @@ test('renderer assets and preload wiring keep the feature in upstream module ord
   const loader = fs.readFileSync(path.join(root, 'public', 'js', 'index-loader.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const preload = fs.readFileSync(path.join(root, 'desktop', 'preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
   const overlay = fs.readFileSync(path.join(root, 'desktop', 'overlay-preload.js'), 'utf8');
   const remoteHtml = fs.readFileSync(path.join(root, 'public', 'cube-remote.html'), 'utf8');
   assert.match(loader, /10-shell\/04-desktop-overlay-fullscreen\.js'[\s\S]{0,120}10-shell\/04a-cube-remote-controller\.js'[\s\S]{0,120}10-shell\/05-startup-bindings\.js'/);
@@ -171,6 +193,7 @@ test('renderer assets and preload wiring keep the feature in upstream module ord
   assert.equal((html.match(/data-cube-remote-skin=/g) || []).length, 3);
   assert.match(preload, /getCubeRemoteSettings/);
   assert.match(preload, /onCubeRemoteCommand/);
+  assert.match(main, /await loadMainWindowWithRetry\(win\);[\s\S]{0,180}cubeRemoteRuntime\.restore\(\)/);
   assert.match(overlay, /sendCubeCommand/);
   assert.match(overlay, /moveCubeBy/);
   assert.match(remoteHtml, /Content-Security-Policy/);

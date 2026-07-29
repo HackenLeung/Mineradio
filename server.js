@@ -53,6 +53,7 @@ const {
   sati_resource_sub_list,
   lyric,
   lyric_new,
+  user_record,
 } = require('NeteaseCloudMusicApi');
 const http = require('http');
 const https = require('https');
@@ -126,12 +127,6 @@ const {
   handleSpotifySongUrl,
   handleSpotifyLyric,
 } = require('./spotify-api');
-const {
-  appendCuefieldFeedback,
-  readCuefieldFeedbackStats,
-} = require('./cuefield/feedback-log');
-const { planCuefieldTransitionFromCache } = require('./cuefield/mineradio-bridge');
-
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const LOGIN_EASTER_EGG_GATE_FILE = String(process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_FILE || '');
@@ -157,9 +152,9 @@ const DEFAULT_KUGOU_COOKIE_FILE = path.join(__dirname, '.kugou-cookie');
 const DEFAULT_QISHUI_COOKIE_FILE = path.join(__dirname, '.qishui-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
+const MUSIC_DOWNLOAD_DIR = process.env.MINERADIO_DOWNLOAD_DIR || path.join(__dirname, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
-const CUEFIELD_FEEDBACK_FILE = process.env.CUEFIELD_FEEDBACK_FILE || path.join(__dirname, 'data', 'cuefield-feedback.jsonl');
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
@@ -1733,6 +1728,243 @@ function startUpdatePatchJob(info) {
   downloadAndApplyPatchWithMirrors(job);
   return publicUpdateJob(job);
 }
+// ========== 音乐下载引擎 ==========
+const musicDownloadJobs = new Map();
+const musicDownloadQueue = [];
+let musicDownloadActive = 0;
+const MUSIC_DOWNLOAD_CONCURRENCY = 3;
+const MUSIC_DOWNLOAD_ILLEGAL_CHARS = /[\\/:*?"<>|]+/g;
+
+function musicDownloadSanitizeFilename(name) {
+  return String(name || '').replace(MUSIC_DOWNLOAD_ILLEGAL_CHARS, ' ').replace(/\s{2,}/g, ' ').trim() || '未知';
+}
+
+function musicDownloadExtForUrl(audioUrl) {
+  let pathname = '';
+  try { pathname = new URL(audioUrl).pathname.toLowerCase(); } catch (_) {}
+  if (/\.flac$/.test(pathname)) return '.flac';
+  if (/\.(m4a|mp4)$/.test(pathname)) return '.m4a';
+  if (/\.ogg$/.test(pathname)) return '.ogg';
+  if (/\.wav$/.test(pathname)) return '.wav';
+  return '.mp3';
+}
+
+function musicDownloadArtistText(song) {
+  const raw = song && (song.artist || song.artists || song.singer || song.author_name) || '';
+  if (Array.isArray(raw)) return raw.map(a => (a && (a.name || a)) || '').filter(Boolean).join(' / ');
+  return String(raw || '');
+}
+
+function musicDownloadFilename(song, audioUrl) {
+  const artist = musicDownloadSanitizeFilename(musicDownloadArtistText(song));
+  const name = musicDownloadSanitizeFilename(song && (song.name || song.title) || '');
+  const base = artist && artist !== '未知' ? `${artist} - ${name}` : name;
+  return base + musicDownloadExtForUrl(audioUrl);
+}
+
+function publicMusicJob(job) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    songId: job.songId,
+    songName: job.songName,
+    songArtist: job.songArtist,
+    provider: job.provider,
+    status: job.status,
+    progress: job.progress || 0,
+    received: job.received || 0,
+    total: job.total || 0,
+    speedBps: job.speedBps || 0,
+    fileName: job.fileName || '',
+    filePath: job.filePath || '',
+    error: job.error || '',
+    message: job.message || '',
+    batchId: job.batchId || '',
+    createdAt: job.createdAt || 0,
+    updatedAt: job.updatedAt || 0,
+  };
+}
+
+function musicDownloadProviderKey(song) {
+  if (!song) return 'netease';
+  if (song.type === 'local' || song.source === 'local' || song.provider === 'local' || song.localUrl || song.localPath) return 'local';
+  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq' || song.songmid || song.mediaMid || song.media_mid) return 'qq';
+  if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.albumAudioId || song.album_audio_id) return 'kugou';
+  if (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui') return 'qishui';
+  if (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify') return 'spotify';
+  return 'netease';
+}
+
+async function resolveMusicDownloadUrl(song, quality) {
+  const provider = musicDownloadProviderKey(song);
+  if (provider === 'local') return { url: null, error: '本地歌曲无需下载', trial: false };
+  if (provider === 'qishui' || provider === 'spotify') {
+    return { url: null, error: provider === 'qishui' ? '汽水音乐暂不支持下载' : 'Spotify 暂不支持下载', trial: false };
+  }
+  if (provider === 'qq') {
+    const mid = song.mid || song.songmid || song.id || '';
+    const mediaMid = song.mediaMid || song.media_mid || song.fileMediaMid || '';
+    const data = await handleQQSongUrl(mid, mediaMid, quality, song);
+    if (!data || !data.url || data.playable === false) return { url: null, error: data && data.message || '无法获取 QQ 音乐下载地址', trial: false };
+    return { url: data.url, error: '', trial: !!data.trial };
+  }
+  if (provider === 'kugou') {
+    const hash = song.hash || song.id || '';
+    const albumAudioId = song.albumAudioId || song.album_audio_id || '';
+    const albumId = song.albumId || song.album_id || '';
+    const qualityHashes = song.qualityHashes || song.quality_hashes || null;
+    const data = await handleKugouSongUrl(hash, albumAudioId, albumId, quality, qualityHashes);
+    if (!data || !data.url || !data.playable) return { url: null, error: data && data.message || '无法获取酷狗播放地址', trial: false };
+    return { url: data.url, error: '', trial: !!data.trial };
+  }
+  const loginInfo = await getLoginInfo();
+  const data = await handleSongUrl(song.id, loginInfo, quality);
+  if (!data || !data.url) return { url: null, error: data && data.message || '无法获取播放地址', trial: !!(data && data.trial) };
+  if (data.trial) return { url: data.url, error: '仅试听片段，跳过下载', trial: true };
+  return { url: data.url, error: '', trial: false };
+}
+
+async function executeMusicDownload(job) {
+  try {
+    const rootDir = getMusicDownloadDir();
+    fs.mkdirSync(rootDir, { recursive: true });
+    job.status = 'resolving';
+    job.message = '正在获取音频地址';
+    job.updatedAt = Date.now();
+    const resolved = await resolveMusicDownloadUrl(job.song, job.quality);
+    if (!resolved.url || resolved.trial) {
+      job.status = 'skipped';
+      job.error = resolved.error || (resolved.trial ? '仅试听，跳过' : '无法获取下载地址');
+      job.message = job.error;
+      job.updatedAt = Date.now();
+      return;
+    }
+    const fileName = musicDownloadFilename(job.song, resolved.url);
+    const subDir = job.playlistName ? path.join(rootDir, musicDownloadSanitizeFilename(job.playlistName)) : rootDir;
+    fs.mkdirSync(subDir, { recursive: true });
+    const filePath = path.join(subDir, fileName);
+    job.fileName = fileName;
+    job.filePath = filePath;
+    if (fs.existsSync(filePath)) {
+      job.status = 'done';
+      job.progress = 100;
+      job.message = '文件已存在，跳过';
+      job.updatedAt = Date.now();
+      return;
+    }
+    job.status = 'downloading';
+    job.message = '正在下载';
+    job.updatedAt = Date.now();
+    const resp = await fetch(resolved.url, { headers: audioProxyHeadersFor(resolved.url, '') });
+    if (!resp.ok) throw new Error('下载失败 HTTP ' + resp.status);
+    job.total = parseInt(resp.headers.get('content-length') || '0', 10) || 0;
+    job.received = 0;
+    job.progress = 0;
+    let speedWindowAt = Date.now();
+    let speedWindowBytes = 0;
+    const tmpPath = filePath + '.download';
+    const writer = fs.createWriteStream(tmpPath);
+    const reader = resp.body.getReader();
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        const buf = Buffer.from(chunk.value);
+        job.received += buf.length;
+        speedWindowBytes += buf.length;
+        const now = Date.now();
+        if (now - speedWindowAt >= 800) {
+          job.speedBps = Math.round(speedWindowBytes / Math.max(0.001, (now - speedWindowAt) / 1000));
+          speedWindowAt = now;
+          speedWindowBytes = 0;
+        }
+        job.progress = job.total > 0
+          ? Math.max(1, Math.min(99, Math.round((job.received / job.total) * 100)))
+          : Math.max(1, Math.min(88, Math.round(Math.log10(Math.max(1, job.received / 1024) + 1) * 24)));
+        job.updatedAt = now;
+        if (!writer.write(buf)) await once(writer, 'drain');
+      }
+    } finally {
+      writer.end();
+      await once(writer, 'finish').catch(() => {});
+    }
+    if (fs.existsSync(filePath)) try { fs.unlinkSync(filePath); } catch (_) {}
+    fs.renameSync(tmpPath, filePath);
+    job.status = 'done';
+    job.progress = 100;
+    job.message = '下载完成';
+    job.updatedAt = Date.now();
+  } catch (error) {
+    job.status = 'error';
+    job.error = error && error.message || 'DOWNLOAD_FAILED';
+    job.message = '下载失败: ' + job.error;
+    job.updatedAt = Date.now();
+    const tmpPath = (job.filePath || '') + '.download';
+    try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+  }
+}
+
+function drainMusicDownloadQueue() {
+  while (musicDownloadActive < MUSIC_DOWNLOAD_CONCURRENCY && musicDownloadQueue.length) {
+    const job = musicDownloadQueue.shift();
+    if (job.status === 'cancelled') continue;
+    musicDownloadActive += 1;
+    executeMusicDownload(job).finally(() => {
+      musicDownloadActive -= 1;
+      drainMusicDownloadQueue();
+    });
+  }
+}
+
+function pruneMusicDownloadJobs() {
+  if (musicDownloadJobs.size <= 300) return;
+  const finished = Array.from(musicDownloadJobs.values())
+    .filter(job => ['done', 'error', 'skipped', 'cancelled'].includes(job.status))
+    .sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+  let removable = musicDownloadJobs.size - 300;
+  for (const job of finished) {
+    if (removable-- <= 0) break;
+    musicDownloadJobs.delete(job.id);
+  }
+}
+
+function enqueueMusicDownload(song, opts) {
+  opts = opts || {};
+  pruneMusicDownloadJobs();
+  const provider = musicDownloadProviderKey(song);
+  const job = {
+    id: 'dl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+    songId: String(song.id || song.mid || song.songmid || song.hash || ''),
+    songName: String(song.name || song.title || '未知'),
+    songArtist: musicDownloadArtistText(song),
+    provider,
+    song,
+    quality: opts.quality || 'hires',
+    playlistName: opts.playlistName || '',
+    batchId: opts.batchId || '',
+    status: 'queued',
+    progress: 0,
+    received: 0,
+    total: 0,
+    speedBps: 0,
+    fileName: '',
+    filePath: '',
+    error: '',
+    message: '排队中',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  musicDownloadJobs.set(job.id, job);
+  musicDownloadQueue.push(job);
+  drainMusicDownloadQueue();
+  return job;
+}
+
+function getMusicDownloadDir() {
+  return process.env.MINERADIO_DOWNLOAD_DIR || MUSIC_DOWNLOAD_DIR;
+}
+// ========== /音乐下载引擎 ==========
+
 function readRequestBody(req) {
   return new Promise(resolve => {
     let raw = '';
@@ -5472,6 +5704,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/listen/ranking') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const type = String(url.searchParams.get('type') || 'week') === 'all' ? 0 : 1;
+      const result = await user_record({ uid: info.userId, type, cookie: userCookie, timestamp: Date.now() });
+      const body = result.body || result;
+      const rows = (type === 0 ? body.allData : body.weekData) || [];
+      const songs = rows.map((item, index) => ({
+        ...mapSongRecord(item.song || {}),
+        rank: index + 1,
+        playCount: Number(item.playCount) || 0,
+        score: Number(item.score) || 0,
+      })).filter(item => item.id);
+      sendJSON(res, {
+        loggedIn: true,
+        type: type === 0 ? 'all' : 'week',
+        songs,
+        code: normalizeApiCode(result) || 200,
+      });
+    } catch (err) {
+      console.error('[ListenRanking]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/update/latest') {
     try {
       sendJSON(res, await fetchLatestUpdateInfo());
@@ -5535,59 +5794,6 @@ const server = http.createServer(async (req, res) => {
       reason: !info.allowed ? 'C_DRIVE_DISABLED' : (!info.available ? 'TARGET_DRIVE_UNAVAILABLE' : ''),
       mode: info.allowed && info.available ? 'disk' : 'memory-only',
     });
-    return;
-  }
-
-  // Cuefield only consumes Mineradio's existing local beat-map cache. It never
-  // receives account cookies, song files, or playback URLs on this route.
-  if (pn === '/api/cuefield/transition') {
-    if (req.method !== 'POST') {
-      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-      return;
-    }
-    try {
-      const body = await readRequestBody(req);
-      const plan = planCuefieldTransitionFromCache({
-        fromKey: body.fromKey,
-        toKey: body.toKey,
-        fromLrc: body.fromLrc,
-        toLrc: body.toLrc,
-        exitBias: body.exitBias || 'late',
-        maxEntryTime: Math.max(8, Math.min(32, Number(body.maxEntryTime) || 32)),
-        readBeatMapCache,
-      });
-      sendJSON(res, plan);
-    } catch (err) {
-      sendJSON(res, {
-        ok: false,
-        error: err && (err.code || err.message) || 'CUEFIELD_TRANSITION_FAILED',
-      }, 400);
-    }
-    return;
-  }
-
-  // Feedback remains on this computer under Electron userData. The fan project's
-  // optional remote-feedback module is intentionally not wired into Mineradio.
-  if (pn === '/api/cuefield/feedback') {
-    if (req.method === 'GET') {
-      try {
-        sendJSON(res, { ok: true, stats: readCuefieldFeedbackStats(CUEFIELD_FEEDBACK_FILE) });
-      } catch (err) {
-        sendJSON(res, { ok: false, error: err.message || 'CUEFIELD_FEEDBACK_READ_FAILED' }, 500);
-      }
-      return;
-    }
-    if (req.method === 'POST') {
-      try {
-        const body = await readRequestBody(req);
-        const record = appendCuefieldFeedback(CUEFIELD_FEEDBACK_FILE, body);
-        sendJSON(res, { ok: true, record });
-      } catch (err) {
-        sendJSON(res, { ok: false, error: err.code || err.message || 'CUEFIELD_FEEDBACK_SAVE_FAILED' }, 400);
-      }
-      return;
-    }
-    sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
     return;
   }
 
@@ -7296,6 +7502,70 @@ const server = http.createServer(async (req, res) => {
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
     } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+    return;
+  }
+
+  // ---------- 音乐下载接口 ----------
+  if (pn === '/api/download') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const songs = Array.isArray(body.songs) ? body.songs : (body.song ? [body.song] : []);
+      if (!songs.length) { sendJSON(res, { ok: false, error: 'NO_SONGS' }, 400); return; }
+      const batchId = 'batch-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+      const jobs = songs.map(song => enqueueMusicDownload(song, {
+        quality: body.quality || 'hires',
+        playlistName: body.playlistName || '',
+        batchId,
+      }));
+      sendJSON(res, { ok: true, batchId, jobs: jobs.map(publicMusicJob), dir: getMusicDownloadDir() });
+    } catch (error) {
+      console.error('[MusicDownload]', error);
+      sendJSON(res, { ok: false, error: error && error.message || 'DOWNLOAD_START_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/download/status') {
+    const batchId = url.searchParams.get('batch') || '';
+    const jobId = url.searchParams.get('id') || '';
+    if (jobId) {
+      const job = musicDownloadJobs.get(jobId);
+      sendJSON(res, job ? publicMusicJob(job) : { error: 'NOT_FOUND' }, job ? 200 : 404);
+    } else {
+      const jobs = Array.from(musicDownloadJobs.values())
+        .filter(job => !batchId || job.batchId === batchId)
+        .slice(-100)
+        .map(publicMusicJob);
+      sendJSON(res, { batchId, jobs, dir: getMusicDownloadDir() });
+    }
+    return;
+  }
+
+  if (pn === '/api/download/cancel') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = body.id || url.searchParams.get('id') || '';
+      const batchId = body.batchId || body.batch || '';
+      let cancelled = 0;
+      for (const job of musicDownloadJobs.values()) {
+        if ((id && job.id !== id) || (!id && batchId && job.batchId !== batchId)) continue;
+        if (job.status === 'queued' || job.status === 'resolving') {
+          job.status = 'cancelled';
+          job.message = '已取消';
+          job.updatedAt = Date.now();
+          cancelled += 1;
+        }
+        if (id) break;
+      }
+      sendJSON(res, { ok: true, cancelled });
+    } catch (error) {
+      sendJSON(res, { ok: false, error: error && error.message || 'DOWNLOAD_CANCEL_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/download/dir') {
+    sendJSON(res, { dir: getMusicDownloadDir() });
     return;
   }
 

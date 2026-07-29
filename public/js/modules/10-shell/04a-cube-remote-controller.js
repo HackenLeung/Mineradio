@@ -2,6 +2,7 @@ var cubeRemoteEnabled = false;
 var cubeRemoteSkin = 'cube';
 var cubeRemoteOperation = 0;
 var cubeRemoteLastPayload = '';
+var trayPlaybackLastPayload = '';
 
 function normalizeCubeRemoteSkin(value) {
   var key = String(value || 'cube');
@@ -56,6 +57,24 @@ function pushCubeRemoteState(force) {
   if (!force && signature === cubeRemoteLastPayload) return;
   cubeRemoteLastPayload = signature;
   api.updateCubeRemote(payload).catch(function (error) { console.warn('Cube remote update failed:', error); });
+}
+
+function pushTrayPlaybackState(force) {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.updateTrayPlayback !== 'function') return;
+  var payload = cubeRemotePayload();
+  var trayPayload = {
+    title: payload.title,
+    artist: payload.artist,
+    cover: payload.cover,
+    playing: payload.playing,
+    volume: payload.volume,
+    muted: payload.muted,
+  };
+  var signature = JSON.stringify(trayPayload);
+  if (!force && signature === trayPlaybackLastPayload) return;
+  trayPlaybackLastPayload = signature;
+  api.updateTrayPlayback(trayPayload).catch(function (error) { console.warn('Tray playback update failed:', error); });
 }
 
 async function setCubeRemoteEnabled(enabled, options) {
@@ -125,6 +144,15 @@ function handleCubeRemoteCommand(payload) {
   else if (command === 'toggle-lyrics') toggleFx('desktopLyrics');
 }
 
+function handleTrayCommand(payload) {
+  var command = payload && payload.command;
+  if (command === 'toggle-play') togglePlay();
+  else if (command === 'next') nextTrack(true);
+  else if (command === 'previous') prevTrack(true);
+  else if (command === 'volume') setVolume(clampRange(Number(targetVolume) + (Number(payload.value) || 0), 0, 1), false);
+  else if (command === 'mute') toggleMute();
+}
+
 async function hydrateCubeRemote() {
   var api = getDesktopWindowApi();
   if (!api || typeof api.getCubeRemoteSettings !== 'function') return;
@@ -149,6 +177,7 @@ function bindCubeRemoteController() {
   });
   var api = getDesktopWindowApi();
   if (api && typeof api.onCubeRemoteCommand === 'function') api.onCubeRemoteCommand(handleCubeRemoteCommand);
+  if (api && typeof api.onTrayCommand === 'function') api.onTrayCommand(handleTrayCommand);
   if (api && typeof api.onCubeRemoteEnabledState === 'function') {
     api.onCubeRemoteEnabledState(function (payload) {
       cubeRemoteEnabled = !!(payload && payload.enabled);
@@ -157,6 +186,10 @@ function bindCubeRemoteController() {
       updateCubeRemoteControls();
     });
   }
-  setInterval(function () { pushCubeRemoteState(false); }, 320);
+  setInterval(function () {
+    pushTrayPlaybackState(false);
+    pushCubeRemoteState(false);
+  }, 320);
+  pushTrayPlaybackState(true);
   hydrateCubeRemote();
 }

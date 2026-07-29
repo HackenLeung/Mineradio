@@ -1,3 +1,28 @@
+var queueNextPendingKeys = [];
+var queueNextAnchorKey = '';
+
+function syncQueueNextPendingKeys() {
+  var currentSong = currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
+  var currentKey = currentSong ? queueItemKey(currentSong) : '';
+  if (currentKey !== queueNextAnchorKey) {
+    var consumedIndex = currentKey ? queueNextPendingKeys.indexOf(currentKey) : -1;
+    queueNextPendingKeys = consumedIndex >= 0 ? queueNextPendingKeys.slice(consumedIndex + 1) : [];
+    queueNextAnchorKey = currentKey;
+  }
+  var remaining = [];
+  queueNextPendingKeys.forEach(function (key) {
+    if (!key || remaining.indexOf(key) >= 0) return;
+    for (var i = currentIdx + 1; i < playQueue.length; i++) {
+      if (queueItemKey(playQueue[i]) === key) {
+        remaining.push(key);
+        break;
+      }
+    }
+  });
+  queueNextPendingKeys = remaining;
+  return currentKey;
+}
+
 function queueSong(song, opts) {
   opts = opts || {};
   if (!song) return -1;
@@ -5,6 +30,7 @@ function queueSong(song, opts) {
   var insertAt = playQueue.length;
   if (opts.position === 'next') {
     var key = queueItemKey(cloned);
+    syncQueueNextPendingKeys();
     var existing = -1;
     if (key) {
       for (var i = 0; i < playQueue.length; i++) {
@@ -17,8 +43,18 @@ function queueSong(song, opts) {
       if (currentIdx >= 0 && existing < currentIdx) currentIdx -= 1;
     }
     var hasCurrent = currentIdx >= 0 && currentIdx < playQueue.length;
-    insertAt = hasCurrent ? Math.min(playQueue.length, currentIdx + 1) : playQueue.length;
+    if (key) queueNextPendingKeys = queueNextPendingKeys.filter(function (pendingKey) { return pendingKey !== key; });
+    insertAt = hasCurrent ? currentIdx + 1 : playQueue.length;
+    queueNextPendingKeys.forEach(function (pendingKey) {
+      for (var pendingIndex = insertAt; pendingIndex < playQueue.length; pendingIndex++) {
+        if (queueItemKey(playQueue[pendingIndex]) === pendingKey) {
+          insertAt = pendingIndex + 1;
+          break;
+        }
+      }
+    });
     playQueue.splice(insertAt, 0, cloned);
+    if (key) queueNextPendingKeys.push(key);
   } else {
     playQueue.push(cloned);
     insertAt = playQueue.length - 1;

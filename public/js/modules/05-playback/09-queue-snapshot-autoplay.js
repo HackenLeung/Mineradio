@@ -84,31 +84,41 @@ function applyRestoredPlaybackProgressUi(snapshot) {
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
+function hydrateLastPlaybackSnapshotQueue(snapshot) {
+  snapshot = snapshot || {};
+  if (!snapshot.current) return null;
+  var current = hydrateCustomCover(Object.assign({}, snapshot.current));
+  var queue = Array.isArray(snapshot.queue) ? snapshot.queue.map(function (song) {
+    return hydrateCustomCover(Object.assign({}, song));
+  }).filter(function (song) {
+    return song && (song.id || song.mid || song.localKey || song.localPath || song.name);
+  }) : [];
+  if (!queue.length) queue = [current];
+  var idx = Math.max(0, Math.min(queue.length - 1, Number(snapshot.currentIdx) || 0));
+  if (!queue[idx] || queueItemKey(queue[idx]) !== queueItemKey(current)) {
+    var found = -1;
+    for (var i = 0; i < queue.length; i++) {
+      if (queueItemKey(queue[i]) === queueItemKey(current)) { found = i; break; }
+    }
+    if (found >= 0) idx = found;
+    else { queue.unshift(current); idx = 0; }
+  }
+  return { current: current, queue: queue, index: idx };
+}
 function restoreLastPlaybackSnapshot() {
   if (restoredLastPlaybackSnapshot) return false;
   var snapshot = readLastPlaybackSnapshot();
   if (!snapshot || !snapshot.current) return false;
-  var current = hydrateCustomCover(Object.assign({}, snapshot.current));
+  var restoredQueue = hydrateLastPlaybackSnapshotQueue(snapshot);
+  if (!restoredQueue) return false;
+  var current = restoredQueue.current;
   var isLocal = current.type === 'local' || !!current.localKey || current.localMissing;
   restoredLastPlaybackSnapshot = snapshot;
   startupRestoreHomePending = !startupAutoplayPreference;
   pendingPlaybackResumeAt = startupResumeSecondsFromSnapshot(snapshot);
-  {
-    var queue = Array.isArray(snapshot.queue) ? snapshot.queue.map(function (song) { return hydrateCustomCover(Object.assign({}, song)); }).filter(function (song) { return song && (song.id || song.mid || song.localKey || song.name); }) : [];
-    if (!queue.length) queue = [current];
-    var idx = Math.max(0, Math.min(queue.length - 1, Number(snapshot.currentIdx) || 0));
-    if (!queue[idx] || queueItemKey(queue[idx]) !== queueItemKey(current)) {
-      var found = -1;
-      for (var i = 0; i < queue.length; i++) {
-        if (queueItemKey(queue[i]) === queueItemKey(current)) { found = i; break; }
-      }
-      if (found >= 0) idx = found;
-      else { queue.unshift(current); idx = 0; }
-    }
-    playQueue = queue;
-    currentIdx = idx;
-    currentLocalSong = isLocal ? playQueue[currentIdx] : null;
-  }
+  playQueue = restoredQueue.queue;
+  currentIdx = restoredQueue.index;
+  currentLocalSong = isLocal ? playQueue[currentIdx] : null;
   if (snapshot.playMode) playMode = snapshot.playMode;
   var shownSong = currentCoverSong() || current;
   if (shownSong) {

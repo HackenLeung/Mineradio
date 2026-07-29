@@ -331,7 +331,7 @@ function runAlbumGaplessBalancedCrossfade(preload, durationMs) {
 function startAlbumGaplessMix(preload, reason, remaining) {
   if (!preload || !preload.media || preload.mixStarted || preload.mixPending || albumGaplessState.handoff) return false;
   if (!albumGaplessQueueCanAdvance(currentIdx)) return false;
-  if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting) return false;
+  if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) return false;
   var outgoingMedia = audio;
   var outgoingToken = trackSwitchToken;
   var outgoingIndex = currentIdx;
@@ -428,6 +428,10 @@ function setAlbumGaplessPlaybackContext(enabled, context, opts) {
 }
 
 function albumGaplessQueueCanAdvance(idx) {
+  // Smart Transition and album gapless both own a second audio deck. Let only
+  // one coordinator touch the next track; disabling Smart Transition restores
+  // the upstream album-gapless path unchanged.
+  if (typeof isSmartTransitionEnabled === 'function' && isSmartTransitionEnabled()) return false;
   if (!albumGaplessState || !albumGaplessState.enabled || !albumGaplessState.albumKey) return false;
   if (playMode === 'single') return false;
   if (idx < 0 || idx + 1 >= playQueue.length) return false;
@@ -814,7 +818,7 @@ function playAlbumGaplessNextOnEnded(token) {
 
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
-  var transitionHandoff = !!(opts.cuefieldAutoMix && opts.preloadedAudio);
+  var transitionHandoff = !!(opts.smartTransitionHandoff && opts.preloadedAudio);
   var transitionPreviousAudio = transitionHandoff ? audio : null;
   if (song && !song.localUrl && typeof ensureFreshLocalPlaybackUrl === 'function') {
     await ensureFreshLocalPlaybackUrl(song);
@@ -827,24 +831,26 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   currentLocalSong = song;
   playQueue[idx] = song;
   var localCover = typeof localLibraryCover === 'function' ? localLibraryCover(song) : (song.customCover || song.sidecarCover || song.embeddedCover || song.cover || '');
-  if (localCover) loadCoverFromUrl(localCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: !firstVisualPlay });
+  if (localCover && !opts.coverCommitted) loadCoverFromUrl(localCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: !firstVisualPlay });
   updateCustomCoverButton();
   document.getElementById('trial-banner').classList.remove('show');
   if (transitionHandoff) {
     if (transitionPreviousAudio) transitionPreviousAudio.onended = null;
     audio = opts.preloadedAudio;
-    if (typeof claimCuefieldPreparedAudioForPlayback === 'function') claimCuefieldPreparedAudioForPlayback(audio);
+    if (typeof claimSmartTransitionPreparedAudioForPlayback === 'function') claimSmartTransitionPreparedAudioForPlayback(audio);
   } else if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
   else {
     audioFadeSerial++;
     clearAudioFadeTimers();
     audio.pause();
   }
+  var transitionAdoptedGain = transitionHandoff ? clampRange(Number(audio.volume) || 0, 0, 1) : 0;
   resetPlaybackAudioGraphForSourceSwitch('local-track-switch');
   audio.autoplay = true;
   audio.preload = 'auto';
   bindPlaybackProgressEvents(audio);
-  applyVolumeToAudio();
+  if (transitionHandoff) setAudioOutputGainImmediate(transitionAdoptedGain);
+  else applyVolumeToAudio();
   await applyAudioOutputDevice(audio);
   if (!transitionHandoff) audio.src = song.localUrl;
   audio.__mineradioQueueItemKey = queueItemKey(song);
@@ -853,9 +859,9 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
   audio.onended = function () {
     if (token !== trackSwitchToken) return;
-    if (this && this.__mineradioCuefieldEndedRecoveryToken === token) return;
-    if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting) {
-      if (typeof noteCuefieldAutoMixOutgoingEnded === 'function') noteCuefieldAutoMixOutgoingEnded(this, token, currentIdx);
+    if (this && this.__mineradioSmartTransitionEndedRecoveryToken === token) return;
+    if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) {
+      if (typeof noteSmartCrossfadeOutgoingEnded === 'function') noteSmartCrossfadeOutgoingEnded(this, token, currentIdx);
       return;
     }
     finalizeListenSession(true);
@@ -973,10 +979,10 @@ async function playQueueAt(idx, opts) {
     markPlayPhase('cancel-previous-track');
     cancelBeatAnalysisTimer();
     cancelBeatPrefetchTimer();
-    if (typeof resetCuefieldAutoMix === 'function') {
-      resetCuefieldAutoMix(opts.cuefieldAutoMix ? 'cuefield-handoff' : 'track-switch', {
-        preservePreparedAudio: !!opts.cuefieldAutoMix,
-        preserveExecution: !!opts.cuefieldAutoMix
+    if (typeof resetSmartCrossfade === 'function') {
+      resetSmartCrossfade(opts.smartTransitionHandoff ? 'smart-transition-handoff' : 'track-switch', {
+        preservePreparedAudio: !!opts.smartTransitionHandoff,
+        preserveExecution: !!opts.smartTransitionHandoff
       });
     }
     if (!albumGaplessHandoff) clearAlbumGaplessPreload('track-switch');
@@ -1042,6 +1048,7 @@ async function playQueueAt(idx, opts) {
     currentLocalSong = null;
     safePlaybackStep('cover-button', updateCustomCoverButton);
     safePlaybackStep('like-buttons', function () { updateLikeButtons(song); });
+    safePlaybackStep('comment-button', function () { if (typeof updateCommentButtonForSong === 'function') updateCommentButtonForSong(song); });
     safePlaybackStep('like-status', function () { syncLikeStatusForSong(song); });
     safePlaybackStep('cinema-track-profile', function () { if (!qualitySwitch) resetCinemaTrackProfile(song); });
     safePlaybackStep('empty-home', function () { if (!opts.preserveHomeState) updateEmptyHomeVisibility(); });
@@ -1072,7 +1079,7 @@ async function playQueueAt(idx, opts) {
 
     markPlayPhase('cover-load');
     safePlaybackStep('cover-load', function () {
-      if (qualitySwitch) return;
+      if (qualitySwitch || opts.coverCommitted) return;
       var customCover = getCustomCoverForSong(song);
       var coverOpts = {
         trackToken: token,
@@ -1219,10 +1226,10 @@ async function playQueueAt(idx, opts) {
         clearAudioFadeTimers();
         if (albumGaplessPreviousAudio) albumGaplessPreviousAudio.onended = null;
         audio = opts.preloadedAudio;
-        if (opts.cuefieldAutoMix && typeof claimCuefieldPreparedAudioForPlayback === 'function') {
-          claimCuefieldPreparedAudioForPlayback(audio);
+        if (opts.smartTransitionHandoff && typeof claimSmartTransitionPreparedAudioForPlayback === 'function') {
+          claimSmartTransitionPreparedAudioForPlayback(audio);
         }
-        var preparedGraphGain = opts.cuefieldAutoMix && audio.__mineradioPreparedAudioGraph && audio.__mineradioPreparedAudioGraph.gainNode
+        var preparedGraphGain = opts.smartTransitionHandoff && audio.__mineradioPreparedAudioGraph && audio.__mineradioPreparedAudioGraph.gainNode
           ? Number(audio.__mineradioPreparedAudioGraph.gainNode.gain.value)
           : NaN;
         albumGaplessAdoptedGain = albumGaplessMixed
@@ -1271,9 +1278,9 @@ async function playQueueAt(idx, opts) {
       updatePlaybackProgressUi();
       audio.onended = function () {
         if (token !== trackSwitchToken) return;
-        if (this && this.__mineradioCuefieldEndedRecoveryToken === token) return;
-        if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting) {
-          if (typeof noteCuefieldAutoMixOutgoingEnded === 'function') noteCuefieldAutoMixOutgoingEnded(this, token, currentIdx);
+        if (this && this.__mineradioSmartTransitionEndedRecoveryToken === token) return;
+        if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) {
+          if (typeof noteSmartCrossfadeOutgoingEnded === 'function') noteSmartCrossfadeOutgoingEnded(this, token, currentIdx);
           return;
         }
         finalizeListenSession(true);
@@ -1450,11 +1457,11 @@ async function playQueueAt(idx, opts) {
         scheduleShelfRebuild('play-queue-at', true);
         if (typeof scheduleQueueLyricPrefetch === 'function') scheduleQueueLyricPrefetch(idx, 2400);
       }
-      if (!qualitySwitch && typeof scheduleCuefieldAutoMixPrepare === 'function') {
-        var cuefieldPrepareDelay = typeof cuefieldAutoMixPostSwitchDelay === 'function'
-          ? cuefieldAutoMixPostSwitchDelay(!!opts.cuefieldAutoMix)
+      if (!qualitySwitch && typeof scheduleSmartCrossfadePrepare === 'function') {
+        var smartTransitionPrepareDelay = typeof smartCrossfadePostSwitchDelay === 'function'
+          ? smartCrossfadePostSwitchDelay(!!opts.smartTransitionHandoff)
           : 4200;
-        scheduleCuefieldAutoMixPrepare(token, idx, cuefieldPrepareDelay);
+        scheduleSmartCrossfadePrepare(token, idx, smartTransitionPrepareDelay);
       }
       scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
       safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);

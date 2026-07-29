@@ -39,6 +39,8 @@ var FX_CONSOLE_LAYOUT = [
       { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频与 Wallpaper Engine', open: true, items: [
         fxConsoleItem('bg-color-picker', '背景颜色', '纯色 封面取色'),
         fxConsoleItem('bg-media-preview', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
+        fxConsoleItem('t-wallpaperEngineLink', 'Wallpaper Engine 联动', '壁纸 联动 启用 暂停'),
+        fxConsoleItem('t-desktopLock', '锁定到桌面', '桌面 WorkerW 锁定 恢复窗口'),
         fxConsoleItem('wallpaper-engine-value', 'Wallpaper Engine', '壁纸库 识别 导入 恢复原背景', false),
         fxConsoleItem('fx-bgopacity', '背景透明度', '背景强度'),
         fxConsoleItem('fx-wallpaperenginedim', '壁纸暗度', 'Wallpaper Engine 明暗'),
@@ -148,6 +150,13 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-bloom', '光晕强度', '溢光 bloom'),
         fxConsoleItem('fx-scatter', '离散感', '粒子散开'),
         fxConsoleItem('fx-bgfade', '背景压暗', '背景压缩 暗度')
+      ] },
+      { key: 'extra', title: '额外', hint: '智能过渡 / 声音均衡器', items: [
+        fxConsoleItem('smart-transition-style-seg', '智能过渡', '镜面 频谱 方块 右滑 随机 关闭'),
+        fxConsoleItem('t-audioEq', '均衡器', '声音 EQ 开关'),
+        fxConsoleItem('audio-preset-seg', '声音预设', '原声 低音 人声 明亮 夜间 电影'),
+        fxConsoleItem('audio-preamp', '前级增益', '声音 增益 dB'),
+        fxConsoleItem('audio-eq-grid', '六段均衡', '60 170 350 1K 3.5K 10K')
       ] },
       { key: 'sonic-terrain', title: '音域地形', hint: '地面形态、颜色和空间位置', items: [
         fxConsoleItem('fx-sonicamp', '地面起伏', '音域振幅'),
@@ -274,9 +283,6 @@ var FX_CONSOLE_LAYOUT = [
       ] },
       { key: 'cache', title: '缓存与存储', hint: '统一缓存目录、占用和各类路径', items: [
         fxConsoleItem('cache-storage-panel', '本地缓存', '缓存路径 缓存目录 占用 歌词 封面 音频 更新', false)
-      ] },
-      { key: 'experimental', title: '实验功能', hint: '尚未开放或需要谨慎使用的能力', items: [
-        fxConsoleItem('t-wallpaperMode', '完整桌面模式', '完整 Mineradio 进入桌面层 Ctrl Shift M 切换操作层 本次启动有效', false)
       ] }
     ]
   }

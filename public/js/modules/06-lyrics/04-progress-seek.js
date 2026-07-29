@@ -166,15 +166,15 @@ function updatePlaybackProgressUi() {
 }
 
 function playbackTransitionHasAudibleNextDeck() {
-  var cuefieldMedia = typeof cuefieldAutoMixPreparedAudio !== 'undefined' ? cuefieldAutoMixPreparedAudio : null;
+  var smartTransitionMedia = typeof smartCrossfadePreparedAudio !== 'undefined' ? smartCrossfadePreparedAudio : null;
   if (
-    typeof cuefieldAutoMixExecuting !== 'undefined'
-    && cuefieldAutoMixExecuting
-    && cuefieldMedia
-    && cuefieldMedia !== audio
-    && !cuefieldMedia.paused
-    && !cuefieldMedia.ended
-    && Number(cuefieldMedia.volume) > 0.001
+    typeof smartCrossfadeExecuting !== 'undefined'
+    && smartCrossfadeExecuting
+    && smartTransitionMedia
+    && smartTransitionMedia !== audio
+    && !smartTransitionMedia.paused
+    && !smartTransitionMedia.ended
+    && Number(smartTransitionMedia.volume) > 0.001
   ) return true;
   var preload = typeof albumGaplessState !== 'undefined' && albumGaplessState ? albumGaplessState.preload : null;
   return !!(
@@ -196,7 +196,7 @@ function bindPlaybackProgressEvents(audioEl) {
     audioEl.addEventListener(name, updatePlaybackProgressUi);
   });
   audioEl.addEventListener('timeupdate', function () {
-    if (typeof tickCuefieldAutoMix === 'function') tickCuefieldAutoMix();
+    if (typeof tickSmartCrossfade === 'function') tickSmartCrossfade();
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
@@ -434,7 +434,7 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function (e) {
   if (!audio || !getPlaybackDurationSeconds()) return;
-  if (typeof resetCuefieldAutoMix === 'function') resetCuefieldAutoMix('manual-seek');
+  if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('manual-seek');
   if (
     typeof albumGaplessState !== 'undefined'
     && albumGaplessState
@@ -482,8 +482,8 @@ function endProgressDrag(e, commit) {
   progressDragState.media = null;
   progressDragState.mediaSrc = '';
   progressDragState.resumeAfterSeek = false;
-  if (commit !== false && typeof scheduleCuefieldAutoMixPrepare === 'function') {
-    scheduleCuefieldAutoMixPrepare(trackSwitchToken, currentIdx, 900);
+  if (commit !== false && typeof scheduleSmartCrossfadePrepare === 'function') {
+    scheduleSmartCrossfadePrepare(trackSwitchToken, currentIdx, 900);
   }
 }
 progressBar.addEventListener('pointerup', function (e) { endProgressDrag(e, true); });

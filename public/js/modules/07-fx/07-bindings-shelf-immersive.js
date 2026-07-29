@@ -373,9 +373,9 @@ function toggleWallpaperModeFromUi() {
   return applyWallpaperModeState(true).then(function (result) {
     if (result && result.rendererStale) return result;
     var accepted = !!(result && result.ok === true && result.enabled === desired);
-    if (accepted) showToast(desired ? ('完整桌面模式已开启 · ' + desktopInteractionHotkeyHint()) : '完整桌面模式已关闭');
-    else if (desired) showToast('完整桌面模式启动失败：' + desktopWallpaperErrorLabel(result && result.error));
-    else showToast('完整桌面模式关闭失败：' + desktopWallpaperErrorLabel(result && result.error));
+    if (accepted) showToast(desired ? ('已锁定到桌面 · ' + desktopInteractionHotkeyHint()) : '已恢复普通窗口');
+    else if (desired) showToast('锁定到桌面失败：' + desktopWallpaperErrorLabel(result && result.error));
+    else showToast('恢复普通窗口失败：' + desktopWallpaperErrorLabel(result && result.error));
     return result;
   });
 }
@@ -649,7 +649,7 @@ function closeImmersiveInterference() {
   closeCustomLyricModal();
   closeTrackDetailModal();
   if (!localBeatAnalysis.active) closeLocalBeatModal();
-  ['search-area', 'fx-panel', 'trial-banner', 'ai-depth-chip', 'beat-chip'].forEach(function (id) {
+  ['search-area', 'fx-panel', 'trial-banner', 'ai-depth-chip', 'beat-chip', 'local-lyric-match-chip'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.classList.remove('peek', 'show', 'closing');
   });

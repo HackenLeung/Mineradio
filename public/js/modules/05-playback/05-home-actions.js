@@ -1,6 +1,7 @@
 function songFromListenRecord(record) {
   if (!record) return null;
-  var provider = record.sourceKey || '';
+  var provider = record.provider || record.sourceKey || '';
+  if (record.type === 'local' || record.localKey || record.localPath) provider = 'local';
   if (!provider && record.type === 'qq') provider = 'qq';
   if (!provider) provider = record.mid ? 'qq' : 'netease';
   return {
@@ -14,6 +15,17 @@ function songFromListenRecord(record) {
     name: record.name || '继续听',
     artist: record.artist || '',
     cover: record.cover || '',
+    hash: record.hash || '',
+    mixSongId: record.mixSongId || '',
+    albumId: record.albumId || '',
+    providerSongId: record.providerSongId || '',
+    localKey: record.localKey || '',
+    localPath: record.localPath || '',
+    localFolderPath: record.localFolderPath || '',
+    localFolderName: record.localFolderName || '',
+    sidecarCover: record.sidecarCover || '',
+    embeddedCover: record.embeddedCover || '',
+    onlineMetadata: record.onlineMetadata || null,
   };
 }
 async function playHomeRecent(record) {
@@ -23,7 +35,7 @@ async function playHomeRecent(record) {
     return;
   }
   var song = songFromListenRecord(record);
-  if (!song || (!song.id && !song.mid)) {
+  if (!song || (!song.id && !song.mid && !song.localKey && !song.localPath)) {
     runHomeSearch(record.name || '');
     return;
   }
@@ -34,6 +46,43 @@ async function playHomeRecent(record) {
   safeShelfRebuild('home-recent-song', true);
   forcePlaybackControlsInteractive();
   await playQueueAt(0);
+}
+async function playHomeRecentQueue(record) {
+  var snapshot = typeof readLastPlaybackSnapshot === 'function' ? readLastPlaybackSnapshot() : null;
+  var restoredQueue = snapshot && typeof hydrateLastPlaybackSnapshotQueue === 'function'
+    ? hydrateLastPlaybackSnapshotQueue(snapshot)
+    : null;
+  if (!restoredQueue || !restoredQueue.queue.length) return playHomeRecent(record);
+  if (typeof clearStartupAutoplayRetryTimer === 'function') clearStartupAutoplayRetryTimer();
+  if (typeof startupAutoplayJobId === 'number') startupAutoplayJobId += 1;
+  startupAutoplayAttempted = true;
+  startupRestoreHomePending = false;
+  activeRadioContext = null;
+  restoredLastPlaybackSnapshot = snapshot;
+  pendingPlaybackResumeAt = typeof startupResumeSecondsFromSnapshot === 'function'
+    ? startupResumeSecondsFromSnapshot(snapshot)
+    : Math.max(0, Number(snapshot.currentTime) || 0);
+  playQueue = restoredQueue.queue;
+  currentIdx = restoredQueue.index;
+  currentLocalSong = playQueue[currentIdx] && (playQueue[currentIdx].type === 'local' || playQueue[currentIdx].localKey)
+    ? playQueue[currentIdx]
+    : null;
+  if (snapshot.playMode) playMode = snapshot.playMode;
+  safeRenderQueuePanel('home-recent-queue', { scrollCurrent: miniQueueOpen });
+  safeShelfRebuild('home-recent-queue', true);
+  forcePlaybackControlsInteractive();
+  var resumeAt = pendingPlaybackResumeAt;
+  var started = await playQueueAt(currentIdx, {
+    manual: true,
+    resumeAt: resumeAt,
+    skipShuffleOrder: true
+  });
+  if (started === true) {
+    pendingPlaybackResumeAt = 0;
+    if (typeof dismissHomePage === 'function') dismissHomePage({ toast: false });
+    showToast('已恢复上次队列 · ' + playQueue.length + ' 首');
+  }
+  return started;
 }
 function openHomeInsight() {
   var summary = homeListenSummary();
@@ -51,7 +100,7 @@ function handleHomeTileClick(index) {
   var row = document.getElementById('home-tile-row');
   var item = row && row._homeTiles && row._homeTiles[index];
   if (!item) return;
-  if (item.kind === 'recent') playHomeRecent(item.record);
+  if (item.kind === 'recent') playHomeRecentQueue(item.record);
   else if (item.kind === 'profile') openHomeInsight();
   else if (item.kind === 'song') playHomeSong(item.index);
   else if (item.kind === 'login') showLoginModal({ source: 'home-tile' });

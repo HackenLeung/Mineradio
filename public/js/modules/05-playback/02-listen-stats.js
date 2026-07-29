@@ -160,6 +160,7 @@ function saveListenStatsState() {
 }
 function listenSongSnapshot(song) {
   song = song || {};
+  var isLocal = song.type === 'local' || song.source === 'local' || !!song.localKey;
   return {
     key: queueItemKey(song),
     id: song.id || '',
@@ -171,15 +172,22 @@ function listenSongSnapshot(song) {
     providerSongId: song.providerSongId || song.provider_song_id || '',
     spotifyId: song.spotifyId || song.spotify_id || '',
     uri: song.spotifyUri || song.uri || '',
-    type: song.type || 'song',
-    sourceKey: song.source || song.provider || '',
+    type: isLocal ? 'local' : (song.type || 'song'),
+    sourceKey: isLocal ? 'local' : (song.source || song.provider || ''),
     name: song.name || song.title || '未知歌曲',
     artist: song.artist || '',
     cover: songCoverSrc(song, 220) || song.cover || '',
     source: songSourceLabel(song),
-    provider: song.provider || song.source || song.type || '',
+    provider: isLocal ? 'local' : (song.provider || song.source || song.type || ''),
     resolvedPlaybackProvider: song.resolvedPlaybackProvider || song.playbackProvider || song.audioProvider || song.providerResolved || '',
     duration: Number(song.duration) || 0,
+    localKey: song.localKey || '',
+    localPath: song.localPath || '',
+    localFolderPath: song.localFolderPath || '',
+    localFolderName: song.localFolderName || '',
+    sidecarCover: song.sidecarCover || '',
+    embeddedCover: song.embeddedCover || '',
+    onlineMetadata: song.onlineMetadata && typeof song.onlineMetadata === 'object' ? Object.assign({}, song.onlineMetadata) : null,
   };
 }
 function beginListenSession(song, context) {
@@ -249,6 +257,13 @@ function finalizeListenSession(completed) {
     sourceKey: snap.sourceKey || '',
     provider: snap.provider || '',
     resolvedPlaybackProvider: snap.resolvedPlaybackProvider || '',
+    localKey: snap.localKey || '',
+    localPath: snap.localPath || '',
+    localFolderPath: snap.localFolderPath || '',
+    localFolderName: snap.localFolderName || '',
+    sidecarCover: snap.sidecarCover || '',
+    embeddedCover: snap.embeddedCover || '',
+    onlineMetadata: snap.onlineMetadata || null,
     name: snap.name || '未知歌曲',
     artist: snap.artist || '',
     cover: snap.cover || '',
@@ -264,6 +279,24 @@ function finalizeListenSession(completed) {
   songStat.artist = record.artist;
   songStat.cover = record.cover || songStat.cover || '';
   songStat.source = record.source || songStat.source || '';
+  songStat.id = record.id || songStat.id || '';
+  songStat.mid = record.mid || songStat.mid || '';
+  songStat.mediaMid = record.mediaMid || songStat.mediaMid || '';
+  songStat.hash = record.hash || songStat.hash || '';
+  songStat.mixSongId = record.mixSongId || songStat.mixSongId || '';
+  songStat.albumId = record.albumId || songStat.albumId || '';
+  songStat.providerSongId = record.providerSongId || songStat.providerSongId || '';
+  songStat.type = record.type || songStat.type || 'song';
+  songStat.sourceKey = record.sourceKey || songStat.sourceKey || '';
+  songStat.provider = record.provider || songStat.provider || '';
+  songStat.resolvedPlaybackProvider = record.resolvedPlaybackProvider || songStat.resolvedPlaybackProvider || '';
+  songStat.localKey = record.localKey || songStat.localKey || '';
+  songStat.localPath = record.localPath || songStat.localPath || '';
+  songStat.localFolderPath = record.localFolderPath || songStat.localFolderPath || '';
+  songStat.localFolderName = record.localFolderName || songStat.localFolderName || '';
+  songStat.sidecarCover = record.sidecarCover || songStat.sidecarCover || '';
+  songStat.embeddedCover = record.embeddedCover || songStat.embeddedCover || '';
+  songStat.onlineMetadata = record.onlineMetadata || songStat.onlineMetadata || null;
   songStat.plays += 1;
   songStat.listenMs += record.listenMs;
   songStat.completed += completed ? 1 : 0;

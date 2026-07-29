@@ -91,6 +91,7 @@ function setPeek(el, on, key) {
     var runPlaylistOpenAnimation = key === 'pl' && !wasPeek ? shouldAnimatePlaylistPanelOpen(el) : false;
     if (key === 'pl' && !wasPeek) preparePlaylistPanelTabOnOpen(el);
     el.classList.add('peek');
+    if (key === 'pl' && typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
     if (key === 'pl' && !wasPeek) markPlaylistPanelMotion(el, playlistPanelMotionMs('open'));
     if (key === 'pl' && !wasPeek) {
       scheduleUiWarmTask(function () {
@@ -109,6 +110,10 @@ function setPeek(el, on, key) {
     peekTimers[key] = setTimeout(function () {
       if (key === 'pl') el.classList.add('playlist-panel-closing');
       el.classList.remove('peek');
+      if (key === 'pl') {
+        var detailPanel = document.getElementById('playlist-detail-panel');
+        if (detailPanel && !playlistPanelPinned && !el.classList.contains('show')) detailPanel.classList.remove('show');
+      }
       if (key === 'pl') markPlaylistPanelMotion(el, playlistPanelMotionMs('close'));
       if (key === 'pl') setTimeout(function () { el.classList.remove('playlist-panel-closing'); }, playlistPanelMotionMs('close') + 80);
       if (key === 'fx') {
@@ -328,8 +333,15 @@ function playlistPanelTargetRect(panel, currentRect) {
   var top = isFinite(panel.offsetTop) ? panel.offsetTop : currentRect.top;
   return { left: left, top: top, right: left + width, bottom: top + height, width: width, height: height };
 }
+function isPlaylistDetailPanelPointActive(ex, ey) {
+  var detail = document.getElementById('playlist-detail-panel');
+  if (!detail || !detail.classList.contains('show')) return false;
+  var rect = detail.getBoundingClientRect();
+  return ex >= rect.left - 24 && ex <= rect.right + 24 && ey >= rect.top - 24 && ey <= rect.bottom + 24;
+}
 function isPlaylistPanelPanelHit(panel, ppRect, ex, ey) {
   if (!isPlaylistPanelActiveState(panel)) return false;
+  if (isPlaylistDetailPanelPointActive(ex, ey)) return true;
   var targetRect = playlistPanelTargetRect(panel, ppRect);
   return ex >= targetRect.left - 26 && ex <= targetRect.right + 28 && ey >= targetRect.top - 30 && ey <= targetRect.bottom + 30;
 }

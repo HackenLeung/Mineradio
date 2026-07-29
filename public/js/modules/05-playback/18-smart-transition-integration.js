@@ -1,0 +1,971 @@
+var SMART_TRANSITION_STORE_KEY = 'mineradio-smart-transition-v2';
+var smartCrossfadePrepareTimer = 0;
+var smartCrossfadeExecuting = false;
+var smartCrossfadePreparedAudio = null;
+var smartTransitionMediaFadeSerial = 0;
+var smartTransitionMediaFadeRaf = 0;
+var smartTransitionMediaFadeTimer = 0;
+var smartTransitionPairFadeResolve = null;
+var smartTransitionGeneration = 0;
+var smartTransitionDelayWaiters = [];
+var smartTransitionActiveTransitionContext = null;
+var smartTransitionAudioDescriptorCache = {};
+var smartTransitionStyle = 'mirror';
+var smartTransitionPending = null;
+var smartTransitionVisualTimer = 0;
+var smartCoverTransition = null;
+var smartCoverTransitionSerial = 0;
+var SMART_CROSSFADE_NORMAL_START_SETTLE_MS = 4200;
+var SMART_CROSSFADE_HANDOFF_SETTLE_MS = 5200;
+
+function normalizeSmartTransitionStyle(value) {
+  value = String(value || '');
+  return /^(mirror|spectrum|blocks|wipe|random|off)$/.test(value) ? value : 'mirror';
+}
+
+function readSmartTransitionPreference() {
+  try { return normalizeSmartTransitionStyle(localStorage.getItem(SMART_TRANSITION_STORE_KEY) || 'mirror'); } catch (_) { return 'mirror'; }
+}
+
+function isSmartTransitionEnabled() {
+  return normalizeSmartTransitionStyle(smartTransitionStyle) !== 'off';
+}
+
+function smartTransitionRunStyle() {
+  var style = normalizeSmartTransitionStyle(smartTransitionStyle);
+  if (style !== 'random') return style;
+  var choices = ['mirror', 'spectrum', 'blocks', 'wipe'];
+  return choices[Math.floor(Math.random() * choices.length)] || 'mirror';
+}
+
+function smartTransitionStyleMode(value) {
+  value = normalizeSmartTransitionStyle(value);
+  if (value === 'off') return -1;
+  if (value === 'blocks') return 1;
+  if (value === 'spectrum') return 5;
+  if (value === 'mirror') return 6;
+  return 0;
+}
+
+function updateSmartTransitionStyleControls(status) {
+  document.querySelectorAll('#smart-transition-style-seg [data-smart-transition-style]').forEach(function (button) {
+    button.classList.toggle('active', button.getAttribute('data-smart-transition-style') === smartTransitionStyle);
+  });
+  var segment = document.getElementById('smart-transition-style-seg');
+  if (segment) segment.classList.toggle('smart-transition-ready', status === 'ready');
+}
+
+function hideSmartTransitionVisual() {
+  if (smartTransitionVisualTimer) clearTimeout(smartTransitionVisualTimer);
+  smartTransitionVisualTimer = 0;
+  var visual = document.getElementById('smart-transition-visual');
+  var chip = document.getElementById('smart-transition-chip');
+  if (visual) visual.classList.remove('active');
+  if (chip) {
+    chip.classList.remove('show');
+    chip.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function showSmartTransitionVisual(durationMs) {
+  if (!isSmartTransitionEnabled() || document.hidden) return '';
+  hideSmartTransitionVisual();
+  var style = smartTransitionRunStyle();
+  var visual = document.getElementById('smart-transition-visual');
+  var chip = document.getElementById('smart-transition-chip');
+  if (visual) {
+    visual.setAttribute('data-style', style);
+    visual.style.setProperty('--smart-transition-ms', Math.max(900, Number(durationMs) || 7200) + 'ms');
+    void visual.offsetWidth;
+    visual.classList.add('active');
+  }
+  if (chip) {
+    chip.classList.add('show');
+    chip.setAttribute('aria-hidden', 'false');
+  }
+  smartTransitionVisualTimer = setTimeout(hideSmartTransitionVisual, Math.max(1400, Number(durationMs) || 7200) + 900);
+  return style;
+}
+
+function resetSmartCoverTransition() {
+  smartCoverTransition = null;
+  if (uniforms && uniforms.uSmartCoverT) uniforms.uSmartCoverT.value = 0;
+}
+
+function smartTransitionCoverSource(song) {
+  song = typeof hydrateCustomCover === 'function' ? hydrateCustomCover(song || {}) : (song || {});
+  if ((song.type === 'local' || song.source === 'local' || song.localKey) && typeof localLibraryCover === 'function') {
+    return localLibraryCover(song) || song.cover || '';
+  }
+  return typeof songCoverSrc === 'function' ? (songCoverSrc(song, 512) || song.cover || '') : (song.cover || '');
+}
+
+function setSmartCoverTextureFromImage(img) {
+  if (!img || !smartCoverTransition) return false;
+  try {
+    var size = Math.min(512, coverTextureSizeForResolution(fx.coverResolution));
+    var cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    var ctx = cv.getContext('2d');
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    var side = Math.min(iw, ih);
+    ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, size, size);
+    smartCoverTex.image = cv;
+    smartCoverTex.needsUpdate = true;
+    smartCoverTransition.coverCanvas = cv;
+    smartCoverTransition.edgeCanvas = buildEdgeAndDepth(cv);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function loadSmartCoverTexture(song, serial) {
+  var src = smartTransitionCoverSource(song);
+  if (!src) return;
+  var loadSrc = typeof isInlineCoverSrc === 'function' && isInlineCoverSrc(src)
+    ? src
+    : (/^https?:\/\//i.test(src) && typeof coverProxySrc === 'function' ? coverProxySrc(src) : src);
+  if (!loadSrc) return;
+  var img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  img.onload = function () {
+    if (!smartCoverTransition || smartCoverTransition.serial !== serial) return;
+    if (setSmartCoverTextureFromImage(img)) smartCoverTransition.ready = true;
+  };
+  img.src = loadSrc;
+}
+
+function startSmartCoverTransition(song, durationMs, runStyle) {
+  var style = normalizeSmartTransitionStyle(runStyle || smartTransitionRunStyle());
+  if (style === 'off' || document.hidden || !uniforms || !uniforms.uSmartCoverT) {
+    resetSmartCoverTransition();
+    return false;
+  }
+  var serial = ++smartCoverTransitionSerial;
+  smartCoverTransition = {
+    serial: serial,
+    startedAt: performance.now(),
+    durationMs: Math.max(1200, Number(durationMs) || 7200),
+    ready: false,
+    coverCanvas: null,
+    edgeCanvas: null,
+    mode: smartTransitionStyleMode(style)
+  };
+  uniforms.uSmartCoverT.value = 0;
+  uniforms.uSmartCoverMode.value = smartCoverTransition.mode;
+  loadSmartCoverTexture(song, serial);
+  uniforms.uBurstAmt.value = Math.max(uniforms.uBurstAmt.value || 0, 0.36);
+  return true;
+}
+
+function tickSmartCoverTransition(now) {
+  if (!smartCoverTransition || !uniforms || !uniforms.uSmartCoverT) return;
+  var t = clamp01((now - smartCoverTransition.startedAt) / Math.max(1, smartCoverTransition.durationMs));
+  uniforms.uSmartCoverT.value = smartCoverTransition.ready ? visualEase(t) : 0;
+  if (t >= 1 && !smartCrossfadeExecuting) resetSmartCoverTransition();
+}
+
+function commitSmartCoverTextureForHandoff(song) {
+  if (!smartCoverTransition || !smartCoverTransition.ready || !smartCoverTransition.coverCanvas) return false;
+  try {
+    var committedCover = smartCoverTransition.coverCanvas;
+    coverTex.image = committedCover;
+    coverTex.needsUpdate = true;
+    uniforms.uHasCover.value = 1;
+    coverPickerCanvas = committedCover;
+    if (smartCoverTransition.edgeCanvas) {
+      coverEdgeTex.image = smartCoverTransition.edgeCanvas;
+      coverEdgeTex.needsUpdate = true;
+      setCoverDepthState(1, 0.55, 1);
+      if (typeof refreshFloatColorsFromCover === 'function') refreshFloatColorsFromCover(committedCover);
+      if (typeof refreshBackCoverColorsFromCanvas === 'function') refreshBackCoverColorsFromCanvas(committedCover);
+      if (typeof updateLyricPaletteFromCover === 'function') updateLyricPaletteFromCover(committedCover);
+    }
+    var src = smartTransitionCoverSource(song);
+    if (src) {
+      var thumb = document.getElementById('thumb-cover');
+      if (thumb) thumb.src = src;
+      if (typeof setControlCoverSrc === 'function') setControlCoverSrc(src);
+      if (typeof setAlbumBackground === 'function') setAlbumBackground(src);
+      currentCoverSource = { kind: typeof isInlineCoverSrc === 'function' && isInlineCoverSrc(src) ? 'data' : 'url', src: src };
+      if (shelfManager) shelfManager.onCoverChange(src);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function setSmartTransitionStyle(style, silent) {
+  smartTransitionStyle = normalizeSmartTransitionStyle(style);
+  try { localStorage.setItem(SMART_TRANSITION_STORE_KEY, smartTransitionStyle); } catch (_) { }
+  if (!isSmartTransitionEnabled()) {
+    var pending = smartTransitionPending;
+    smartTransitionPending = null;
+    if (!smartCrossfadeExecuting && pending && pending.preparedAudio) stopSmartTransitionPreparedAudio(pending.preparedAudio);
+    hideSmartTransitionVisual();
+    resetSmartCoverTransition();
+  } else if (audio && !audio.paused && currentIdx >= 0) {
+    if (typeof albumGaplessState !== 'undefined' && albumGaplessState && albumGaplessState.preload) {
+      if (typeof restoreAlbumGaplessOutgoingIfCurrent === 'function') restoreAlbumGaplessOutgoingIfCurrent(albumGaplessState.preload, 120);
+      if (typeof clearAlbumGaplessPreload === 'function') clearAlbumGaplessPreload('smart-transition-enabled');
+    }
+    scheduleSmartCrossfadePrepare(trackSwitchToken, currentIdx, 260);
+  }
+  updateSmartTransitionStyleControls();
+  if (!silent) showToast(isSmartTransitionEnabled() ? '智能过渡已开启' : '智能过渡已关闭');
+}
+
+function smartTransitionSongKey(song) {
+  return typeof beatMapSongKey === 'function' ? String(beatMapSongKey(song) || '') : '';
+}
+
+function smartCrossfadeNextIndex(index) {
+  if (!Array.isArray(playQueue) || playQueue.length < 2 || playMode === 'single') return -1;
+  index = isFinite(Number(index)) ? Math.round(Number(index)) : currentIdx;
+  return (index + 1 + playQueue.length) % playQueue.length;
+}
+
+function smartCrossfadeAudioDescriptor(song) {
+  var key = smartTransitionSongKey(song);
+  var cached = key && smartTransitionAudioDescriptorCache[key];
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached);
+  if (song && (song.type === 'local' || song.source === 'local' || song.localUrl)) {
+    var hasStableLocalUrl = !!song.localUrl && song.localMissing !== true;
+    var localUrlReady = hasStableLocalUrl
+      ? Promise.resolve(true)
+      : Promise.resolve(typeof ensureFreshLocalPlaybackUrl === 'function' ? ensureFreshLocalPlaybackUrl(song) : !!song.localUrl);
+    return localUrlReady.then(function () {
+      if (!song.localUrl) return null;
+      var localDescriptor = {
+        proxyUrl: song.localUrl,
+        playbackData: { url: song.localUrl, source: 'local', local: true },
+        local: true,
+        expiresAt: Date.now() + 4 * 60 * 1000
+      };
+      if (key) smartTransitionAudioDescriptorCache[key] = localDescriptor;
+      return localDescriptor;
+    });
+  }
+  return Promise.resolve(typeof fetchBeatPrefetchAudioUrl === 'function' ? fetchBeatPrefetchAudioUrl(song) : null).then(function (proxyUrl) {
+    if (!proxyUrl) return null;
+    var descriptor = {
+      proxyUrl: proxyUrl,
+      playbackData: { url: proxyUrl, source: songProviderKey(song), level: '' },
+      expiresAt: Date.now() + 4 * 60 * 1000
+    };
+    if (key) smartTransitionAudioDescriptorCache[key] = descriptor;
+    return descriptor;
+  });
+}
+
+function clearSmartCrossfadeTimer() {
+  if (smartCrossfadePrepareTimer) clearTimeout(smartCrossfadePrepareTimer);
+  smartCrossfadePrepareTimer = 0;
+}
+
+function clearSmartTransitionTimelineTimers() {
+  while (smartTransitionDelayWaiters.length) {
+    var waiter = smartTransitionDelayWaiters.pop();
+    clearTimeout(waiter.timer);
+    waiter.resolve(false);
+  }
+  cancelSmartTransitionMediaFade();
+}
+
+function cancelSmartTransitionMediaFade() {
+  smartTransitionMediaFadeSerial++;
+  if (smartTransitionMediaFadeRaf) cancelAnimationFrame(smartTransitionMediaFadeRaf);
+  if (smartTransitionMediaFadeTimer) clearInterval(smartTransitionMediaFadeTimer);
+  smartTransitionMediaFadeRaf = 0;
+  smartTransitionMediaFadeTimer = 0;
+  if (smartTransitionPairFadeResolve) {
+    var resolve = smartTransitionPairFadeResolve;
+    smartTransitionPairFadeResolve = null;
+    resolve(false);
+  }
+}
+
+function claimSmartTransitionPreparedAudioForPlayback(media) {
+  if (!media) return false;
+  cancelSmartTransitionMediaFade();
+  if (media.__mineradioPreparedAudioGraph) media.__mineradioPreparedAudioGraph.adopted = true;
+  if (media === smartCrossfadePreparedAudio) smartCrossfadePreparedAudio = null;
+  return true;
+}
+
+function disposeSmartTransitionPreparedAudioGraph(media) {
+  var graph = media && media.__mineradioPreparedAudioGraph;
+  if (!graph || graph.adopted) return;
+  [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].forEach(function (node) {
+    try { if (node) node.disconnect(); } catch (_) { }
+  });
+  try { delete media.__mineradioPreparedAudioGraph; } catch (_) { }
+}
+
+function stopSmartTransitionPreparedAudio(media) {
+  media = media || smartCrossfadePreparedAudio;
+  if (!media) return;
+  // Once the preloaded B deck has become Mineradio's active deck it no longer
+  // belongs to SmartTransition. A later C-deck preparation must never pause or unload it.
+  if (typeof audio !== 'undefined' && media === audio) {
+    claimSmartTransitionPreparedAudioForPlayback(media);
+    return;
+  }
+  disposeSmartTransitionPreparedAudioGraph(media);
+  try { media.pause(); } catch (_) { }
+  try { media.removeAttribute('src'); media.load(); } catch (_) { }
+  if (media === smartCrossfadePreparedAudio) smartCrossfadePreparedAudio = null;
+}
+
+function resetSmartCrossfade(reason, options) {
+  options = options || {};
+  var activeContext = smartTransitionActiveTransitionContext;
+  var shouldRestoreOutgoing = !!(
+    activeContext
+    && reason !== 'manual-pause'
+    && reason !== 'manual-seek'
+    && reason !== 'track-switch'
+    && reason !== 'smart-transition-handoff'
+    && activeContext.outgoingToken === trackSwitchToken
+    && activeContext.outgoingIndex === currentIdx
+    && activeContext.outgoingMedia === audio
+    && audio
+    && !audio.paused
+    && !audio.ended
+  );
+  smartTransitionGeneration++;
+  clearSmartCrossfadeTimer();
+  clearSmartTransitionTimelineTimers();
+  smartTransitionPending = null;
+  if (!options.preserveExecution) smartCrossfadeExecuting = false;
+  if (!options.preservePreparedAudio) stopSmartTransitionPreparedAudio();
+  if (shouldRestoreOutgoing && typeof rampAudioOutputGain === 'function') rampAudioOutputGain(targetVolume, 120);
+  if (!options.preserveExecution) smartTransitionActiveTransitionContext = null;
+  if (!options.preserveExecution) hideSmartTransitionVisual();
+  updateSmartTransitionStyleControls();
+}
+
+function smartCrossfadePostSwitchDelay(isSmartTransitionHandoff) {
+  return isSmartTransitionHandoff ? SMART_CROSSFADE_HANDOFF_SETTLE_MS : SMART_CROSSFADE_NORMAL_START_SETTLE_MS;
+}
+
+function smartCrossfadeVisualTransitionBusy() {
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) return true;
+  if (typeof colorMixTween !== 'undefined' && colorMixTween) return true;
+  if (typeof coverDepthTween !== 'undefined' && coverDepthTween) return true;
+  if (typeof loadingTween !== 'undefined' && loadingTween) return true;
+  return false;
+}
+
+function smartCrossfadeBlockedByAlbumGapless(index) {
+  return typeof albumGaplessQueueCanAdvance === 'function' && albumGaplessQueueCanAdvance(index);
+}
+
+function transitionPendingEnabled(pending) {
+  return !!(pending && pending.mode === 'smart-transition' && isSmartTransitionEnabled());
+}
+
+function scheduleSmartCrossfadePrepare(token, index, delay, attempt) {
+  clearSmartCrossfadeTimer();
+  var smartEnabled = isSmartTransitionEnabled();
+  if (!smartEnabled || !audio || audio.paused || !playQueue || playQueue.length < 2) return false;
+  var currentIndex = isFinite(Number(index)) ? Math.round(Number(index)) : currentIdx;
+  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return false;
+  var nextIndex = smartCrossfadeNextIndex(currentIndex);
+  if (nextIndex < 0 || nextIndex === currentIndex) return false;
+  smartCrossfadePrepareTimer = setTimeout(function () {
+    smartCrossfadePrepareTimer = 0;
+    runSmartCrossfadePrepare(token, currentIndex, nextIndex, attempt || 0);
+  }, Math.max(260, Number(delay) || 1200));
+  return true;
+}
+
+async function runSmartCrossfadePrepare(token, currentIndex, nextIndex, attempt) {
+  var smartEnabled = isSmartTransitionEnabled();
+  if (!smartEnabled || token !== trackSwitchToken || currentIndex !== currentIdx) return;
+  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return;
+  if (smartCrossfadeVisualTransitionBusy()) {
+    scheduleSmartCrossfadePrepare(token, currentIndex, 900, attempt || 0);
+    return;
+  }
+  await prepareSmartTransitionFallback(token, currentIndex);
+}
+
+async function prepareSmartTransitionFallback(token, currentIndex) {
+  if (!isSmartTransitionEnabled() || token !== trackSwitchToken || currentIndex !== currentIdx || smartCrossfadeExecuting) return false;
+  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return false;
+  var nextIndex = typeof pickNextQueueIndex === 'function' ? pickNextQueueIndex(currentIndex) : smartCrossfadeNextIndex(currentIndex);
+  if (nextIndex < 0 || nextIndex === currentIndex) return false;
+  var currentSong = playQueue[currentIndex];
+  var nextSong = playQueue[nextIndex];
+  if (!currentSong || !nextSong) return false;
+  var descriptor = await smartCrossfadeAudioDescriptor(nextSong);
+  if (!descriptor || !descriptor.proxyUrl || token !== trackSwitchToken || currentIndex !== currentIdx) return false;
+  var duration = Number(audio && audio.duration) || (typeof getPlaybackDurationSeconds === 'function' ? Number(getPlaybackDurationSeconds()) : 0);
+  if (!isFinite(duration) || duration <= 12) return false;
+  var leadSec = Math.min(7.6, Math.max(4.2, duration * 0.045));
+  var triggerAt = Math.max(Number(audio.currentTime) || 0, duration - leadSec);
+  var fadeMs = Math.max(1200, Math.round((duration - triggerAt - 0.12) * 1000));
+  smartTransitionPending = {
+    mode: 'smart-transition',
+    token: token,
+    currentIndex: currentIndex,
+    nextIndex: nextIndex,
+    fromKey: smartTransitionSongKey(currentSong),
+    toKey: smartTransitionSongKey(nextSong),
+    audioUrl: descriptor,
+    executionMode: 'simple-crossfade',
+    mixType: 'crossfade',
+    fadeSec: fadeMs / 1000,
+    fadeStartA: triggerAt,
+    bFadeStart: 0,
+    entryTime: 0,
+    exitTime: duration,
+    triggerAt: triggerAt,
+    timeline: [
+      { t: -fadeMs / 1000, deck: 'B', op: 'play', at: 0, volume: 0 },
+      { t: -fadeMs / 1000, deck: 'AB', op: 'crossfade', duration: fadeMs },
+      { t: -0.12, deck: 'B', op: 'handoff' }
+    ],
+    createdAt: Date.now()
+  };
+  prepareSmartTransitionPendingAudio(smartTransitionPending);
+  updateSmartTransitionStyleControls('ready');
+  return true;
+}
+
+function smartTransitionPendingDescriptor(pending) {
+  var source = pending && pending.audioUrl;
+  if (!source) return null;
+  return typeof source === 'string' ? { proxyUrl: source, playbackData: { url: source } } : source;
+}
+
+function smartTransitionTimelineExecution(pending) {
+  var descriptor = smartTransitionPendingDescriptor(pending);
+  if (!pending || !descriptor) return null;
+  return {
+    bStart: Math.max(0, Number(pending.entryTime) || 0),
+    fadeDurationMs: Math.max(360, Number(pending.fadeSec) * 1000 || 1400),
+    fadeStartDelayMs: 0
+  };
+}
+
+function smartTransitionSetMediaTime(media, seconds) {
+  if (!media) return;
+  function setTime() {
+    try { media.currentTime = Math.max(0, Number(seconds) || 0); } catch (_) { }
+  }
+  if (media.readyState >= 1) setTime();
+  else media.addEventListener('loadedmetadata', setTime, { once: true });
+}
+
+function smartTransitionCreatePreparedAudioGraph(media) {
+  if (!media || media.__mineradioPreparedAudioGraph) return media && media.__mineradioPreparedAudioGraph || null;
+  var graph = null;
+  try {
+    if ((!audioCtx || audioCtx.state === 'closed') && typeof initAudio === 'function') initAudio();
+    if (!audioCtx || audioCtx.state === 'closed' || !audioCtx.createMediaElementSource) return null;
+    graph = { context: audioCtx, source: null, analyser: null, beatAnalyser: null, gainNode: null, adopted: false };
+    graph.source = audioCtx.createMediaElementSource(media);
+    // A media element cannot be safely returned to direct-output mode after a
+    // MediaElementSource has been created for it. Mark it immediately so a
+    // later graph-construction failure can discard this element completely.
+    media.__mineradioMediaSourceBound = true;
+    graph.analyser = audioCtx.createAnalyser();
+    graph.beatAnalyser = audioCtx.createAnalyser();
+    graph.gainNode = audioCtx.createGain();
+    graph.analyser.fftSize = typeof FFT_SIZE !== 'undefined' ? FFT_SIZE : 2048;
+    graph.analyser.smoothingTimeConstant = 0.58;
+    graph.beatAnalyser.fftSize = typeof BEAT_FFT_SIZE !== 'undefined' ? BEAT_FFT_SIZE : 1024;
+    graph.beatAnalyser.smoothingTimeConstant = 0.10;
+    graph.gainNode.gain.value = 0;
+    graph.source.connect(graph.analyser);
+    graph.source.connect(graph.beatAnalyser);
+    graph.analyser.connect(graph.gainNode);
+    graph.gainNode.connect(audioCtx.destination);
+    media.__mineradioPreparedAudioGraph = graph;
+    return graph;
+  } catch (error) {
+    if (graph) {
+      [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].forEach(function (node) {
+        try { if (node) node.disconnect(); } catch (_) { }
+      });
+    }
+    if (media && media.__mineradioMediaSourceBound) media.__mineradioPreparedGraphFailed = true;
+    try { delete media.__mineradioPreparedAudioGraph; } catch (_) { }
+    console.warn('[SmartCrossfade] prepared audio graph fallback:', error && error.message || error);
+    return null;
+  }
+}
+
+function smartTransitionWriteIncomingGain(media, value) {
+  value = Math.max(0, Math.min(1, Number(value) || 0));
+  var graph = media && media.__mineradioPreparedAudioGraph;
+  if (graph && graph.gainNode) {
+    try { graph.gainNode.gain.value = value; } catch (_) { }
+    try { media.volume = 1; media.muted = false; } catch (_) { }
+    return value;
+  }
+  try { media.volume = value; media.muted = false; } catch (_) { }
+  return value;
+}
+
+function prepareSmartTransitionPendingAudio(pending) {
+  var descriptor = smartTransitionPendingDescriptor(pending);
+  if (!descriptor || !descriptor.proxyUrl) return null;
+  if (pending.preparedAudio && pending.preparedAudio.src) return pending.preparedAudio;
+  stopSmartTransitionPreparedAudio();
+  var execution = smartTransitionTimelineExecution(pending);
+  var media = new Audio();
+  media.crossOrigin = 'anonymous';
+  media.preload = 'auto';
+  media.volume = 1;
+  media.muted = false;
+  var directLocalDeck = !!(descriptor.local || (descriptor.playbackData && descriptor.playbackData.local));
+  if (!directLocalDeck) smartTransitionCreatePreparedAudioGraph(media);
+  if (!directLocalDeck && media.__mineradioPreparedGraphFailed) {
+    try { media.pause(); media.removeAttribute('src'); media.load(); } catch (_) { }
+    // The first element is permanently tied to a failed WebAudio source.
+    // Recreate a clean element for the direct-volume fallback instead of
+    // risking a silent B deck.
+    media = new Audio();
+    media.crossOrigin = 'anonymous';
+    media.preload = 'auto';
+    media.volume = 1;
+    media.muted = false;
+  }
+  if (directLocalDeck) media.__mineradioSmartTransitionDirectVolume = true;
+  smartTransitionWriteIncomingGain(media, 0);
+  media.src = descriptor.proxyUrl;
+  smartTransitionSetMediaTime(media, execution && execution.bStart);
+  try { media.load(); } catch (_) { }
+  pending.preparedAudio = media;
+  pending.timelineExecution = execution;
+  smartCrossfadePreparedAudio = media;
+  return media;
+}
+
+function smartTransitionDelay(delayMs, generation) {
+  return new Promise(function (resolve) {
+    var waiter = {
+      timer: 0,
+      resolve: function (ok) {
+        var index = smartTransitionDelayWaiters.indexOf(waiter);
+        if (index >= 0) smartTransitionDelayWaiters.splice(index, 1);
+        resolve(!!ok);
+      }
+    };
+    waiter.timer = setTimeout(function () {
+      waiter.resolve(generation === smartTransitionGeneration);
+    }, Math.max(0, Number(delayMs) || 0));
+    smartTransitionDelayWaiters.push(waiter);
+  });
+}
+
+function smartTransitionTransitionStillCurrent(pending, context) {
+  if (!pending || !context || !transitionPendingEnabled(pending)) return false;
+  if (context.generation !== smartTransitionGeneration) return false;
+  if (pending.token !== trackSwitchToken || pending.currentIndex !== currentIdx) return false;
+  if (!context.outgoingMedia || audio !== context.outgoingMedia) return false;
+  if (context.outgoingMedia.paused && !context.outgoingMedia.ended) return false;
+  if (pending.fromKey && smartTransitionSongKey(playQueue[pending.currentIndex]) !== pending.fromKey) return false;
+  if (pending.toKey && smartTransitionSongKey(playQueue[pending.nextIndex]) !== pending.toKey) return false;
+  return true;
+}
+
+function smartTransitionRunEqualPowerCrossfade(pending, nextMedia, durationMs, context) {
+  cancelSmartTransitionMediaFade();
+  var serial = smartTransitionMediaFadeSerial;
+  var initialTarget = Math.max(0.0001, Number(targetVolume) || 0);
+  var outgoingRatio = Math.max(0, Math.min(1, (typeof currentAudioOutputGain === 'function' ? currentAudioOutputGain() : initialTarget) / initialTarget));
+  var fadeStartA = isFinite(Number(pending && pending.fadeStartA))
+    ? Number(pending.fadeStartA)
+    : Number(context.outgoingMedia && context.outgoingMedia.currentTime) || 0;
+  var headroomDepth = pending && pending.mixType === 'beatmix' ? 0.16 : 0.10;
+  var fadeWatchdogAt = Date.now() + durationMs + 1800;
+  durationMs = Math.max(1, Number(durationMs) || 1);
+  return new Promise(function (resolve) {
+    var settled = false;
+    smartTransitionPairFadeResolve = resolve;
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      if (smartTransitionPairFadeResolve === resolve) smartTransitionPairFadeResolve = null;
+      if (smartTransitionMediaFadeRaf) cancelAnimationFrame(smartTransitionMediaFadeRaf);
+      if (smartTransitionMediaFadeTimer) clearInterval(smartTransitionMediaFadeTimer);
+      smartTransitionMediaFadeRaf = 0;
+      smartTransitionMediaFadeTimer = 0;
+      resolve(!!ok);
+    }
+    function applyStep() {
+      if (settled) return;
+      if (serial !== smartTransitionMediaFadeSerial || !smartTransitionTransitionStillCurrent(pending, context)) {
+        finish(false);
+        return;
+      }
+      if (Date.now() >= fadeWatchdogAt) {
+        finish(false);
+        return;
+      }
+      var mediaNow = Number(context.outgoingMedia && context.outgoingMedia.currentTime);
+      var t = Math.max(0, Math.min(1, ((isFinite(mediaNow) ? mediaNow : fadeStartA) - fadeStartA) / (durationMs / 1000)));
+      if (context.outgoingMedia && (context.outgoingMedia.ended || (isFinite(context.outgoingMedia.duration) && context.outgoingMedia.duration - mediaNow <= 0.025))) t = 1;
+      var eased = t * t * (3 - 2 * t);
+      var theta = eased * Math.PI * 0.5;
+      var liveTarget = Math.max(0, Math.min(1, Number(targetVolume) || 0));
+      var overlapHeadroom = 1 - Math.sin(Math.PI * eased) * headroomDepth;
+      var outgoing = liveTarget * outgoingRatio * Math.cos(theta) * overlapHeadroom;
+      var incoming = liveTarget * Math.sin(theta) * overlapHeadroom;
+      if (typeof writeAudioOutputGain === 'function') writeAudioOutputGain(outgoing);
+      smartTransitionWriteIncomingGain(nextMedia, incoming);
+      if (t >= 1) {
+        if (typeof writeAudioOutputGain === 'function') writeAudioOutputGain(0);
+        smartTransitionWriteIncomingGain(nextMedia, liveTarget);
+        finish(true);
+      }
+    }
+    function tick() {
+      applyStep();
+      if (!settled) smartTransitionMediaFadeRaf = requestAnimationFrame(tick);
+    }
+    smartTransitionMediaFadeTimer = setInterval(function () {
+      applyStep();
+    }, 40);
+    smartTransitionMediaFadeRaf = requestAnimationFrame(tick);
+  });
+}
+
+async function smartTransitionWaitForMediaTime(media, targetTime, pending, context) {
+  targetTime = Math.max(0, Number(targetTime) || 0);
+  var watchdogAt = Date.now() + 7000;
+  while (media && Number(media.currentTime) + 0.012 < targetTime) {
+    if (!smartTransitionTransitionStillCurrent(pending, context) || Date.now() >= watchdogAt) return false;
+    if (!await smartTransitionDelay(24, context.generation)) return false;
+  }
+  return smartTransitionTransitionStillCurrent(pending, context);
+}
+
+async function runSmartTransitionTimeline(pending, nextMedia, context) {
+  var execution = pending.timelineExecution || smartTransitionTimelineExecution(pending);
+  if (!execution) return false;
+  pending.timelineExecution = execution;
+  clearSmartTransitionTimelineTimers();
+  var fadeMs = Math.max(360, Number(execution.fadeDurationMs) || Number(pending.fadeSec) * 1000 || 1400);
+  var fadeStartA = isFinite(Number(pending.fadeStartA))
+    ? Number(pending.fadeStartA)
+    : Math.max(0, Number(pending.triggerAt) + Math.max(0, Number(execution.fadeStartDelayMs) || 0) / 1000);
+  pending.fadeStartA = fadeStartA;
+  pending.executionFallback = nextMedia.__mineradioPreparedAudioGraph ? 'shared-context-gain' : 'direct-volume-fallback';
+  if (!await smartTransitionWaitForMediaTime(context.outgoingMedia, fadeStartA, pending, context)) return false;
+  if (!smartTransitionTransitionStillCurrent(pending, context)) return false;
+  if (nextMedia.readyState < 2) return false;
+  var bFadeStart = isFinite(Number(pending.bFadeStart)) ? Math.max(0, Number(pending.bFadeStart)) : Math.max(0, Number(execution.bStart) || 0);
+  if (Math.abs((Number(nextMedia.currentTime) || 0) - bFadeStart) > 0.04) smartTransitionSetMediaTime(nextMedia, bFadeStart);
+  var completed = await smartTransitionRunEqualPowerCrossfade(pending, nextMedia, fadeMs, context);
+  if (!completed || !smartTransitionTransitionStillCurrent(pending, context)) return false;
+  return smartTransitionTransitionStillCurrent(pending, context);
+}
+
+function tickSmartCrossfade() {
+  if (smartCrossfadeExecuting || !audio) return;
+  if (
+    smartTransitionPending
+    && transitionPendingEnabled(smartTransitionPending)
+    && smartTransitionPending.token === trackSwitchToken
+    && smartTransitionPending.currentIndex === currentIdx
+    && Number(audio.currentTime) >= Number(smartTransitionPending.triggerAt)
+  ) {
+    var pending = smartTransitionPending;
+    smartTransitionPending = null;
+    executeSmartCrossfade(pending);
+  }
+}
+
+function noteSmartCrossfadeOutgoingEnded(media, token, index) {
+  if (!media) return false;
+  media.__mineradioSmartTransitionEndedDeferredToken = Number(token);
+  media.__mineradioSmartTransitionEndedDeferredIndex = Number(index);
+  return true;
+}
+
+function recoverSmartCrossfadeEndedOutgoing(pending, context, reason) {
+  var outgoing = context && context.outgoingMedia;
+  var token = Number(context && context.outgoingToken);
+  var index = Number(context && context.outgoingIndex);
+  if (
+    !outgoing
+    || !outgoing.ended
+    || !isFinite(token)
+    || !isFinite(index)
+    || trackSwitchToken !== token
+    || currentIdx !== index
+    || audio !== outgoing
+  ) return false;
+  if (outgoing.__mineradioSmartTransitionEndedRecoveryToken === token) return true;
+  outgoing.__mineradioSmartTransitionEndedRecoveryToken = token;
+  smartCrossfadeExecuting = false;
+  if (smartTransitionActiveTransitionContext === context) smartTransitionActiveTransitionContext = null;
+  if (typeof finalizeListenSession === 'function') finalizeListenSession(true);
+  updateSmartTransitionStyleControls();
+  setTimeout(function () {
+    if (trackSwitchToken !== token || currentIdx !== index || audio !== outgoing) return;
+    if (playMode === 'single') {
+      playQueueAt(index, { autoRepeat: true, suppressPlayFailureNotice: true });
+    } else if (typeof nextTrack === 'function') {
+      nextTrack(false);
+    } else if (pending && isFinite(Number(pending.nextIndex))) {
+      playQueueAt(Number(pending.nextIndex), { skipShuffleOrder: true, suppressPlayFailureNotice: true, preserveHomeState: true });
+    }
+  }, 0);
+  return true;
+}
+
+function smartTransitionPromiseWithTimeout(promise, timeoutMs, code) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      reject(new Error(code || 'MEDIA_PLAY_TIMEOUT'));
+    }, Math.max(400, Number(timeoutMs) || 3600));
+    Promise.resolve(promise).then(function (value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, function (error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function waitForSmartTransitionPlaybackProgress(pending, media, context, startTime, timeoutMs) {
+  return new Promise(function (resolve) {
+    var settled = false;
+    var timer = 0;
+    var poll = 0;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.removeEventListener(name, check); });
+    }
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(!!ok);
+    }
+    function check(event) {
+      if (!smartTransitionTransitionStillCurrent(pending, context) || media.error || media.ended || (event && /^(error|ended|abort)$/.test(event.type))) return finish(false);
+      if (!media.paused && isFinite(Number(media.currentTime)) && Number(media.currentTime) >= startTime + 0.05) finish(true);
+    }
+    ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.addEventListener(name, check); });
+    poll = setInterval(check, 80);
+    timer = setTimeout(function () { finish(false); }, Math.max(500, Number(timeoutMs) || 1600));
+    check();
+  });
+}
+
+function waitForAdoptedSmartTransitionPlaybackProgress(media, expectedToken, expectedIndex, startTime, timeoutMs) {
+  return new Promise(function (resolve) {
+    var settled = false;
+    var timer = 0;
+    var poll = 0;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.removeEventListener(name, check); });
+    }
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(!!ok);
+    }
+    function check(event) {
+      if (
+        audio !== media
+        || trackSwitchToken !== expectedToken
+        || currentIdx !== expectedIndex
+        || media.error
+        || media.ended
+        || media.paused
+        || (event && /^(error|ended|abort)$/.test(event.type))
+      ) return finish(false);
+      if (isFinite(Number(media.currentTime)) && Number(media.currentTime) >= startTime + 0.08) finish(true);
+    }
+    ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.addEventListener(name, check); });
+    poll = setInterval(check, 80);
+    timer = setTimeout(function () { finish(false); }, Math.max(650, Number(timeoutMs) || 1800));
+    check();
+  });
+}
+
+async function executeSmartCrossfade(pending) {
+  if (!pending || !transitionPendingEnabled(pending) || smartCrossfadeExecuting || pending.token !== trackSwitchToken || pending.currentIndex !== currentIdx) return;
+  var isSmartTransition = pending.mode === 'smart-transition';
+  if (smartCrossfadeBlockedByAlbumGapless(pending.currentIndex)) {
+    stopSmartTransitionPreparedAudio(pending.preparedAudio);
+    updateSmartTransitionStyleControls();
+    return;
+  }
+  if (pending.fromKey && smartTransitionSongKey(playQueue[pending.currentIndex]) !== pending.fromKey) return;
+  if (pending.toKey && smartTransitionSongKey(playQueue[pending.nextIndex]) !== pending.toKey) return;
+  var transitionContext = {
+    generation: ++smartTransitionGeneration,
+    outgoingMedia: audio,
+    outgoingToken: trackSwitchToken,
+    outgoingIndex: currentIdx
+  };
+  smartCrossfadeExecuting = true;
+  if (isSmartTransition) {
+    updateSmartTransitionStyleControls('handoff');
+    var activeRunStyle = showSmartTransitionVisual(Number(pending.fadeSec) * 1000);
+    startSmartCoverTransition(playQueue[pending.nextIndex], Number(pending.fadeSec) * 1000, activeRunStyle);
+  }
+  var nextMedia = prepareSmartTransitionPendingAudio(pending);
+  if (!nextMedia) {
+    smartCrossfadeExecuting = false;
+    if (isSmartTransition) resetSmartCoverTransition();
+    if (isSmartTransition) updateSmartTransitionStyleControls();
+    recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'missing-audio');
+    return;
+  }
+  smartTransitionActiveTransitionContext = transitionContext;
+  try {
+    smartTransitionSetMediaTime(nextMedia, pending.timelineExecution && pending.timelineExecution.bStart);
+    smartTransitionWriteIncomingGain(nextMedia, 0);
+    if (typeof applyAudioOutputDevice === 'function') await applyAudioOutputDevice(nextMedia);
+    if (!smartTransitionTransitionStillCurrent(pending, transitionContext)) {
+      smartCrossfadeExecuting = false;
+      if (isSmartTransition) resetSmartCoverTransition();
+      stopSmartTransitionPreparedAudio(nextMedia);
+      if (smartTransitionActiveTransitionContext === transitionContext) smartTransitionActiveTransitionContext = null;
+      recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'fallback');
+      return;
+    }
+    var nextMediaStartTime = Number(nextMedia.currentTime) || 0;
+    await smartTransitionPromiseWithTimeout(nextMedia.play(), 3600, 'SMART_TRANSITION_PLAY_TIMEOUT');
+    var progressed = await waitForSmartTransitionPlaybackProgress(pending, nextMedia, transitionContext, nextMediaStartTime, 1600);
+    if (!progressed) throw new Error('SMART_TRANSITION_CLOCK_STALLED');
+  } catch (_) {
+    smartCrossfadeExecuting = false;
+    if (isSmartTransition) resetSmartCoverTransition();
+    stopSmartTransitionPreparedAudio(nextMedia);
+    if (smartTransitionActiveTransitionContext === transitionContext) smartTransitionActiveTransitionContext = null;
+    if (isSmartTransition) updateSmartTransitionStyleControls();
+    recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'error');
+    showToast('智能过渡失败，已恢复普通切歌');
+    return;
+  }
+  var handoffReady = await runSmartTransitionTimeline(pending, nextMedia, transitionContext);
+  if (!handoffReady || !smartTransitionTransitionStillCurrent(pending, transitionContext)) {
+    smartCrossfadeExecuting = false;
+    if (isSmartTransition) resetSmartCoverTransition();
+    stopSmartTransitionPreparedAudio(nextMedia);
+    if (
+      transitionContext.generation === smartTransitionGeneration
+      && transitionContext.outgoingToken === trackSwitchToken
+      && transitionContext.outgoingIndex === currentIdx
+      && transitionContext.outgoingMedia === audio
+      && audio
+      && !audio.paused
+      && !audio.ended
+      && typeof rampAudioOutputGain === 'function'
+    ) rampAudioOutputGain(targetVolume, 120);
+    if (smartTransitionActiveTransitionContext === transitionContext) smartTransitionActiveTransitionContext = null;
+    recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'fallback');
+    return;
+  }
+  var descriptor = smartTransitionPendingDescriptor(pending);
+  var coverCommitted = isSmartTransition ? commitSmartCoverTextureForHandoff(playQueue[pending.nextIndex]) : false;
+  var handoffSucceeded = false;
+  async function runSmartTransitionNormalFallback() {
+    var expectedFailedToken = transitionContext.outgoingToken + 1;
+    if (
+      trackSwitchToken !== expectedFailedToken
+      || currentIdx !== pending.nextIndex
+      || (audio !== nextMedia && audio !== transitionContext.outgoingMedia)
+    ) return false;
+    var fallbackOwnerMedia = audio;
+    if (fallbackOwnerMedia === nextMedia) {
+      if (typeof replaceAudioElementForGraphRecovery === 'function') {
+        replaceAudioElementForGraphRecovery('smart-transition-handoff-fallback', { preservePlayback: false });
+      } else {
+        try {
+          nextMedia.pause();
+          nextMedia.removeAttribute('src');
+          nextMedia.load();
+        } catch (_) { }
+      }
+      if (transitionContext.outgoingMedia && transitionContext.outgoingMedia !== fallbackOwnerMedia) {
+        try {
+          transitionContext.outgoingMedia.pause();
+          transitionContext.outgoingMedia.removeAttribute('src');
+          transitionContext.outgoingMedia.load();
+        } catch (_) { }
+      }
+    } else {
+      stopSmartTransitionPreparedAudio(nextMedia);
+    }
+    var fallbackResult = await playQueueAt(pending.nextIndex, {
+      preserveHomeState: true,
+      skipShuffleOrder: true,
+      suppressPlayFailureNotice: true,
+      coverCommitted: coverCommitted
+    });
+    return !!(
+      fallbackResult === true
+      && currentIdx === pending.nextIndex
+      && audio
+      && audio.src
+      && !audio.paused
+      && !audio.ended
+    );
+  }
+  try {
+    var handoffResult = await playQueueAt(pending.nextIndex, {
+      preserveHomeState: true,
+      albumGaplessHandoff: true,
+      albumGaplessMixed: true,
+      preloadedAudio: nextMedia,
+      preloadedData: descriptor && descriptor.playbackData || { url: descriptor && descriptor.proxyUrl || '' },
+      preloadedProxyAudioUrl: descriptor && descriptor.proxyUrl || '',
+      smartTransitionHandoff: true,
+      smartTransition: isSmartTransition,
+      coverCommitted: coverCommitted,
+      fade: false
+    });
+    handoffSucceeded = !!(handoffResult === true && audio === nextMedia && currentIdx === pending.nextIndex && nextMedia.src && !nextMedia.paused && !nextMedia.ended);
+    if (handoffSucceeded) {
+      var adoptedToken = trackSwitchToken;
+      var adoptedStartTime = Number(nextMedia.currentTime) || 0;
+      var adoptedProgressed = await waitForAdoptedSmartTransitionPlaybackProgress(nextMedia, adoptedToken, pending.nextIndex, adoptedStartTime, 1800);
+      if (!adoptedProgressed) {
+        console.warn('[SmartCrossfade] adopted media clock stalled; falling back to a fresh player');
+        handoffSucceeded = await runSmartTransitionNormalFallback();
+      }
+    }
+    if (!handoffSucceeded) handoffSucceeded = await runSmartTransitionNormalFallback();
+  } catch (err) {
+    console.warn('[SmartCrossfade] handoff failed:', err);
+    try { handoffSucceeded = await runSmartTransitionNormalFallback(); } catch (_) { }
+  } finally {
+    if (!handoffSucceeded && audio !== nextMedia) stopSmartTransitionPreparedAudio(nextMedia);
+    smartCrossfadeExecuting = false;
+    if (smartTransitionActiveTransitionContext === transitionContext) smartTransitionActiveTransitionContext = null;
+    if (isSmartTransition) updateSmartTransitionStyleControls();
+    if (isSmartTransition) resetSmartCoverTransition();
+    if (!handoffSucceeded) recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'error');
+  }
+}
+
+smartTransitionStyle = readSmartTransitionPreference();
+updateSmartTransitionStyleControls();

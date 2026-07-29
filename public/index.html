@@ -24,6 +24,11 @@
         <div class="desktop-app-title" aria-hidden="true"></div>
       </div>
       <div class="desktop-window-controls">
+        <button id="dl-center-btn" class="icon-btn" type="button" onclick="toggleDownloadCenter()" title="下载中心"
+          aria-label="下载中心"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path
+              d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4"/><path d="m17 8-5 5-5-5"/><path
+              d="M12 4.5V13"/></svg><span id="dl-center-badge" class="dl-badge" hidden></span></button>
         <button id="visual-guide-btn" class="icon-btn" type="button" onclick="startVisualGuide({ manual: true })"
           title="查看使用引导" aria-label="查看使用引导">?</button>
         <button id="update-entry" class="update-entry" type="button" onclick="openUpdatePanel()" title="发现新版本"
@@ -170,7 +175,8 @@
             <div class="daily-review-quote">“让今天的声音，从你喜欢的地方开始。”</div>
             <div class="daily-review-source">— Mineradio</div>
             <div class="daily-review-actions">
-              <button type="button" onclick="homeDashboardNextReview()">换一条</button>
+              <button type="button" onclick="openHomeDashboardImagePicker()">更换图片</button>
+              <button type="button" onclick="openHomeDashboardEditor()">编辑内容</button>
               <button id="home-dashboard-video-choose" type="button" onclick="openHomeDashboardVideoPicker()">选择 MP4</button>
               <button id="home-dashboard-video-clear" type="button" onclick="clearHomeDashboardVideo()" hidden>移除视频</button>
               <button type="button" onclick="openHomePlayerConsole()">展开播放器控制台</button>
@@ -183,9 +189,9 @@
         <div class="home-grid home-quick-grid" aria-label="常用音乐入口">
           <button class="home-card home-card-featured" data-home-tone="search" type="button"
             onclick="resumeHomeDashboardPlayback()">
-            <div class="home-card-label">CONTINUE</div>
-            <div class="home-card-title">继续播放</div>
-            <div class="home-card-sub">从当前队列或最近播放继续</div>
+            <div class="home-card-label">CONTINUE LISTENING</div>
+            <div class="home-card-title">继续听</div>
+            <div class="home-card-sub">从最近一次有效聆听继续</div>
             <div class="home-card-art"></div>
           </button>
           <button class="home-card home-card-quick" data-home-tone="library" type="button"
@@ -203,10 +209,10 @@
             <div class="home-card-art"></div>
           </button>
           <button class="home-card home-card-quick" data-home-tone="playlist" type="button"
-            onclick="playHomeRecent()">
+            onclick="openHomeListenRanking('recent')">
             <div class="home-card-label">RECENT</div>
             <div class="home-card-title">最近播放</div>
-            <div class="home-card-sub">播放过的歌曲会出现在这里</div>
+            <div class="home-card-sub">查看本机最近的有效播放记录</div>
             <div class="home-card-art"></div>
           </button>
         </div>
@@ -236,7 +242,6 @@
                 <span id="home-next-title" class="home-next-title">队列里还没有歌曲</span>
                 <span id="home-next-sub" class="home-next-sub">点击打开音乐库</span>
               </span>
-              <span class="home-next-arrow" aria-hidden="true">›</span>
             </button>
 
             <section class="home-discovery-strip" aria-label="为你挑选">
@@ -248,16 +253,22 @@
               <div id="home-discovery-list" class="home-discovery-list" aria-live="polite"></div>
             </section>
 
-            <button class="home-insight-card home-ranking-entry" type="button" onclick="openHomeDashboardCharts()"
-              aria-label="打开音乐发现">
-              <span class="home-ranking-entry-copy">
-                <span class="home-insight-kicker">DISCOVER · 音乐发现</span>
-                <span class="home-ranking-entry-title">平台热歌与个人偏好</span>
-                <span class="home-ranking-entry-sub">打开平台推荐中心；没有可信推荐接口时会明确留空</span>
-              </span>
-              <span class="home-ranking-entry-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-              <span class="home-next-arrow" aria-hidden="true">›</span>
-            </button>
+            <div class="home-ranking-pair">
+              <button class="home-insight-card home-ranking-entry" type="button" onclick="openHomeDashboardCharts()"
+                aria-label="打开音乐发现">
+                <span class="home-ranking-entry-copy">
+                  <span class="home-insight-kicker">DISCOVER · 音乐发现</span>
+                  <span class="home-ranking-entry-title">平台热歌与个人偏好</span>
+                  <span class="home-ranking-entry-sub">打开平台推荐中心；没有可信推荐接口时会明确留空</span>
+                </span>
+              </button>
+              <button class="home-insight-card home-listen-ranking-entry" type="button"
+                onclick="openHomeListenRanking()" aria-label="打开听歌排行">
+                <span class="home-insight-kicker">RANKING</span>
+                <span class="home-listen-ranking-title">听歌排行</span>
+                <span class="home-listen-ranking-sub">网易云 · 酷狗 · QQ · 本地</span>
+              </button>
+            </div>
 
             <button class="home-insight-card home-ranking-entry home-radio-entry" type="button"
               onclick="openHomeDashboardRadio()" aria-label="打开平台推荐">
@@ -266,8 +277,6 @@
                 <span class="home-ranking-entry-title">推荐电台 / 歌单</span>
                 <span class="home-ranking-entry-sub">读取每日歌曲、推荐歌单与推荐 Feed，不用关键词搜索</span>
               </span>
-              <span class="home-radio-entry-art" aria-hidden="true"><i></i><i></i></span>
-              <span class="home-next-arrow" aria-hidden="true">›</span>
             </button>
 
             <button class="home-insight-card home-ranking-entry home-podcast-entry" type="button"
@@ -277,8 +286,6 @@
                 <span class="home-ranking-entry-title">热门播客与电台</span>
                 <span class="home-ranking-entry-sub">使用上游播客频道浏览与播放长内容</span>
               </span>
-              <span class="home-radio-entry-art" aria-hidden="true"><i></i><i></i></span>
-              <span class="home-next-arrow" aria-hidden="true">›</span>
             </button>
           </div>
 
@@ -317,6 +324,33 @@
         <div class="home-platform-recommend-actions">
           <button id="home-platform-recommend-refresh" type="button">刷新当前平台</button>
           <button id="home-platform-recommend-done" type="button">完成</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="home-listen-ranking-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+      aria-labelledby="home-listen-ranking-title">
+      <div class="modal home-listen-ranking-modal">
+        <div class="home-platform-recommend-head">
+          <div>
+            <h2 id="home-listen-ranking-title">听歌排行</h2>
+            <p id="home-listen-ranking-description">网易云显示账号周榜；酷狗、QQ 和本地显示本机有效听歌记录。</p>
+          </div>
+          <button id="home-listen-ranking-close" class="home-platform-recommend-close" type="button"
+            aria-label="关闭听歌排行">×</button>
+        </div>
+        <div id="home-listen-ranking-tabs" class="home-platform-recommend-tabs" role="tablist" aria-label="排行平台">
+          <button type="button" role="tab" data-listen-ranking-source="recent" aria-selected="false">最近</button>
+          <button type="button" role="tab" data-listen-ranking-source="netease" aria-selected="true">网易云</button>
+          <button type="button" role="tab" data-listen-ranking-source="kugou" aria-selected="false">酷狗</button>
+          <button type="button" role="tab" data-listen-ranking-source="qq" aria-selected="false">QQ</button>
+          <button type="button" role="tab" data-listen-ranking-source="local" aria-selected="false">本地</button>
+        </div>
+        <div id="home-listen-ranking-status" class="home-platform-recommend-status" role="status" aria-live="polite"></div>
+        <div id="home-listen-ranking-list" class="home-listen-ranking-list"></div>
+        <div class="home-platform-recommend-actions">
+          <button id="home-listen-ranking-refresh" type="button">刷新当前排行</button>
+          <button id="home-listen-ranking-done" type="button">完成</button>
         </div>
       </div>
     </div>
@@ -728,10 +762,27 @@
 
       <div class="fx-fold" id="fx-overlay-fold">
         <div class="fx-fold-head" onclick="document.getElementById('fx-overlay-fold').classList.toggle('open')">
-          <span class="fx-fold-title"><strong>叠加效果</strong><small>粒子 / 镜头 / 溢光</small></span><span
+          <span class="fx-fold-title"><strong>动效</strong><small>智能过渡 / 桌面联动 / 粒子</small></span><span
             class="arrow">▶</span>
         </div>
         <div class="fx-fold-body">
+          <div class="fx-section-label">桌面联动</div>
+          <div class="fx-toggle-grid desktop-link-grid" id="wallpaper-appearance-grid">
+            <div class="fx-toggle desktop-link-toggle" id="t-wallpaperEngineLink" onclick="toggleWallpaperEngineLink()"
+              title="启用或暂停当前 Wallpaper Engine 壁纸联动"><span>Wallpaper Engine 联动</span><span class="dot"></span></div>
+            <div class="fx-toggle desktop-link-toggle" id="t-desktopLock" onclick="toggleDesktopLock()"
+              title="把 Mineradio 锁定到 Windows 桌面层；Esc 可恢复普通窗口"><span>锁定到桌面</span><span class="dot"></span></div>
+          </div>
+          <div class="fx-section-label">智能过渡</div>
+          <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
+            <button type="button" data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')">镜面</button>
+            <button type="button" data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')">频谱</button>
+            <button type="button" data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')">方块</button>
+            <button type="button" data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')">右滑</button>
+            <button type="button" data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
+            <button type="button" data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
+          </div>
+          <div class="fx-section-label">叠加效果</div>
           <div class="fx-toggle-grid">
             <div class="fx-toggle" id="t-float" onclick="toggleFx('floatLayer')"><span>浮空粒子层</span><span
                 class="dot"></span></div>
@@ -763,20 +814,7 @@
               title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
             <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')"
               title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
-            <div class="fx-toggle" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')"
-              title="把当前完整 Mineradio 放到 Windows 桌面；右上控制器可显示、隐藏桌面图标，Esc 退出">
-              <span>完整桌面模式<em class="fx-dev-badge">试验</em></span><span class="dot"></span></div>
           </div>
-          <div class="fx-section-label">智能过渡</div>
-          <div class="fx-seg fx-smart-transition-seg" id="smart-transition-style-seg">
-            <button type="button" data-smart-transition-style="mirror" onclick="setSmartTransitionStyle('mirror')">镜面</button>
-            <button type="button" data-smart-transition-style="spectrum" onclick="setSmartTransitionStyle('spectrum')">频谱</button>
-            <button type="button" data-smart-transition-style="blocks" onclick="setSmartTransitionStyle('blocks')">方块</button>
-            <button type="button" data-smart-transition-style="wipe" onclick="setSmartTransitionStyle('wipe')">右滑</button>
-            <button type="button" data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
-            <button type="button" data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
-          </div>
-          <div class="fx-section-label">桌面 / 壁纸</div>
           <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72"
               max="1.55" step="0.01"><output></output></div>
           <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28"
@@ -810,6 +848,28 @@
           </div>
           <div class="fx-slider" hidden><label>壁纸透明度</label><input id="fx-wallpaperopacity" type="range" min="0.35"
               max="1" step="0.01"><output></output></div>
+        </div>
+      </div>
+
+      <div class="fx-fold open" id="fx-audio-fold">
+        <div class="fx-fold-head" onclick="document.getElementById('fx-audio-fold').classList.toggle('open')">
+          <span class="fx-fold-title"><strong>声音均衡器</strong><small>前级增益 / 六段均衡 / 多种预设</small></span><span class="arrow">▶</span>
+        </div>
+        <div class="fx-fold-body">
+          <div class="fx-toggle-grid">
+            <div class="fx-toggle" id="t-audioEq" onclick="toggleAudioEq()"><span>均衡器</span><span class="dot"></span></div>
+          </div>
+          <div class="fx-section-label">声音预设</div>
+          <div class="fx-seg audio-preset-seg" id="audio-preset-seg">
+            <button type="button" data-audio-preset="flat">原声</button>
+            <button type="button" data-audio-preset="bass">低音</button>
+            <button type="button" data-audio-preset="vocal">人声</button>
+            <button type="button" data-audio-preset="bright">明亮</button>
+            <button type="button" data-audio-preset="night">夜间</button>
+            <button type="button" data-audio-preset="cinema">电影</button>
+          </div>
+          <div class="fx-slider"><label>前级增益</label><input id="audio-preamp" type="range" min="-12" max="6" step="0.5"><output></output></div>
+          <div class="eq-grid" id="audio-eq-grid"></div>
         </div>
       </div>
 
@@ -1098,7 +1158,7 @@
           <button class="fx-mini-btn ghost" type="button" onclick="openLocalFolderImport()">添加文件夹</button>
         </div>
         <label class="local-library-search-wrap">
-          <span class="sr-only">搜索本地音乐</span>
+          <span class="local-library-search-title">搜索本地音乐</span>
           <input id="local-library-search" type="search" placeholder="搜索歌曲、歌手、专辑或路径" autocomplete="off">
         </label>
         <div id="local-library-list" class="local-library-list"></div>
@@ -1112,6 +1172,7 @@
         <div id="podcast-list"></div>
       </div>
     </div>
+    <div id="playlist-detail-panel" aria-live="polite"></div>
 
     <!-- 试听提醒 -->
     <div id="trial-banner">
@@ -1133,6 +1194,11 @@
     <!-- 节拍分析角标 -->
     <div id="beat-chip">
       <div class="mini-spin"></div><span id="beat-text">分析节奏…</span>
+    </div>
+
+    <!-- 本地文件夹歌词解析进度 -->
+    <div id="local-lyric-match-chip">
+      <div class="mini-spin"></div><span id="local-lyric-match-text">解析歌词中…</span>
     </div>
 
     <!-- 舞台歌词 (大字 3D, 由 JS 动态填充) -->
@@ -1251,17 +1317,24 @@
     </svg>
     <button id="bottom-handle" type="button" aria-label="展开播放器控制台" title="播放器控制台"><span></span></button>
     <div id="bottom-bar">
-      <div id="smart-transition-chip" class="smart-transition-chip" aria-live="polite">智能过渡</div>
       <div id="mini-queue-popover" class="mini-queue-popover" onclick="event.stopPropagation()">
         <div class="mini-queue-head">
           <div>
             <div class="mini-queue-title">当前队列</div>
             <div id="mini-queue-count" class="mini-queue-count">0 首</div>
           </div>
-          <button class="fx-mini-btn ghost" onclick="closeMiniQueue()" title="关闭"
-            style="height:26px;padding:0 9px;font-size:13px">×</button>
         </div>
         <div id="mini-queue-list" class="mini-queue-list"></div>
+      </div>
+      <div id="comment-panel" class="comment-panel" onclick="event.stopPropagation()">
+        <div class="comment-panel-head">
+          <div>
+            <div class="comment-panel-title">评论</div>
+            <div id="comment-panel-sub" class="comment-panel-sub">当前歌曲</div>
+          </div>
+        </div>
+        <div id="comment-panel-compose" class="comment-panel-compose"></div>
+        <div id="comment-panel-list" class="comment-panel-list"><div class="detail-empty">先播放一首歌</div></div>
       </div>
       <div id="progress-bar">
         <div id="progress-fill"></div>
@@ -1285,7 +1358,10 @@
                   </div>
                 </div>
               </div>
-              <div id="control-artist" class="control-artist" onclick="openTrackDetailModal('artist')" title="歌手详情">
+              <div class="control-artist-row">
+                <div id="control-artist" class="control-artist" onclick="openTrackDetailModal('artist')" title="歌手详情">
+                </div>
+                <div id="smart-transition-chip" class="smart-transition-chip" aria-live="polite" aria-hidden="true">智能过渡</div>
               </div>
             </div>
           </div>
@@ -1294,6 +1370,10 @@
               <path
                 d="M12 21.45c-.32 0-.62-.12-.86-.34l-1.23-1.12C5.54 16.03 2.25 13.05 2.25 8.9 2.25 5.48 4.88 2.9 8.28 2.9c1.7 0 3.35.72 4.52 1.96C13.97 3.62 15.62 2.9 17.32 2.9c3.4 0 6.03 2.58 6.03 6 0 4.15-3.29 7.13-7.66 11.09l-1.23 1.12c-.24.22-.54.34-.86.34z" />
             </svg></button>
+          <button id="comment-btn" class="ctrl-btn comment-btn" onclick="toggleCommentPanel(event)" title="评论">
+            <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
+            <span id="comment-count" class="comment-count">0</span>
+          </button>
           <button id="collect-btn" class="ctrl-btn" onclick="openCollectModalForCurrent()" title="收藏到歌单"><svg width="18"
               height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M12 5v14" />
@@ -1308,14 +1388,6 @@
               <path d="M7 22l-4-4 4-4" />
               <path d="M21 13v2a4 4 0 0 1-4 4H3" />
             </svg></button>
-          <button id="cuefield-automix-btn" class="ctrl-btn" onclick="toggleCuefieldAutoMix()"
-            title="Cuefield AutoMix（实验功能，默认关闭）" aria-pressed="false">
-            <svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h4l3 5 3-5h6" />
-              <path d="M4 17h4l3-5 3 5h6" />
-              <path d="M18 4v6M15 7h6" />
-            </svg>
-          </button>
           <button id="prev-btn" class="ctrl-btn" onclick="prevTrack(true)" title="上一首"><svg width="18" height="18"
               fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
@@ -1339,6 +1411,15 @@
             </svg></button>
         </div>
         <div class="control-cluster modes">
+          <div id="playback-tuning-control" class="playback-tuning-control">
+            <button id="playback-tuning-btn" class="ctrl-btn playback-tuning-pill" onclick="togglePlaybackTuningPanel(event)" title="倍速与音调"><span id="playback-tuning-btn-label">1.00×</span></button>
+            <div class="playback-tuning-popover" onclick="event.stopPropagation()">
+              <div class="playback-tuning-head"><strong>播放调节</strong><button class="playback-tuning-reset" type="button" onclick="resetPlaybackTuning()">重置</button></div>
+              <div class="playback-tuning-row"><label for="playback-speed-slider">倍速</label><output id="playback-speed-value">1.00×</output><input id="playback-speed-slider" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放倍速"></div>
+              <div class="playback-tuning-row pitch-tuning-row"><label for="playback-pitch-slider">音调</label><output id="playback-pitch-value">0 半音</output><input id="playback-pitch-slider" type="range" min="-12" max="12" step="1" value="0" aria-label="音调半音"></div>
+              <div class="playback-tuning-note">倍速保持原音高；音调可独立升降，不改变播放速度。</div>
+            </div>
+          </div>
           <div id="lyric-timing-control" class="lyric-timing-control">
             <button id="lyrics-toggle-btn" class="ctrl-btn lyrics-toggle-btn" onclick="toggleLyricsPanel()" title="歌词"><span
                 class="lyrics-word-icon">词</span></button>
@@ -1797,7 +1878,11 @@
             <div>
               <div class="update-kicker">MINERADIO</div>
               <div id="update-modal-title" class="update-title">New release</div>
-              <div id="update-modal-version" class="update-version">v2.0.2</div>
+              <div class="update-version-row">
+                <div id="update-modal-version" class="update-version">v2.0.2</div>
+                <a class="update-project-link" href="https://github.com/HackenLeung/Mineradio" target="_blank"
+                  rel="noopener noreferrer" title="https://github.com/HackenLeung/Mineradio">HackenLeung/Mineradio</a>
+              </div>
             </div>
           </div>
           <div class="update-hero">
@@ -1819,18 +1904,9 @@
     </div>
 
     <div id="toast"></div>
+    <div id="download-center" class="download-center-panel" aria-live="polite"></div>
     <div id="smart-transition-visual" aria-hidden="true">
       <span></span><span></span><span></span><span></span><span></span><span></span>
-    </div>
-    <div id="cuefield-feedback" aria-live="polite" aria-label="Cuefield AutoMix 反馈">
-      <div class="cuefield-feedback-kicker">CUEFIELD · LOCAL FEEDBACK</div>
-      <div class="cuefield-feedback-title">这次自动过渡顺滑吗？</div>
-      <div id="cuefield-feedback-meta" class="cuefield-feedback-meta"></div>
-      <div class="cuefield-feedback-actions">
-        <button type="button" onclick="submitCuefieldFeedback(1)">顺滑</button>
-        <button type="button" onclick="submitCuefieldFeedback(2)">生硬</button>
-        <button type="button" onclick="submitCuefieldFeedback(3)">不确定</button>
-      </div>
     </div>
     <div id="cookie-export-prompt" class="cookie-export-prompt" aria-live="polite">
       <div class="cookie-export-card">

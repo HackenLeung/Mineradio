@@ -28,7 +28,6 @@
       "desktop/**/*",
       "public/**/*",
       "build/**/*",
-      "cuefield/**/*",
       "server.js",
       "*-api.js",
       "qishui-audio-decryptor/**/*",
@@ -74,7 +73,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "XxHuberrr",
+        "owner": "HackenLeung",
         "repo": "Mineradio"
       }
     ]
@@ -82,7 +81,7 @@
   "mineradio": {
     "update": {
       "provider": "github",
-      "owner": "XxHuberrr",
+      "owner": "HackenLeung",
       "repo": "Mineradio",
       "preview": true,
       "preferMirrors": true,

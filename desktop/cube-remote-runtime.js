@@ -128,6 +128,15 @@ class CubeRemoteRuntime {
     };
   }
 
+  restore(payload = {}) {
+    const settings = this.getSettings();
+    this.state.skin = settings.skin;
+    this.state.enabled = settings.enabled;
+    if (!settings.enabled) return { ok: true, enabled: false, skin: settings.skin };
+    this.create({ ...this.state, ...payload, enabled: true, skin: settings.skin });
+    return { ok: true, enabled: true, skin: settings.skin };
+  }
+
   _mainWindowVisible() {
     const win = this.getMainWindow && this.getMainWindow();
     return !!(win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());

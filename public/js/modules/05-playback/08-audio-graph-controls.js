@@ -3,6 +3,7 @@ function audioGraphHealthy() {
   return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && audioSourceMedia === audio && analyser && beatAnalyser && (gainNode || analysisSinkNode));
 }
 function disconnectAudioGraphNodes(keepSource) {
+  if (typeof disposePlaybackEffectGraph === 'function') disposePlaybackEffectGraph();
   [source, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
     if (!node) return;
     try { node.disconnect(); } catch (e) { }
@@ -101,6 +102,7 @@ function resetPlaybackAudioGraphForSourceSwitch(reason) {
     audio.__mineradioMediaSourceBound = true;
     preparedGraph.adopted = true;
     audioReady = true;
+    if (typeof createPlaybackEffectGraph === 'function') createPlaybackEffectGraph();
   }
 }
 function initAudio() {
@@ -183,7 +185,8 @@ function initAudio() {
   source.connect(analyser);
   source.connect(beatAnalyser);
   if (gainNode) {
-    analyser.connect(gainNode);
+    var effectsConnected = typeof createPlaybackEffectGraph === 'function' && createPlaybackEffectGraph();
+    if (!effectsConnected) analyser.connect(gainNode);
     gainNode.connect(audioCtx.destination);
   } else if (analysisSinkNode) {
     analyser.connect(analysisSinkNode);
@@ -482,7 +485,7 @@ function isBackgroundAudioFadeConstrained() {
 function ensureAudiblePlaybackGain(reason) {
   if (!audio || audio.paused || audio.ended || !audio.src) return false;
   if (targetVolume <= 0.001) return false;
-  if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting) return false;
+  if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) return false;
   if (
     typeof albumGaplessState !== 'undefined'
     && albumGaplessState
@@ -555,6 +558,7 @@ function fadeOutAndPauseAudio() {
 
 function applyVolumeToAudio(opts) {
   opts = opts || {};
+  if (typeof configurePlaybackAudioElement === 'function') configurePlaybackAudioElement(audio);
   if (opts.restoreEnvelope && targetVolume > 0.001) audioFadeEnvelope = 1;
   writeAudioOutputGain(targetVolume * clampRange(audioFadeEnvelope, 0, 1));
 }

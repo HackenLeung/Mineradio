@@ -119,7 +119,7 @@ function switchPlaybackVisualToEmily() {
   if (typeof recoverVisualsAfterBackground === 'function' && !isDeepBackgroundMode()) recoverVisualsAfterBackground('playback-visual');
 }
 function applyStartupStarfieldPreset() {
-  if (playing || currentIdx >= 0 || hasRestoredPlaybackCandidate()) return;
+  if (playing || (audio && !audio.paused)) return;
   startupVisualPreviewActive = true;
   if (typeof setPreset === 'function' && fx.preset !== 5) {
     setPreset(5, { silent: true, preserveCamera: false, skipTransition: true, noSave: true });

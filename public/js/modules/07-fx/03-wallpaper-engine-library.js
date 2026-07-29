@@ -1603,6 +1603,11 @@ function activateWallpaperEngineItem(id) {
     showToast('该项目没有可安全导入的媒体');
     return;
   }
+  if (fx && fx.wallpaperEngineLink === true) {
+    fx.wallpaperEngineLink = false;
+    saveLyricLayout({ user: true, reason: 'wallpaperEngineLink' });
+    if (typeof updateCustomBackgroundControls === 'function') updateCustomBackgroundControls();
+  }
   wallpaperEngineSelection = normalizeWallpaperEngineSelection({
     active: true,
     id: item.id,
@@ -1621,7 +1626,77 @@ function activateWallpaperEngineItem(id) {
   saveWallpaperEngineSelection();
   wallpaperEngineRuntimeError = '';
   applyWallpaperEngineBackground(item, false);
+  updateLocalDesktopIntegrationControls();
   closeWallpaperEngineLibrary();
+}
+
+function updateLocalDesktopIntegrationControls() {
+  var link = document.getElementById('t-wallpaperEngineLink');
+  var lock = document.getElementById('t-desktopLock');
+  if (link) link.classList.toggle('on', !!(fx && fx.wallpaperEngineLink));
+  if (lock) {
+    lock.classList.toggle('on', !!(fx && fx.desktopLock));
+    lock.classList.toggle('runtime-pending', desktopLockPending === true);
+    lock.setAttribute('aria-busy', desktopLockPending === true ? 'true' : 'false');
+  }
+}
+
+function setWallpaperEngineLink(enabled, silent) {
+  fx.wallpaperEngineLink = enabled === true;
+  if (typeof updateCustomBackgroundControls === 'function') updateCustomBackgroundControls();
+  updateLocalDesktopIntegrationControls();
+  saveLyricLayout({ user: silent !== true, reason: 'wallpaperEngineLink' });
+  if (!silent) showToast(fx.wallpaperEngineLink ? 'Wallpaper Engine 联动已开启' : '已恢复 Mineradio 背景');
+  return fx.wallpaperEngineLink;
+}
+
+function toggleWallpaperEngineLink() {
+  return setWallpaperEngineLink(!(fx && fx.wallpaperEngineLink === true), false);
+}
+
+var desktopLockPending = false;
+
+function setDesktopLock(enabled, silent) {
+  var api = getDesktopWindowApi();
+  var desired = enabled === true;
+  if (!api || typeof api.setDesktopLocked !== 'function') {
+    if (!silent) showToast('仅 Mineradio 桌面版支持锁定到桌面');
+    return Promise.resolve(false);
+  }
+  if (desktopLockPending) return Promise.resolve(false);
+  desktopLockPending = true;
+  updateLocalDesktopIntegrationControls();
+  return Promise.resolve().then(function () {
+    return api.setDesktopLocked(desired);
+  }).then(function (result) {
+    result = result && typeof result === 'object' ? result : { ok: false };
+    if (result.status && typeof applyDesktopWallpaperRuntimeStatus === 'function') {
+      applyDesktopWallpaperRuntimeStatus(result.status);
+    }
+    var actual = typeof result.locked === 'boolean'
+      ? result.locked
+      : !!(result.status && result.status.enabled === true);
+    if (result.ok !== true || actual !== desired) {
+      fx.desktopLock = actual;
+      if (!silent) showToast(desired ? '锁定桌面失败，窗口状态未改变' : '恢复普通窗口失败，窗口仍保持锁定');
+      return false;
+    }
+    fx.desktopLock = desired;
+    saveLyricLayout({ user: silent !== true, reason: 'desktopLock' });
+    if (!silent) showToast(desired ? 'Mineradio 已锁定到桌面 · Esc 可恢复' : 'Mineradio 已恢复普通窗口');
+    return true;
+  }).catch(function (error) {
+    if (!silent) showToast('锁定桌面失败' + (error && error.message ? ': ' + error.message : ''));
+    return false;
+  }).then(function (ok) {
+    desktopLockPending = false;
+    updateLocalDesktopIntegrationControls();
+    return ok;
+  });
+}
+
+function toggleDesktopLock() {
+  return setDesktopLock(!(fx && fx.desktopLock === true), false);
 }
 
 function deactivateWallpaperEngineBackground(quiet) {
@@ -1634,6 +1709,7 @@ function deactivateWallpaperEngineBackground(quiet) {
     wallpaperEngineHostBoundsRestartTimer = 0;
   }
   saveWallpaperEngineSelection();
+  updateLocalDesktopIntegrationControls();
   wallpaperEngineRuntimeError = '';
   cancelWallpaperEngineSwitchTimer();
   cancelWallpaperEngineVideoRetry();
@@ -2313,6 +2389,7 @@ function initializeWallpaperEngineLibrary() {
   applyWallpaperEngineDim();
   bindWallpaperEngineLibraryEvents();
   updateWallpaperEngineEntryUi();
+  updateLocalDesktopIntegrationControls();
   if (!wallpaperEngineSelection.active) return;
   setTimeout(function () {
     loadWallpaperEngineLibrary(false, false).then(function () {

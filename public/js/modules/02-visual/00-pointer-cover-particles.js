@@ -13,7 +13,7 @@ var particlePointerLocalHit = new THREE.Vector3();
 var particlePointerQuat = new THREE.Quaternion();
 var particlePointerFrame = { dirty: false, ndcX: 0, ndcY: 0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
-var UI_HIT_SELECTOR = '#search-area,#upload-panel,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
+var UI_HIT_SELECTOR = '#search-area,#upload-panel,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#playlist-detail-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#local-lyric-match-chip,#drop-overlay';
 
 function isPointerOverUi(e) {
   if (!e) return false;
@@ -321,6 +321,14 @@ prevCoverTex.minFilter = THREE.LinearFilter; prevCoverTex.magFilter = THREE.Line
   var x = c.getContext('2d'); x.fillStyle = '#1c1c28'; x.fillRect(0, 0, 4, 4);
   prevCoverTex.image = c; prevCoverTex.needsUpdate = true;
 })();
+var smartCoverTex = new THREE.Texture();
+smartCoverTex.minFilter = THREE.LinearFilter; smartCoverTex.magFilter = THREE.LinearFilter;
+smartCoverTex.wrapS = THREE.ClampToEdgeWrapping; smartCoverTex.wrapT = THREE.ClampToEdgeWrapping;
+(function () {
+  var c = document.createElement('canvas'); c.width = c.height = 4;
+  var x = c.getContext('2d'); x.fillStyle = '#1c1c28'; x.fillRect(0, 0, 4, 4);
+  smartCoverTex.image = c; smartCoverTex.needsUpdate = true;
+})();
 
 var uniforms = {
   uTime: { value: 0 },
@@ -347,7 +355,10 @@ var uniforms = {
   uTintStrength: { value: 0 },
   uCoverTex: { value: coverTex },
   uPrevCoverTex: { value: prevCoverTex },
+  uSmartCoverTex: { value: smartCoverTex },
   uColorMixT: { value: 1.0 },        // 0=显示旧封面 → 1=显示新封面
+  uSmartCoverT: { value: 0 },
+  uSmartCoverMode: { value: 0 },
   uEdgeTex: { value: coverEdgeTex },
   uRippleTex: { value: rippleTex },
   uRippleCount: { value: 0 },
@@ -379,8 +390,8 @@ uniform float uPreset, uIntensity, uDepth, uPointScale, uSpeed, uTwist;
 uniform float uVinylSpin;
 uniform float uColorBoost, uScatter, uCoverRes, uBgFade;
 uniform float uHasCover, uHasDepth, uEdgeEnabled, uAiBoost;
-uniform float uMouseActive, uPixel, uColorMixT, uLoading;
-uniform sampler2D uCoverTex, uPrevCoverTex, uEdgeTex, uRippleTex;
+uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode;
+uniform sampler2D uCoverTex, uPrevCoverTex, uSmartCoverTex, uEdgeTex, uRippleTex;
 uniform int uRippleCount;
 uniform vec2 uMouseXY, uHandXY;
 uniform float uHandActive, uGestureGrip;
@@ -442,6 +453,61 @@ vec3 samplePrevCoverColor(vec2 uv) {
   return texture2D(uPrevCoverTex, safeCoverUv(uv)).rgb;
 }
 
+vec3 sampleSmartCoverColor(vec2 uv) {
+  return texture2D(uSmartCoverTex, safeCoverUv(uv)).rgb;
+}
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float smartCoverMask(vec2 uv) {
+  float p = clamp(uSmartCoverT, 0.0, 1.0);
+  if (p <= 0.001) return 0.0;
+  float mode = uSmartCoverMode;
+  if (mode < 0.5) {
+    float edge = 1.08 - p * 1.18;
+    return smoothstep(edge - 0.075, edge + 0.075, uv.x);
+  }
+  if (mode < 1.5) {
+    vec2 grid = vec2(11.0, 11.0);
+    vec2 cell = floor(uv * grid);
+    float rnd = hash21(cell);
+    float rightBias = (1.0 - uv.x) * 0.20;
+    return smoothstep(rnd + rightBias - 0.16, rnd + rightBias + 0.12, p);
+  }
+  if (mode < 5.5) {
+    float wave = 0.5 + 0.5 * sin(uv.x * 20.0 + uv.y * 9.0 + p * 9.0);
+    float band = smoothstep(0.22, 0.86, p + wave * 0.20 - abs(uv.y - 0.5) * 0.22);
+    return clamp(band, 0.0, 1.0);
+  }
+  float fold = abs(uv.x - 0.5);
+  float side = smoothstep(0.04, 0.48, p - fold * 0.62);
+  return clamp(side, 0.0, 1.0);
+}
+
+vec3 smartCoverMixColor(vec2 uv, vec3 baseColor) {
+  float mask = smartCoverMask(uv);
+  if (mask <= 0.001) return baseColor;
+  vec2 suv = uv;
+  if (uSmartCoverMode > 4.5 && uSmartCoverMode < 5.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    float wave = sin(uv.x * 24.0 + p * 8.0) * (1.0 - p) * 0.045;
+    suv = safeCoverUv(uv + vec2(0.0, wave));
+  } else if (uSmartCoverMode > 5.5) {
+    float p = clamp(uSmartCoverT, 0.0, 1.0);
+    float bend = (uv.x - 0.5) * (1.0 - p) * 0.10;
+    suv = safeCoverUv(uv + vec2(bend, 0.0));
+  }
+  vec3 nextColor = sampleSmartCoverColor(suv);
+  if (uSmartCoverMode > 5.5) {
+    float crease = 1.0 - smoothstep(0.0, 0.18, abs(uv.x - 0.5));
+    nextColor += vec3(0.12) * crease;
+    baseColor *= 1.0 - crease * 0.18;
+  }
+  return mix(baseColor, nextColor, mask);
+}
+
 vec4 sampleEdgeColor(vec2 uv) {
   return texture2D(uEdgeTex, safeCoverUv(uv));
 }
@@ -482,6 +548,7 @@ void main(){
   vec3 newCol = sampleNewCoverColor(sampleUv);
   vec3 prevCol = samplePrevCoverColor(sampleUv);
   vec3 coverColor = mix(prevCol, newCol, clamp(uColorMixT, 0.0, 1.0));
+  coverColor = smartCoverMixColor(sampleUv, coverColor);
   vec4 edge = sampleEdgeColor(sampleUv);
   float depthVal = edge.r;
   float edgeVal  = edge.g;
@@ -545,6 +612,7 @@ sampleUv = safeCoverUv(sampleUv);
 newCol = sampleNewCoverColor(sampleUv);
 prevCol = samplePrevCoverColor(sampleUv);
 coverColor = mix(prevCol, newCol, clamp(uColorMixT, 0.0, 1.0));
+coverColor = smartCoverMixColor(sampleUv, coverColor);
 vColor = mix(defaultColor, coverColor, uHasCover);
 
 float depthFade = smoothstep(-4.5, 4.5, zPos);
@@ -625,6 +693,7 @@ if (coverMask > 0.02) {
     vec3 softPrev = (samplePrevCoverColor(coverUv + sx) + samplePrevCoverColor(coverUv - sx) + samplePrevCoverColor(coverUv + sy) + samplePrevCoverColor(coverUv - sy)) * 0.25;
     coverColor = mix(coverColor, mix(softPrev, softNew, clamp(uColorMixT, 0.0, 1.0)), hiResGuard * 0.42);
   }
+  coverColor = smartCoverMixColor(coverUv, coverColor);
   vColor = mix(defaultColor, coverColor, uHasCover);
   float coverShade = 1.02 + 0.10 * (1.0 - smoothstep(0.0, coverR, d));
   vColor *= coverShade;
@@ -757,6 +826,37 @@ pos.xy *= mix(1.0, 0.66 + gripWave * 0.035, grip);
 pos.z += grip * (0.18 + uBass * 0.22 + gripWave * 0.10);
   }
 
+  if (uSmartCoverT > 0.001) {
+    float st = clamp(uSmartCoverT, 0.0, 1.0);
+    float sm = smartCoverMask(safeCoverUv(aUv));
+    float edgeBand = 1.0 - smoothstep(0.05, 0.28, abs(sm - 0.5));
+    if (uSmartCoverMode < 0.5) {
+      pos.x += edgeBand * 0.16;
+      pos.z += edgeBand * (0.22 + uBeat * 0.18);
+      maxRippleAmp = max(maxRippleAmp, edgeBand * 0.30);
+    } else if (uSmartCoverMode < 1.5) {
+      vec2 cell = floor(aUv * vec2(11.0, 11.0));
+      float rnd = hash21(cell);
+      float pop = sm * (1.0 - sm) * 4.0;
+      pos.z += pop * (0.38 + rnd * 0.42);
+      pos.xy += vec2(hash11(aRand * 17.0) - 0.5, hash11(aRand * 23.0) - 0.5) * pop * 0.08;
+      maxRippleAmp = max(maxRippleAmp, pop * 0.34);
+    } else if (uSmartCoverMode < 5.5) {
+      float wave = sin(aUv.x * 24.0 + st * 8.0);
+      float band = sm * (1.0 - sm) * 4.0;
+      pos.y += wave * (1.0 - st) * 0.42 * band;
+      pos.x += sin(aUv.y * 18.0 + st * 6.0) * 0.10 * band;
+      pos.z += band * 0.24;
+      maxRippleAmp = max(maxRippleAmp, band * 0.30);
+    } else {
+      float crease = 1.0 - smoothstep(0.0, 0.18, abs(aUv.x - 0.5));
+      float fold = sm * (1.0 - sm) * 4.0;
+      pos.x += (aUv.x - 0.5) * fold * 0.22;
+      pos.z += crease * (0.26 + fold * 0.18);
+      maxRippleAmp = max(maxRippleAmp, max(crease * 0.18, fold * 0.22));
+    }
+  }
+
   // ====================================================
   //  通用: 离散感 / 扭曲
   // ====================================================
@@ -879,7 +979,7 @@ var material = new THREE.ShaderMaterial({
 });
 
 var bloomVs = vs
-  .replace('uniform float uMouseActive, uPixel, uColorMixT, uLoading;', 'uniform float uMouseActive, uPixel, uColorMixT, uLoading, uBloomSize;')
+  .replace('uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode;', 'uniform float uMouseActive, uPixel, uColorMixT, uLoading, uSmartCoverT, uSmartCoverMode, uBloomSize;')
   .replace('gl_PointSize = sz * uPixel * uPointScale;', 'gl_PointSize = sz * uPixel * uPointScale * uBloomSize;');
 var bloomFs = `
 precision highp float;

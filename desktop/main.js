@@ -76,12 +76,13 @@ let memoryAutoState = {
   lastResult: null,
   lastError: '',
 };
-let closeBehavior = 'exit';
+let closeBehavior = 'tray';
 let appQuitting = false;
 let appQuitCleanupPromise = null;
 let appQuitCleanupComplete = false;
 let mainWindowCloseFlushArmed = false;
 let tray = null;
+let trayPlaybackState = { title: '未播放', artist: '', playing: false, volume: 1, cover: '', muted: false };
 let startupCompleted = false;
 let startupErrorReported = false;
 let localServerStartPromise = null;
@@ -119,6 +120,7 @@ const STARTUP_HTTP_TIMEOUT_MS = 8000;
 const STARTUP_NAVIGATION_TIMEOUT_MS = 15000;
 const STARTUP_SHOW_WATCHDOG_MS = 3500;
 const CACHE_SETTINGS_FILE = 'cache-settings.json';
+const DOWNLOAD_SETTINGS_FILE = 'download-settings.json';
 const LYRIC_CACHE_VERSION = 1;
 const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
 const LYRIC_CACHE_ENTRY_MAX_BYTES = 1024 * 1024;
@@ -856,11 +858,17 @@ function isTrustedWallpaperEngineIpc(event) {
 
 function broadcastDesktopWallpaperStatus(status) {
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
+  const runtimeStatus = status || fullDesktopModeRuntime.getStatus('broadcast');
   mainWindow.webContents.send('mineradio-wallpaper-runtime-state', {
-    ...(status || fullDesktopModeRuntime.getStatus('broadcast')),
+    ...runtimeStatus,
     recoveryTrayAvailable: !!tray,
     escapeShortcutRegistered: fullDesktopEscapeRegistered === true,
   });
+  mainWindow.webContents.send('mineradio-main-desktop-lock-state', {
+    locked: runtimeStatus.enabled === true,
+    source: String(runtimeStatus.reason || 'runtime'),
+  });
+  sendWindowState(mainWindow);
   if (tray) createOrUpdateTray();
 }
 
@@ -1875,6 +1883,7 @@ function getWindowState(win) {
     isMinimized: false,
     isVisible: false,
     isFocused: false,
+    isDesktopLocked: false,
     isDesktopEmbedded: false,
     isDesktopInteractive: false,
     isDesktopIconCoexisting: false,
@@ -1889,7 +1898,8 @@ function getWindowState(win) {
     isNativeFullScreen: win.isFullScreen(),
     isHtmlFullScreen: htmlFullscreenActive,
     isWindowFullScreen: windowFullscreenActive,
-    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive,
+    isDesktopLocked: desktopMode.enabled === true,
+    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive || desktopMode.enabled === true,
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
@@ -2135,16 +2145,39 @@ function createOrUpdateTray() {
     }
   }
   const desktopMode = fullDesktopModeRuntime.getStatus('tray-menu');
+  const songLabel = trayPlaybackState.title && trayPlaybackState.title !== '未播放'
+    ? `${trayPlaybackState.title}${trayPlaybackState.artist ? ' - ' + trayPlaybackState.artist : ''}`
+    : '未播放';
+  const volume = Math.max(0, Math.min(1, Number(trayPlaybackState.volume) || 0));
+  const sendTrayCommand = (command, payload = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mineradio-tray-command', { command, ...payload });
+    }
+  };
+  tray.setToolTip(songLabel === '未播放' ? APP_NAME : `${APP_NAME}\n${songLabel}`);
   const menu = Menu.buildFromTemplate([
-    { label: `显示 ${APP_NAME}`, click: () => focusMainWindow() },
+    { label: songLabel.length > 52 ? `${songLabel.slice(0, 49)}...` : songLabel, enabled: false },
+    { type: 'separator' },
+    { label: trayPlaybackState.playing ? '暂停' : '播放', click: () => sendTrayCommand('toggle-play') },
+    { label: '上一曲', click: () => sendTrayCommand('previous') },
+    { label: '下一曲', click: () => sendTrayCommand('next') },
     {
-      label: '退出完整桌面模式',
+      label: `音量 ${Math.round(volume * 100)}%`,
+      submenu: [
+        { label: '音量 +10%', click: () => sendTrayCommand('volume', { value: 0.1 }) },
+        { label: '音量 -10%', click: () => sendTrayCommand('volume', { value: -0.1 }) },
+        { label: trayPlaybackState.muted || volume <= 0.001 ? '恢复音量' : '静音', click: () => sendTrayCommand('mute') },
+      ],
+    },
+    {
+      label: '退出锁定模式',
       visible: desktopMode.enabled === true,
       click: () => disableFullDesktopMode('tray-exit-desktop-mode').catch((error) => {
         console.warn('[FullDesktopMode] tray exit failed:', error && error.message || error);
       }),
     },
     { type: 'separator' },
+    { label: `显示 ${APP_NAME}`, click: () => focusMainWindow() },
     {
       label: '退出',
       click: () => {
@@ -2336,6 +2369,36 @@ function getUpdateDownloadDir() {
   return cacheSettings && cacheSettings.updatesPath
     ? cacheSettings.updatesPath
     : path.join(app.getPath('userData'), 'updates');
+}
+
+function downloadSettingsPath() {
+  return path.join(STABLE_USER_DATA_PATH, DOWNLOAD_SETTINGS_FILE);
+}
+
+function defaultDownloadDir() {
+  return path.join(app.getPath('music'), 'Mineradio');
+}
+
+function readSavedDownloadDir() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(downloadSettingsPath(), 'utf8')) || {};
+    return String(raw.dir || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function saveDownloadDir(dir) {
+  try {
+    fs.mkdirSync(path.dirname(downloadSettingsPath()), { recursive: true });
+    fs.writeFileSync(downloadSettingsPath(), JSON.stringify({ dir: String(dir || '') }, null, 2), 'utf8');
+  } catch (error) {
+    console.warn('Download dir save failed:', error.message);
+  }
+}
+
+function currentDownloadDir() {
+  return process.env.MINERADIO_DOWNLOAD_DIR || readSavedDownloadDir() || defaultDownloadDir();
 }
 
 function cleanupLegacyElectronUpdaterCache() {
@@ -5515,6 +5578,24 @@ ipcMain.handle('desktop-window-set-close-behavior', (_event, behavior) => {
   return { ok: true, behavior: closeBehavior };
 });
 
+ipcMain.handle('mineradio-tray-playback-update', (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return { ok: false, error: 'UNTRUSTED_TRAY_PLAYBACK_UPDATE' };
+  }
+  const rawVolume = Number(payload.volume);
+  trayPlaybackState = {
+    title: String(payload.title || '未播放').trim() || '未播放',
+    artist: String(payload.artist || '').trim(),
+    playing: payload.playing === true,
+    volume: Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : trayPlaybackState.volume,
+    cover: String(payload.cover || '').trim(),
+    muted: payload.muted === true,
+  };
+  const desktopMode = fullDesktopModeRuntime.getStatus('tray-playback-update');
+  if (tray || closeBehavior === 'tray' || desktopMode.enabled === true) createOrUpdateTray();
+  return { ok: true };
+});
+
 ipcMain.handle('mineradio-hotkeys-configure-global', (_event, bindings) => {
   return configureMineradioGlobalHotkeys(bindings);
 });
@@ -5582,6 +5663,52 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
     return { ok: true, filePath, text };
   } catch (e) {
     return { ok: false, error: e.message || 'IMPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-download-open-dir', async () => {
+  try {
+    const dir = currentDownloadDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return error ? { ok: false, error } : { ok: true, dir };
+  } catch (error) {
+    return { ok: false, error: error.message || 'OPEN_DIR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-download-get-dir', () => ({
+  dir: currentDownloadDir(),
+  isDefault: !readSavedDownloadDir(),
+}));
+
+ipcMain.handle('mineradio-download-set-dir', async (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    const result = await dialog.showOpenDialog(owner, {
+      title: '选择下载文件夹',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: currentDownloadDir(),
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: false, canceled: true };
+    const dir = path.resolve(result.filePaths[0]);
+    fs.mkdirSync(dir, { recursive: true });
+    process.env.MINERADIO_DOWNLOAD_DIR = dir;
+    saveDownloadDir(dir);
+    return { ok: true, dir };
+  } catch (error) {
+    return { ok: false, error: error.message || 'SET_DIR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-download-reset-dir', async () => {
+  try {
+    const dir = defaultDownloadDir();
+    process.env.MINERADIO_DOWNLOAD_DIR = dir;
+    saveDownloadDir('');
+    return { ok: true, dir, isDefault: true };
+  } catch (error) {
+    return { ok: false, error: error.message || 'RESET_DIR_FAILED' };
   }
 });
 
@@ -5918,6 +6045,35 @@ ipcMain.handle('mineradio-wallpaper-set-enabled', async (event, enabled, payload
   }
 });
 
+ipcMain.handle('mineradio-main-desktop-lock', async (event, enabled) => {
+  try {
+    if (!isTrustedMainWindowIpc(event)) return { ok: false, locked: false, error: 'DESKTOP_LOCK_UNTRUSTED_SENDER' };
+    const desired = enabled === true;
+    const result = desired
+      ? await enableFullDesktopMode(mainWindow, {
+        interactive: false,
+        reason: 'local-desktop-lock',
+      })
+      : await closeWallpaperWindow('local-desktop-unlock');
+    const status = result && result.status && typeof result.status === 'object'
+      ? result.status
+      : fullDesktopModeRuntime.getStatus('local-desktop-lock-result');
+    return {
+      ...(result || {}),
+      locked: status.enabled === true,
+      status,
+    };
+  } catch (error) {
+    const status = fullDesktopModeRuntime.getStatus('local-desktop-lock-failed');
+    return {
+      ok: false,
+      locked: status.enabled === true,
+      error: error && error.message || 'DESKTOP_LOCK_FAILED',
+      status,
+    };
+  }
+});
+
 ipcMain.handle('mineradio-wallpaper-update', async (event) => {
   if (!isTrustedMainWindowIpc(event)) return { ok: false, enabled: false, error: 'WALLPAPER_UNTRUSTED_SENDER' };
   const status = {
@@ -5944,7 +6100,6 @@ function configureLocalServerEnvironment(port) {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
   process.env.MINERADIO_BEAT_CACHE_DIR = cacheSettings.beatmapsPath;
-  process.env.CUEFIELD_FEEDBACK_FILE = path.join(STABLE_USER_DATA_PATH, 'cuefield-feedback.jsonl');
   process.env.COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.qq-cookie');
   process.env.KUGOU_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.kugou-cookie');
@@ -5961,6 +6116,7 @@ function configureLocalServerEnvironment(port) {
     process.env.SPOTIFY_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.spotify-credentials.json');
   }
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  process.env.MINERADIO_DOWNLOAD_DIR = readSavedDownloadDir() || defaultDownloadDir();
 }
 
 const APP_OWNED_MIGRATION_FILES = [
@@ -5974,7 +6130,6 @@ const APP_OWNED_MIGRATION_FILES = [
   '.spotify-credentials.json',
   'current-fx-autosave.json',
   'desktop-behavior.json',
-  'cuefield-feedback.jsonl',
 ];
 
 function appOwnedMigrationFileValid(name, file) {
@@ -5989,11 +6144,6 @@ function appOwnedMigrationFileValid(name, file) {
     if (name === '.kugou-cookie') return kugouCookieHasLogin(text);
     if (name === '.qishui-cookie') return qishuiCookieHasLogin(text);
     if (name === '.qishui-token') return text.length >= 10;
-    if (name === 'cuefield-feedback.jsonl') {
-      return text.split(/\r?\n/).filter(Boolean).every(line => {
-        try { return !!JSON.parse(line); } catch (_) { return false; }
-      });
-    }
     if (/\.json$/i.test(name)) return !!JSON.parse(text);
     return true;
   } catch (_) {
@@ -6500,6 +6650,7 @@ async function createWindowOnce() {
   await ensureLocalServerStarted();
   await loadMainWindowWithRetry(win);
   if (win.isDestroyed()) throw new Error('Main BrowserWindow was destroyed after navigation');
+  cubeRemoteRuntime.restore();
   startupCompleted = true;
   showMainWindowSafely(win, 'navigation-complete');
   writeStartupState('ready', { readyAt: Date.now(), port: mainServerPort || Number(process.env.PORT) || 3000 });
@@ -6544,6 +6695,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    createOrUpdateTray();
     try {
       await wallpaperEngineLibrary.installProtocol(protocol);
     } catch (error) {

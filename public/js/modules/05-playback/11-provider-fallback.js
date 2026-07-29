@@ -543,7 +543,7 @@ function settleSourceFallbackTerminal(idx, token, message, opts) {
   playToggleBusy = false;
   markQueueItemPlaybackFailed(idx, recovery);
   if (typeof clearAlbumGaplessPreload === 'function') clearAlbumGaplessPreload('source-fallback-terminal');
-  if (typeof resetCuefieldAutoMix === 'function') resetCuefieldAutoMix('source-fallback-terminal');
+  if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('source-fallback-terminal');
   if (typeof clearPlaybackResumeWatchdogs === 'function') clearPlaybackResumeWatchdogs();
   if (typeof playbackResumeRecovery !== 'undefined' && playbackResumeRecovery) {
     playbackResumeRecovery.serial = (Number(playbackResumeRecovery.serial) || 0) + 1;

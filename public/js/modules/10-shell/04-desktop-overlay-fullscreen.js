@@ -75,7 +75,6 @@ var DESKTOP_ICON_SHIELD_TARGETS = [
   { selector: '.volume-popover', kind: 'volume-popover' },
   { selector: '#lyric-timing-popover', kind: 'lyric-timing-popover' },
   { selector: '#control-source-switcher', kind: 'source-switcher' },
-  { selector: '#cuefield-feedback', kind: 'cuefield-feedback' },
   { selector: '#cookie-export-prompt', kind: 'cookie-export' },
   { selector: '.modal-mask', kind: 'modal', visual: true },
   { selector: '#toast', kind: 'toast', visual: true },
@@ -1099,7 +1098,7 @@ function updateDesktopWallpaperRuntimeControls(status) {
   status = status || desktopWallpaperRuntimeState || {};
   var supported = status.supported !== false;
   var attaching = status.attaching === true;
-  var toggle = document.getElementById('t-wallpaperMode');
+  var toggle = document.getElementById('t-desktopLock');
   if (toggle) {
     toggle.classList.toggle('runtime-pending', attaching);
     toggle.classList.toggle('runtime-unavailable', !supported);
@@ -1108,8 +1107,8 @@ function updateDesktopWallpaperRuntimeControls(status) {
     if (!supported) toggle.setAttribute('aria-disabled', 'true');
     else toggle.removeAttribute('aria-disabled');
     toggle.title = !supported
-      ? '当前系统不支持完整桌面模式'
-      : (attaching ? '正在切换完整桌面模式' : '把完整 Mineradio 放到 Windows 桌面；右上角控制器可显示或隐藏桌面图标，Esc 退出');
+      ? '当前系统不支持锁定到桌面'
+      : (attaching ? '正在切换桌面锁定' : '把 Mineradio 锁定到 Windows 桌面；Esc 可恢复普通窗口');
   }
   var opacity = document.getElementById('fx-wallpaperopacity');
   if (opacity) opacity.disabled = !supported;
@@ -1314,6 +1313,7 @@ function applyDesktopWallpaperRuntimeStatus(payload) {
     updateFxInputs();
   }
   if (desktopWindowState && typeof desktopWindowState === 'object') {
+    desktopWindowState.isDesktopLocked = nextEnabled;
     desktopWindowState.isDesktopEmbedded = nextEnabled;
     desktopWindowState.isDesktopInteractive = nextEnabled && status.interactive === true;
   }
@@ -1329,6 +1329,17 @@ function applyDesktopWallpaperRuntimeStatus(payload) {
   updateDesktopWallpaperRuntimeControls(desktopWallpaperRuntimeState);
   scheduleDesktopIconShieldReport(!(nextEnabled && status.interactive === true));
   scheduleDesktopPointerRouteReport(null, true);
+  if (typeof applyDesktopShellState === 'function') {
+    applyDesktopShellState({
+      isDesktopLocked: nextEnabled,
+      isDesktopEmbedded: nextEnabled,
+      isDesktopInteractive: nextEnabled && status.interactive === true,
+      isFullScreen: nextEnabled
+        || !!desktopWindowState.isNativeFullScreen
+        || !!desktopWindowState.isHtmlFullScreen
+        || !!desktopWindowState.isWindowFullScreen
+    });
+  }
   return desktopWallpaperRuntimeState;
 }
 function desktopWallpaperErrorLabel(error) {
@@ -1344,7 +1355,7 @@ function desktopWallpaperErrorLabel(error) {
     || code.indexOf('WALLPAPER_DESKTOP_PREVIEW') >= 0
     || code.indexOf('WALLPAPER_ENGINE_SESSION_MISMATCH') >= 0) return 'Wallpaper Engine 项目未能安全切换到桌面预览';
   if (code.indexOf('DESKTOP_MODE_DETACH') >= 0 || code.indexOf('FULL_DESKTOP_DETACH') >= 0) return '主窗口恢复失败';
-  return '无法进入完整桌面模式';
+  return '无法锁定到桌面';
 }
 function initDesktopWallpaperRuntimeBridge(api) {
   if (!api) return;
@@ -1454,6 +1465,7 @@ setInterval(function () {
 var desktopFullscreenActive = false;
 var documentFullscreenActive = false;
 var desktopWindowState = {};
+var applyDesktopShellState = null;
 var desktopWindowMinimizeTimer = 0;
 var desktopWindowRestoreTimer = 0;
 
@@ -1539,15 +1551,18 @@ function toggleFullscreen() {
   var restoreIcon = maxBtn && maxBtn.querySelector('.icon-restore');
   function applyState(state) {
     var wasHidden = !!desktopWindowState.isMinimized || desktopWindowState.isVisible === false;
+    var wasDesktopLocked = desktopWindowState.isDesktopLocked === true;
     desktopWindowState = Object.assign(desktopWindowState, state || {});
     var isHidden = !!desktopWindowState.isMinimized || desktopWindowState.isVisible === false;
     if (wasHidden && !isHidden) animateDesktopWindowRestore();
     var isMaximized = !!desktopWindowState.isMaximized;
-    var isFullScreen = !!desktopWindowState.isFullScreen || !!desktopWindowState.isNativeFullScreen || !!desktopWindowState.isHtmlFullScreen || !!desktopWindowState.isWindowFullScreen || !!document.fullscreenElement;
+    var isDesktopLocked = desktopWindowState.isDesktopLocked === true;
+    var isFullScreen = isDesktopLocked || !!desktopWindowState.isFullScreen || !!desktopWindowState.isNativeFullScreen || !!desktopWindowState.isHtmlFullScreen || !!desktopWindowState.isWindowFullScreen || !!document.fullscreenElement;
     var wasFullScreen = desktopFullscreenActive;
     desktopFullscreenActive = isFullScreen;
     document.body.classList.toggle('desktop-maximized', isMaximized);
     document.body.classList.toggle('desktop-fullscreen', isFullScreen);
+    document.body.classList.toggle('desktop-locked', isDesktopLocked);
     syncDesktopWallpaperBodyClasses(
       desktopWallpaperRuntimeState,
       desktopWindowState.isDesktopEmbedded === true,
@@ -1559,7 +1574,7 @@ function toggleFullscreen() {
     scheduleDesktopPointerRouteReport(null, true);
     desktopRuntimeState.fullscreen = isFullScreen;
     if (isFullScreen) layoutFullscreenDiyZone();
-    if (isFullScreen !== wasFullScreen) {
+    if (isFullScreen !== wasFullScreen || isDesktopLocked !== wasDesktopLocked) {
       scheduleMainRendererViewportRefresh('desktop-shell-state');
       if (!isFullScreen) {
         document.body.classList.remove('fullscreen-diy-peek');
@@ -1574,6 +1589,7 @@ function toggleFullscreen() {
     if (maxIcon) maxIcon.style.display = isFullScreen ? 'none' : '';
     if (restoreIcon) restoreIcon.style.display = isFullScreen ? '' : 'none';
   }
+  applyDesktopShellState = applyState;
 
   document.querySelectorAll('[data-window-action]').forEach(function (btn) {
     btn.addEventListener('click', function (e) {
@@ -1608,6 +1624,28 @@ function toggleFullscreen() {
       updateFxInputs();
       saveLyricLayout({ user: true, reason: 'desktopLyrics' });
       showToast(enabled ? '桌面歌词已开启' : '桌面歌词已关闭');
+    });
+  }
+
+  if (typeof api.onDesktopLockState === 'function') {
+    api.onDesktopLockState(function (payload) {
+      var locked = !!(payload && payload.locked);
+      var changed = fx.desktopLock !== locked;
+      if (changed) {
+        fx.desktopLock = locked;
+        updateFxInputs();
+        saveLyricLayout({ user: true, reason: 'desktopLockRuntime' });
+      }
+      applyState({
+        isDesktopLocked: locked,
+        isFullScreen: locked
+          || !!desktopWindowState.isNativeFullScreen
+          || !!desktopWindowState.isHtmlFullScreen
+          || !!desktopWindowState.isWindowFullScreen
+      });
+      if (/^(escape|tray)/.test(String(payload && payload.source || ''))) {
+        showToast('Mineradio 已恢复普通窗口');
+      }
     });
   }
 

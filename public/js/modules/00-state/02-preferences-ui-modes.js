@@ -63,7 +63,16 @@ function normalizeCloseBehavior(value) {
   return value === 'tray' ? 'tray' : 'exit';
 }
 function readCloseBehaviorPreference() {
-  try { return normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORE_KEY) || 'exit'); } catch (e) { return 'exit'; }
+  try {
+    if (localStorage.getItem(CLOSE_BEHAVIOR_DEFAULT_MIGRATION_KEY) !== '1') {
+      localStorage.setItem(CLOSE_BEHAVIOR_DEFAULT_MIGRATION_KEY, '1');
+      localStorage.setItem(CLOSE_BEHAVIOR_STORE_KEY, 'tray');
+      return 'tray';
+    }
+    return normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORE_KEY) || 'tray');
+  } catch (e) {
+    return 'tray';
+  }
 }
 function saveCloseBehaviorPreference(value) {
   try { localStorage.setItem(CLOSE_BEHAVIOR_STORE_KEY, normalizeCloseBehavior(value)); } catch (e) { }

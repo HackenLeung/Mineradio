@@ -94,6 +94,19 @@
   Call un.MineradioRemoveInstalledFiles
 !macroend
 
+!ifdef BUILD_UNINSTALLER
+!macro customUnInstallSection
+  Section /o "un.删除用户数据（设置、缓存和登录状态）" un.MineradioDeleteUserData
+    RMDir /r "$INSTDIR\user-data"
+    RMDir /r "$APPDATA\Mineradio"
+    RMDir /r "$APPDATA\mineradio"
+    RMDir /r "$LOCALAPPDATA\Mineradio"
+    RMDir /r "$LOCALAPPDATA\mineradio"
+    RMDir /r "$LOCALAPPDATA\mineradio-updater"
+  SectionEnd
+!macroend
+!endif
+
 !macro customWelcomePage
   Page custom MineradioWelcomeShow
 !macroend
@@ -240,6 +253,9 @@ Function MineradioTintCommonControls
 FunctionEnd
 
 Function MineradioUsePreferredInstallDir
+  Push $R0
+  Push $R1
+  Push $R2
   ${GetParameters} $R0
   ClearErrors
   ${GetOptions} $R0 "/D=" $R1
@@ -256,6 +272,9 @@ Function MineradioUsePreferredInstallDir
   Push "$INSTDIR"
   Call MineradioNormalizeInstallDir
   Pop $INSTDIR
+  Pop $R2
+  Pop $R1
+  Pop $R0
 FunctionEnd
 
 Function MineradioUseFirstAvailableInstallDir
@@ -390,6 +409,12 @@ FunctionEnd
 
 Function MineradioNormalizeInstallDir
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  ExpandEnvStrings $0 "$0"
   Push "$0"
   Call MineradioTrimInstallDir
   Pop $0
@@ -417,11 +442,18 @@ Function MineradioNormalizeInstallDir
   ${AndIf} $2 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
     StrCpy $0 "$0\${MINERADIO_INSTALL_DIR_NAME}"
   ${EndIf}
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function MineradioTrimInstallDir
   Exch $0
+  Push $1
+  Push $2
 
   trim:
     StrLen $1 "$0"
@@ -433,22 +465,31 @@ Function MineradioTrimInstallDir
       ${EndIf}
     ${EndIf}
 
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function MineradioInstallDirLooksOwned
   Exch $0
+  Push $1
   StrCpy $1 "0"
 
   IfFileExists "$0\${MINERADIO_INSTALL_MARKER}" 0 +2
     StrCpy $1 "1"
 
   StrCpy $0 "$1"
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function MineradioExistingInstallPathCanBeAdopted
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  ExpandEnvStrings $0 "$0"
   StrCpy $1 "0"
 
   ${If} $0 == ""
@@ -475,6 +516,12 @@ Function MineradioExistingInstallPathCanBeAdopted
   IfFileExists "$2\resources\app.asar" adopt 0
   IfFileExists "$2\resources\app\package.json" adopt 0
   IfFileExists "$2\resources\app\server.js" adopt 0
+  Push "$2"
+  Call MineradioInstallDirContainsOnlyUserData
+  Pop $4
+  ${If} $4 == "1"
+    Goto adopt
+  ${EndIf}
   Goto done
 
   adopt:
@@ -482,10 +529,58 @@ Function MineradioExistingInstallPathCanBeAdopted
 
   done:
     StrCpy $0 "$1"
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
+    Exch $0
+FunctionEnd
+
+Function MineradioInstallDirContainsOnlyUserData
+  Exch $0
+  Push $1
+  Push $2
+  Push $3
+  StrCpy $3 "0"
+
+  IfFileExists "$0\*.*" 0 done
+  FindFirst $1 $2 "$0\*.*"
+
+  loop:
+    StrCmp $2 "" close
+    StrCmp $2 "." next
+    StrCmp $2 ".." next
+    StrCmp $2 "user-data" userData reject
+
+  userData:
+    IfFileExists "$0\user-data\." 0 reject
+    StrCpy $3 "1"
+    Goto next
+
+  reject:
+    FindClose $1
+    Goto done
+
+  next:
+    FindNext $1 $2
+    Goto loop
+
+  close:
+    FindClose $1
+
+  done:
+    StrCpy $0 "$3"
+    Pop $3
+    Pop $2
+    Pop $1
     Exch $0
 FunctionEnd
 
 Function MineradioUseRegisteredInstallDir
+  Push $0
+  Push $1
+  StrCpy $0 "0"
+
   ReadRegStr $0 HKCU "Software\${APP_GUID}" InstallLocation
   Push "$0"
   Call MineradioExistingInstallPathCanBeAdopted
@@ -494,8 +589,8 @@ Function MineradioUseRegisteredInstallDir
     Push "$0"
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
-    Push "1"
-    Return
+    StrCpy $0 "1"
+    Goto done
   ${EndIf}
 
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
@@ -506,8 +601,8 @@ Function MineradioUseRegisteredInstallDir
     Push "$0"
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
-    Push "1"
-    Return
+    StrCpy $0 "1"
+    Goto done
   ${EndIf}
 
   ReadRegStr $0 HKLM "Software\${APP_GUID}" InstallLocation
@@ -518,8 +613,8 @@ Function MineradioUseRegisteredInstallDir
     Push "$0"
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
-    Push "1"
-    Return
+    StrCpy $0 "1"
+    Goto done
   ${EndIf}
 
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
@@ -530,15 +625,22 @@ Function MineradioUseRegisteredInstallDir
     Push "$0"
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
-    Push "1"
-    Return
+    StrCpy $0 "1"
+    Goto done
   ${EndIf}
 
-  Push "0"
+  done:
+  Pop $1
+  Exch $0
 FunctionEnd
 
 Function MineradioRegisteredInstallDirCanBeAdopted
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
   StrCpy $1 "0"
 
   ${If} $0 == ""
@@ -607,11 +709,19 @@ Function MineradioRegisteredInstallDirCanBeAdopted
 
   done:
     StrCpy $0 "$1"
+    Pop $5
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
     Exch $0
 FunctionEnd
 
 Function MineradioInstallDirIsEmpty
   Exch $0
+  Push $1
+  Push $2
+  Push $3
   FindFirst $1 $2 "$0\*.*"
   StrCpy $3 "1"
 
@@ -629,11 +739,19 @@ Function MineradioInstallDirIsEmpty
   done:
     FindClose $1
     StrCpy $0 "$3"
+    Pop $3
+    Pop $2
+    Pop $1
     Exch $0
 FunctionEnd
 
 Function MineradioOldInstallPathNeedsQuarantine
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  ExpandEnvStrings $0 "$0"
   StrCpy $1 "0"
 
   ${If} $0 == ""
@@ -664,15 +782,23 @@ Function MineradioOldInstallPathNeedsQuarantine
 
   done:
     StrCpy $0 "$1"
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
     Exch $0
 FunctionEnd
 
 Function MineradioDisableUnsafeOldUninstallers
+  Push $0
+  Push $1
+  Push $2
   StrCpy $2 "0"
 
   ReadRegStr $0 HKCU "Software\${APP_GUID}" InstallLocation
   Push "$0"
   Call MineradioDeleteLegacyUninstallerFileIfMissingMarker
+  Pop $1
   Push "$0"
   Call MineradioOldInstallPathNeedsQuarantine
   Pop $1
@@ -684,6 +810,7 @@ Function MineradioDisableUnsafeOldUninstallers
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$0"
   Call MineradioDeleteLegacyUninstallerFileIfMissingMarker
+  Pop $1
   Push "$0"
   Call MineradioOldInstallPathNeedsQuarantine
   Pop $1
@@ -702,6 +829,7 @@ Function MineradioDisableUnsafeOldUninstallers
   ReadRegStr $0 HKLM "Software\${APP_GUID}" InstallLocation
   Push "$0"
   Call MineradioDeleteLegacyUninstallerFileIfMissingMarker
+  Pop $1
   Push "$0"
   Call MineradioOldInstallPathNeedsQuarantine
   Pop $1
@@ -713,6 +841,7 @@ Function MineradioDisableUnsafeOldUninstallers
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$0"
   Call MineradioDeleteLegacyUninstallerFileIfMissingMarker
+  Pop $1
   Push "$0"
   Call MineradioOldInstallPathNeedsQuarantine
   Pop $1
@@ -725,10 +854,15 @@ Function MineradioDisableUnsafeOldUninstallers
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}"
     DeleteRegKey HKLM "Software\${APP_GUID}"
   ${EndIf}
+  Pop $2
+  Pop $1
+  Pop $0
 FunctionEnd
 
 Function MineradioDeleteLegacyUninstallerFileIfMissingMarker
-  Pop $0
+  Exch $0
+  Push $1
+  ExpandEnvStrings $0 "$0"
   ${If} $0 != ""
     Push "$0"
     Call MineradioTrimInstallDir
@@ -741,9 +875,18 @@ Function MineradioDeleteLegacyUninstallerFileIfMissingMarker
   ${EndIf}
 
   done:
+    StrCpy $0 "0"
+    Pop $1
+    Exch $0
 FunctionEnd
 
 Function MineradioValidateInstallDir
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
   Push "$INSTDIR"
   Call MineradioNormalizeInstallDir
   Pop $INSTDIR
@@ -767,6 +910,12 @@ Function MineradioValidateInstallDir
       ${AndIf} $3 != "1"
       ${AndIf} $4 != "1"
         MessageBox MB_ICONSTOP|MB_OK "检测到这台电脑还有 D-Z 盘，Mineradio 不安装到 C 盘。请改选 D 盘或其它非 C 盘的 Mineradio 文件夹。$\r$\n$\r$\n如果电脑只有 C 盘，安装器会自动放行 C:\Mineradio。"
+        Pop $5
+        Pop $4
+        Pop $3
+        Pop $2
+        Pop $1
+        Pop $0
         Abort
       ${EndIf}
     ${EndIf}
@@ -780,6 +929,12 @@ Function MineradioValidateInstallDir
   ${OrIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME}"
   ${AndIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
     MessageBox MB_ICONSTOP|MB_OK "安装目录必须是独立的 Mineradio 文件夹。请选择一个上级目录，安装器会自动创建 Mineradio 子文件夹。"
+    Pop $5
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
+    Pop $0
     Abort
   ${EndIf}
 
@@ -801,6 +956,13 @@ Function MineradioValidateInstallDir
   ${EndIf}
 
   Push "$INSTDIR"
+  Call MineradioInstallDirContainsOnlyUserData
+  Pop $5
+  ${If} $5 == "1"
+    Goto valid
+  ${EndIf}
+
+  Push "$INSTDIR"
   Call MineradioInstallDirIsEmpty
   Pop $0
   ${If} $0 == "1"
@@ -808,9 +970,21 @@ Function MineradioValidateInstallDir
   ${EndIf}
 
   MessageBox MB_ICONSTOP|MB_OK "为避免卸载时误删其它文件，Mineradio 不能安装到已有文件的非专属目录。请新建或选择一个空的 Mineradio 文件夹。$\r$\n$\r$\n当前路径：$INSTDIR"
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
   Abort
 
   valid:
+    Pop $5
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
+    Pop $0
 FunctionEnd
 Function MineradioWelcomeShow
   Call MineradioUsePreferredInstallDir
@@ -943,17 +1117,32 @@ FunctionEnd
 
 Function un.MineradioInstallDirLooksOwned
   Exch $0
+  Push $1
   StrCpy $1 "0"
 
   IfFileExists "$0\${MINERADIO_INSTALL_MARKER}" 0 +2
     StrCpy $1 "1"
 
+  ${If} $1 == "0"
+    IfFileExists "$0\${PRODUCT_FILENAME}.exe" 0 done
+    IfFileExists "$0\Uninstall ${PRODUCT_FILENAME}.exe" 0 done
+    StrCpy $1 "1"
+  ${EndIf}
+
+  done:
   StrCpy $0 "$1"
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function un.MineradioNormalizeInstallDir
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  ExpandEnvStrings $0 "$0"
   Push "$0"
   Call un.MineradioTrimInstallDir
   Pop $0
@@ -981,11 +1170,18 @@ Function un.MineradioNormalizeInstallDir
   ${AndIf} $2 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
     StrCpy $0 "$0\${MINERADIO_INSTALL_DIR_NAME}"
   ${EndIf}
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function un.MineradioTrimInstallDir
   Exch $0
+  Push $1
+  Push $2
 
   trim:
     StrLen $1 "$0"
@@ -997,11 +1193,16 @@ Function un.MineradioTrimInstallDir
       ${EndIf}
     ${EndIf}
 
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
 Function un.MineradioValidateUninstallDir
-  Push "$INSTDIR"
+  Push $0
+  Push $1
+  ExpandEnvStrings $0 "$INSTDIR"
+  Push "$0"
   Call un.MineradioTrimInstallDir
   Pop $0
   Push "$0"
@@ -1022,6 +1223,8 @@ Function un.MineradioValidateUninstallDir
     SetErrorLevel 2
     Quit
   ${EndIf}
+  Pop $1
+  Pop $0
 FunctionEnd
 
 Function un.MineradioRemoveInstalledFiles
@@ -1030,6 +1233,10 @@ Function un.MineradioRemoveInstalledFiles
   Delete "$INSTDIR\${PRODUCT_FILENAME}.exe"
   Delete "$INSTDIR\Uninstall ${PRODUCT_FILENAME}.exe"
   Delete "$INSTDIR\uninstallerIcon.ico"
+  Delete "$INSTDIR\${MINERADIO_INSTALL_MARKER}"
+  Delete "$INSTDIR\app-update.yml"
+  Delete "$INSTDIR\resources\app-update.yml"
+  Delete "$INSTDIR\elevate.exe"
 
   Delete "$INSTDIR\chrome_100_percent.pak"
   Delete "$INSTDIR\chrome_200_percent.pak"

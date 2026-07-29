@@ -98,30 +98,14 @@ function executeHotkeyAction(actionKey, source) {
   if (actionKey === 'volumeDown') return adjustVolumeByKeyboard(-0.05);
   if (actionKey === 'toggleFullscreen') return toggleFullscreen();
   if (actionKey === 'toggleDesktopInteraction') {
-    var api = getDesktopWindowApi && getDesktopWindowApi();
-    if (!api || typeof api.getState !== 'function') return;
-    return api.getState().then(function (state) {
-      if (state && state.isDesktopEmbedded) {
-        fx.wallpaperMode = false;
-        updateFxInputs();
-        return applyWallpaperModeState(true).then(function (result) {
-          if (result && result.ok === true) showToast('已退出完整桌面模式');
-          return result;
-        });
-      }
-      fx.wallpaperMode = true;
-      updateFxInputs();
-      return applyWallpaperModeState(true).then(function (result) {
-        if (result && result.ok === true) showToast('完整桌面模式已开启 · ' + desktopInteractionHotkeyHint());
-        return result;
-      });
-    }).catch(function () { });
+    if (typeof setDesktopLock !== 'function') return;
+    return setDesktopLock(!(fx && fx.desktopLock === true), false);
   }
   if (actionKey === 'toggleDesktopLyrics') return toggleFx('desktopLyrics');
 }
 function desktopInteractionHotkeyHint() {
   var binding = hotkeySettings && hotkeySettings.global && hotkeySettings.global.toggleDesktopInteraction;
-  return binding ? ('按 ' + formatHotkey(binding) + ' 进入 / 退出完整桌面模式') : '可在热键设置中配置完整桌面模式切换';
+  return binding ? ('按 ' + formatHotkey(binding) + ' 锁定到桌面 / 恢复窗口') : '可在热键设置中配置桌面锁定切换';
 }
 function handleConfiguredLocalHotkey(e) {
   if (!hotkeySettings || !hotkeySettings.local || isTypingTarget(e.target)) return false;
