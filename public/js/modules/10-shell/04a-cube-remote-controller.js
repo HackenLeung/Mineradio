@@ -17,9 +17,13 @@ function cubeRemoteCoverUrl(url) {
   return '';
 }
 
+function cubeRemoteCurrentSong() {
+  return playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
+}
+
 function cubeRemotePayload() {
   var meta = typeof currentDesktopSongMeta === 'function' ? currentDesktopSongMeta() : {};
-  var song = playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
+  var song = cubeRemoteCurrentSong();
   var cover = '';
   try {
     cover = song && typeof songCoverSrc === 'function' ? (songCoverSrc(song, 160) || song.cover || '') : (meta.cover || '');
@@ -39,6 +43,28 @@ function cubeRemotePayload() {
   };
 }
 
+// 变更检测只看身份，不序列化封面本体。本地歌曲的内嵌封面是几百 KB 的
+// base64 data URL，按 320ms 轮询去 stringify + 比较会持续占用主线程。
+function cubeRemoteIdentitySignature(includeSkinState) {
+  var meta = typeof currentDesktopSongMeta === 'function' ? currentDesktopSongMeta() : {};
+  var song = cubeRemoteCurrentSong();
+  var identity = song
+    ? (song.localKey || song.localPath || song.mid || song.hash || song.spotifyId || song.id || '')
+    : '';
+  var parts = [
+    identity || (meta.title || '') + '|' + (meta.artist || ''),
+    meta.title || '',
+    meta.artist || '',
+    playing ? '1' : '0',
+    (clampRange(Number(targetVolume) || 0, 0, 1)).toFixed(3),
+    Number(targetVolume) <= 0.001 ? 'm' : '-'
+  ];
+  if (includeSkinState) {
+    parts.push(cubeRemoteEnabled ? '1' : '0', cubeRemoteSkin, fx && fx.desktopLyrics ? '1' : '0');
+  }
+  return parts.join('');
+}
+
 function updateCubeRemoteControls() {
   var toggle = document.getElementById('t-cubeRemote');
   if (toggle) toggle.classList.toggle('on', cubeRemoteEnabled);
@@ -52,29 +78,27 @@ function pushCubeRemoteState(force) {
   if (!cubeRemoteEnabled) return;
   var api = getDesktopWindowApi();
   if (!api || typeof api.updateCubeRemote !== 'function') return;
-  var payload = cubeRemotePayload();
-  var signature = JSON.stringify(payload);
+  var signature = cubeRemoteIdentitySignature(true);
   if (!force && signature === cubeRemoteLastPayload) return;
   cubeRemoteLastPayload = signature;
-  api.updateCubeRemote(payload).catch(function (error) { console.warn('Cube remote update failed:', error); });
+  api.updateCubeRemote(cubeRemotePayload()).catch(function (error) { console.warn('Cube remote update failed:', error); });
 }
 
 function pushTrayPlaybackState(force) {
   var api = getDesktopWindowApi();
   if (!api || typeof api.updateTrayPlayback !== 'function') return;
+  var signature = cubeRemoteIdentitySignature(false);
+  if (!force && signature === trayPlaybackLastPayload) return;
+  trayPlaybackLastPayload = signature;
   var payload = cubeRemotePayload();
-  var trayPayload = {
+  api.updateTrayPlayback({
     title: payload.title,
     artist: payload.artist,
     cover: payload.cover,
     playing: payload.playing,
     volume: payload.volume,
     muted: payload.muted,
-  };
-  var signature = JSON.stringify(trayPayload);
-  if (!force && signature === trayPlaybackLastPayload) return;
-  trayPlaybackLastPayload = signature;
-  api.updateTrayPlayback(trayPayload).catch(function (error) { console.warn('Tray playback update failed:', error); });
+  }).catch(function (error) { console.warn('Tray playback update failed:', error); });
 }
 
 async function setCubeRemoteEnabled(enabled, options) {

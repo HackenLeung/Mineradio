@@ -782,6 +782,12 @@
             <button type="button" data-smart-transition-style="random" onclick="setSmartTransitionStyle('random')">随机</button>
             <button type="button" data-smart-transition-style="off" onclick="setSmartTransitionStyle('off')">关闭</button>
           </div>
+          <div class="fx-section-label">提前过渡</div>
+          <div class="fx-seg" id="smart-transition-lead-seg">
+            <button type="button" data-smart-transition-lead="15" onclick="setSmartTransitionLeadSec(15)">15 秒</button>
+            <button type="button" data-smart-transition-lead="30" onclick="setSmartTransitionLeadSec(30)">30 秒</button>
+            <button type="button" data-smart-transition-lead="60" onclick="setSmartTransitionLeadSec(60)">60 秒</button>
+          </div>
           <div class="fx-section-label">叠加效果</div>
           <div class="fx-toggle-grid">
             <div class="fx-toggle" id="t-float" onclick="toggleFx('floatLayer')"><span>浮空粒子层</span><span

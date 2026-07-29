@@ -1,4 +1,7 @@
 var SMART_TRANSITION_STORE_KEY = 'mineradio-smart-transition-v2';
+var SMART_TRANSITION_LEAD_STORE_KEY = 'mineradio-smart-transition-lead-v1';
+var SMART_TRANSITION_LEAD_OPTIONS = [15, 30, 60];
+var smartTransitionLeadSec = 30;
 var smartCrossfadePrepareTimer = 0;
 var smartCrossfadeExecuting = false;
 var smartCrossfadePreparedAudio = null;
@@ -53,6 +56,34 @@ function updateSmartTransitionStyleControls(status) {
   });
   var segment = document.getElementById('smart-transition-style-seg');
   if (segment) segment.classList.toggle('smart-transition-ready', status === 'ready');
+}
+
+function normalizeSmartTransitionLeadSec(value) {
+  value = Math.round(Number(value) || 0);
+  return SMART_TRANSITION_LEAD_OPTIONS.indexOf(value) >= 0 ? value : 30;
+}
+
+function readSmartTransitionLeadPreference() {
+  try { return normalizeSmartTransitionLeadSec(localStorage.getItem(SMART_TRANSITION_LEAD_STORE_KEY)); } catch (_) { return 30; }
+}
+
+function updateSmartTransitionLeadControls() {
+  document.querySelectorAll('#smart-transition-lead-seg [data-smart-transition-lead]').forEach(function (button) {
+    button.classList.toggle('active', Number(button.getAttribute('data-smart-transition-lead')) === smartTransitionLeadSec);
+  });
+}
+
+function setSmartTransitionLeadSec(value, silent) {
+  smartTransitionLeadSec = normalizeSmartTransitionLeadSec(value);
+  try { localStorage.setItem(SMART_TRANSITION_LEAD_STORE_KEY, String(smartTransitionLeadSec)); } catch (_) { }
+  updateSmartTransitionLeadControls();
+  // 重排当前曲的过渡计划，让新提前量立即生效（若智能过渡开启且未在执行中）。
+  if (isSmartTransitionEnabled() && !smartCrossfadeExecuting && audio && !audio.paused) {
+    smartTransitionPending = null;
+    stopSmartTransitionPreparedAudio();
+    scheduleSmartCrossfadePrepare(trackSwitchToken, currentIdx, 260);
+  }
+  if (!silent) showToast('提前过渡 ' + smartTransitionLeadSec + ' 秒');
 }
 
 function hideSmartTransitionVisual() {
@@ -406,10 +437,17 @@ async function prepareSmartTransitionFallback(token, currentIndex) {
   var descriptor = await smartCrossfadeAudioDescriptor(nextSong);
   if (!descriptor || !descriptor.proxyUrl || token !== trackSwitchToken || currentIndex !== currentIdx) return false;
   var duration = Number(audio && audio.duration) || (typeof getPlaybackDurationSeconds === 'function' ? Number(getPlaybackDurationSeconds()) : 0);
+  // 淡变触发点/时长：保持原动态算法（结束前 4.5% 钳 4.2~7.6s），不随提前量改变。
+  var fadeLeadSec = Math.min(7.6, Math.max(4.2, duration * 0.045));
   if (!isFinite(duration) || duration <= 12) return false;
-  var leadSec = Math.min(7.6, Math.max(4.2, duration * 0.045));
-  var triggerAt = Math.max(Number(audio.currentTime) || 0, duration - leadSec);
+  var triggerAt = Math.max(Number(audio.currentTime) || 0, duration - fadeLeadSec);
   var fadeMs = Math.max(1200, Math.round((duration - triggerAt - 0.12) * 1000));
+  // 提前量（15/30/60s）：从"结束前 leadSec"开始进入人声监听窗口，
+  // 检测到人声已结束（尾奏/纯伴奏）就提前触发淡变；检测不到则按 triggerAt 照旧。
+  var monitorLeadSec = normalizeSmartTransitionLeadSec(smartTransitionLeadSec);
+  var monitorFrom = Math.max(Number(audio.currentTime) || 0, duration - monitorLeadSec);
+  // 窗口太短或歌曲太短就没必要提前判断了。
+  var vocalMonitorEnabled = monitorFrom < triggerAt - 1.5 && duration > monitorLeadSec + 12;
   smartTransitionPending = {
     mode: 'smart-transition',
     token: token,
@@ -426,6 +464,14 @@ async function prepareSmartTransitionFallback(token, currentIndex) {
     entryTime: 0,
     exitTime: duration,
     triggerAt: triggerAt,
+    vocalMonitor: vocalMonitorEnabled ? {
+      from: monitorFrom,
+      until: triggerAt,
+      baseline: 0,
+      baselineSamples: 0,
+      belowSince: 0,
+      lastSampleAt: 0
+    } : null,
     timeline: [
       { t: -fadeMs / 1000, deck: 'B', op: 'play', at: 0, volume: 0 },
       { t: -fadeMs / 1000, deck: 'AB', op: 'crossfade', duration: fadeMs },
@@ -670,16 +716,58 @@ async function runSmartTransitionTimeline(pending, nextMedia, context) {
   return smartTransitionTransitionStillCurrent(pending, context);
 }
 
+// 提前人声判断：读主循环已填好的 frequencyData（复用全局 analyser，无额外解码）。
+// 人声频段 420-2600Hz 与主循环 voc 一致；用总能量做参照，避免把安静前奏误判成结束。
+function smartTransitionVocalEndedNow(monitor, nowSec) {
+  if (!monitor || typeof beatBandRms !== 'function') return false;
+  if (!analyser || !frequencyData || !frequencyData.length) return false;
+  var sampleRate = (audioCtx && audioCtx.sampleRate) || 44100;
+  var fftSize = (analyser && analyser.fftSize) || frequencyData.length * 2;
+  var vocal = beatBandRms(frequencyData, sampleRate, fftSize, 420, 2600);
+  var total = beatBandRms(frequencyData, sampleRate, fftSize, 60, 8000);
+  // 窗口前 ~2.5s 先建人声基线（这段时间通常还在唱）。
+  if (monitor.baselineSamples < 6) {
+    monitor.baseline += vocal;
+    monitor.baselineSamples += 1;
+    monitor.belowSince = 0;
+    return false;
+  }
+  var baseline = monitor.baseline / monitor.baselineSamples;
+  // 基线太低说明这段本来就没人声（纯乐器/间奏），不做提前判断，交给原触发点。
+  if (baseline < 0.035) return false;
+  // 骤降：人声掉到基线 35% 以下，且不是整体都安静（伴奏还在 → 才是"人声结束了"）。
+  var vocalDropped = vocal < baseline * 0.35;
+  var accompanimentAlive = total > Math.max(0.030, baseline * 0.55);
+  if (vocalDropped && accompanimentAlive) {
+    if (!monitor.belowSince) monitor.belowSince = nowSec;
+    // 持续 ~1.5s，避开句间气口/长音误判。
+    return (nowSec - monitor.belowSince) >= 1.5;
+  }
+  monitor.belowSince = 0;
+  return false;
+}
+
 function tickSmartCrossfade() {
   if (smartCrossfadeExecuting || !audio) return;
-  if (
-    smartTransitionPending
-    && transitionPendingEnabled(smartTransitionPending)
-    && smartTransitionPending.token === trackSwitchToken
-    && smartTransitionPending.currentIndex === currentIdx
-    && Number(audio.currentTime) >= Number(smartTransitionPending.triggerAt)
-  ) {
-    var pending = smartTransitionPending;
+  if (!smartTransitionPending) return;
+  var pending = smartTransitionPending;
+  if (!transitionPendingEnabled(pending) || pending.token !== trackSwitchToken || pending.currentIndex !== currentIdx) return;
+  var nowSec = Number(audio.currentTime) || 0;
+  var due = nowSec >= Number(pending.triggerAt);
+  // 提前判断：进入监听窗口后，人声已结束就提前到当前点淡变（淡变时长不变）。
+  if (!due && pending.vocalMonitor && nowSec >= Number(pending.vocalMonitor.from)) {
+    if (smartTransitionVocalEndedNow(pending.vocalMonitor, nowSec)) {
+      // 淡变需要 fadeSec 时长，太晚触发会超过结尾；保证还剩足够淡变时间。
+      var fadeSec = Math.max(0.36, Number(pending.fadeSec) || 1.4);
+      var duration = Number(audio.duration) || Number(pending.exitTime) || 0;
+      if (duration - nowSec >= fadeSec + 0.12) {
+        pending.triggerAt = nowSec;
+        pending.fadeStartA = nowSec;
+        due = true;
+      }
+    }
+  }
+  if (due) {
     smartTransitionPending = null;
     executeSmartCrossfade(pending);
   }
@@ -968,4 +1056,6 @@ async function executeSmartCrossfade(pending) {
 }
 
 smartTransitionStyle = readSmartTransitionPreference();
+smartTransitionLeadSec = readSmartTransitionLeadPreference();
 updateSmartTransitionStyleControls();
+updateSmartTransitionLeadControls();

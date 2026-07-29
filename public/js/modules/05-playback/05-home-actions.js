@@ -4,6 +4,8 @@ function songFromListenRecord(record) {
   if (record.type === 'local' || record.localKey || record.localPath) provider = 'local';
   if (!provider && record.type === 'qq') provider = 'qq';
   if (!provider) provider = record.mid ? 'qq' : 'netease';
+  // 历史记录里只存可寻址 URL；本地歌曲封面按 localKey 从内存库现取（内嵌封面优先于空值）。
+  var resolvedCover = typeof listenRecordCoverSrc === 'function' ? listenRecordCoverSrc(record) : '';
   return {
     provider: provider,
     source: provider,
@@ -14,7 +16,7 @@ function songFromListenRecord(record) {
     mediaMid: record.mediaMid || '',
     name: record.name || '继续听',
     artist: record.artist || '',
-    cover: record.cover || '',
+    cover: resolvedCover || record.cover || '',
     hash: record.hash || '',
     mixSongId: record.mixSongId || '',
     albumId: record.albumId || '',
@@ -24,7 +26,6 @@ function songFromListenRecord(record) {
     localFolderPath: record.localFolderPath || '',
     localFolderName: record.localFolderName || '',
     sidecarCover: record.sidecarCover || '',
-    embeddedCover: record.embeddedCover || '',
     onlineMetadata: record.onlineMetadata || null,
   };
 }

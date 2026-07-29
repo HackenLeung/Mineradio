@@ -158,6 +158,51 @@ function saveListenStatsState() {
     localStorage.setItem(HOME_LISTEN_STATS_KEY, JSON.stringify(listenStatsState));
   } catch (e) { }
 }
+// 听歌历史保留 180 条，若每条都带 base64 内嵌封面（单张可达几百 KB），
+// 整个 listenStatsState 会远超 localStorage 配额，写入静默失败导致统计整个丢失。
+// 这里只存可寻址的 URL，data URL 一律丢弃，渲染时按 localKey 现取。
+var LISTEN_STATS_COVER_MAX = 2048;
+function listenStatsSafeCover(value) {
+  var raw = typeof value === 'string' ? value : '';
+  if (!raw || /^data:/i.test(raw)) return '';
+  return raw.length > LISTEN_STATS_COVER_MAX ? '' : raw;
+}
+// 本地歌曲的封面在库里重新解析，避免把二进制塞进历史记录。
+function listenRecordCoverSrc(record) {
+  if (!record) return '';
+  var direct = listenStatsSafeCover(record.cover) || listenStatsSafeCover(record.sidecarCover);
+  if (direct) return direct;
+  var localKey = String(record.localKey || '');
+  var localPath = String(record.localPath || '');
+  if (!localKey && !localPath) return '';
+  var songs = Array.isArray(typeof localLibrarySongs !== 'undefined' ? localLibrarySongs : null) ? localLibrarySongs : [];
+  for (var i = 0; i < songs.length; i++) {
+    var song = songs[i];
+    if (!song) continue;
+    if ((localKey && String(song.localKey || '') === localKey)
+      || (localPath && String(song.localPath || '').toLowerCase() === localPath.toLowerCase())) {
+      return (typeof localLibraryCover === 'function' ? localLibraryCover(song) : '') || '';
+    }
+  }
+  return '';
+}
+// metadata 里常夹带封面 data URL（尤其本地/下载来源），直接进历史会撑爆配额。
+// 与队列快照侧同款策略：字符串过安全过滤，数字/布尔保留，其余丢弃。
+function listenStatsSafeMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  var safe = {};
+  Object.keys(metadata).forEach(function (key) {
+    var value = metadata[key];
+    if (value == null || value === '') return;
+    if (typeof value === 'string') {
+      var trimmed = listenStatsSafeCover(value);
+      if (trimmed) safe[key] = trimmed;
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') safe[key] = value;
+  });
+  return Object.keys(safe).length ? safe : null;
+}
 function listenSongSnapshot(song) {
   song = song || {};
   var isLocal = song.type === 'local' || song.source === 'local' || !!song.localKey;
@@ -176,7 +221,7 @@ function listenSongSnapshot(song) {
     sourceKey: isLocal ? 'local' : (song.source || song.provider || ''),
     name: song.name || song.title || '未知歌曲',
     artist: song.artist || '',
-    cover: songCoverSrc(song, 220) || song.cover || '',
+    cover: listenStatsSafeCover(songCoverSrc(song, 220) || song.cover || ''),
     source: songSourceLabel(song),
     provider: isLocal ? 'local' : (song.provider || song.source || song.type || ''),
     resolvedPlaybackProvider: song.resolvedPlaybackProvider || song.playbackProvider || song.audioProvider || song.providerResolved || '',
@@ -185,9 +230,8 @@ function listenSongSnapshot(song) {
     localPath: song.localPath || '',
     localFolderPath: song.localFolderPath || '',
     localFolderName: song.localFolderName || '',
-    sidecarCover: song.sidecarCover || '',
-    embeddedCover: song.embeddedCover || '',
-    onlineMetadata: song.onlineMetadata && typeof song.onlineMetadata === 'object' ? Object.assign({}, song.onlineMetadata) : null,
+    sidecarCover: listenStatsSafeCover(song.sidecarCover),
+    onlineMetadata: listenStatsSafeMetadata(song.onlineMetadata),
   };
 }
 function beginListenSession(song, context) {
@@ -262,7 +306,6 @@ function finalizeListenSession(completed) {
     localFolderPath: snap.localFolderPath || '',
     localFolderName: snap.localFolderName || '',
     sidecarCover: snap.sidecarCover || '',
-    embeddedCover: snap.embeddedCover || '',
     onlineMetadata: snap.onlineMetadata || null,
     name: snap.name || '未知歌曲',
     artist: snap.artist || '',
@@ -295,7 +338,6 @@ function finalizeListenSession(completed) {
   songStat.localFolderPath = record.localFolderPath || songStat.localFolderPath || '';
   songStat.localFolderName = record.localFolderName || songStat.localFolderName || '';
   songStat.sidecarCover = record.sidecarCover || songStat.sidecarCover || '';
-  songStat.embeddedCover = record.embeddedCover || songStat.embeddedCover || '';
   songStat.onlineMetadata = record.onlineMetadata || songStat.onlineMetadata || null;
   songStat.plays += 1;
   songStat.listenMs += record.listenMs;
@@ -331,5 +373,15 @@ function homeListenSummary() {
   var topSong = mostPlayedSong();
   var topArtist = topListenArtist();
   var totalPlays = Object.keys(listenStatsState.songs || {}).reduce(function (sum, key) { return sum + ((listenStatsState.songs[key] && listenStatsState.songs[key].plays) || 0); }, 0);
+  // 存储侧只留可寻址 URL；本地歌曲封面在这里按 localKey 从内存库现取，
+  // 内嵌封面（data URL）借此回到渲染链路，同时不进 localStorage。
+  if (recent) {
+    var recentCover = listenRecordCoverSrc(recent);
+    if (recentCover) recent = Object.assign({}, recent, { cover: recentCover });
+  }
+  if (topSong) {
+    var topCover = listenRecordCoverSrc(topSong);
+    if (topCover) topSong = Object.assign({}, topSong, { cover: topCover });
+  }
   return { recent: recent, topSong: topSong, topArtist: topArtist, totalPlays: totalPlays };
 }

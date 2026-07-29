@@ -397,7 +397,7 @@ function renderLocalLibraryPanel() {
       var cover = localLibraryCover(song);
       return '<button class="local-library-song' + (currentLocalSong && currentLocalSong.localKey === song.localKey ? ' now' : '') + '" type="button" onclick="playLocalLibrarySong(' + index + ')">' +
         (cover ? '<img class="local-library-cover" src="' + escHtml(cover) + '" alt="">' : '<span class="local-library-cover"></span>') +
-        '<span class="local-library-meta"><span class="local-library-name">' + escHtml(song.name) + '</span><span class="local-library-sub">' + escHtml(song.artist || song.localFolderName) + '</span></span><span class="local-library-action">播放</span></button>';
+        '<span class="local-library-meta"><span class="local-library-name">' + escHtml(song.name) + '</span><span class="local-library-sub">' + escHtml(song.artist || song.localFolderName) + '</span></span></button>';
     }).join('') : '<div class="local-library-empty">没有匹配的本地音乐</div>';
     return;
   }
@@ -571,11 +571,26 @@ function rebindRestoredLocalQueueSongs() {
 function playLocalLibrarySong(index) {
   var song = localLibrarySongs[Number(index) || 0];
   if (!song) return;
-  playQueue = localLibrarySongs.map(cloneSong);
-  currentIdx = Math.max(0, localLibrarySongs.indexOf(song));
+  // 有搜索词时，用匹配结果集（而不是整个本地库）替换队列，并清空搜索框。
+  var query = simpleSearchNorm(localLibrarySearchQuery || '');
+  var sourceSongs = localLibrarySongs;
+  if (query) {
+    sourceSongs = localLibrarySongs.filter(function (item) {
+      return simpleSearchNorm([item.name, item.artist, item.album, item.localPath, item.localFolderName].filter(Boolean).join(' ')).indexOf(query) >= 0;
+    });
+    if (!sourceSongs.length || sourceSongs.indexOf(song) < 0) sourceSongs = localLibrarySongs;
+    localLibrarySearchQuery = '';
+    var searchInput = document.getElementById('local-library-search');
+    if (searchInput) searchInput.value = '';
+  }
+  playQueue = sourceSongs.map(cloneSong);
+  currentIdx = Math.max(0, sourceSongs.indexOf(song));
+  // 点搜索结果的歌曲 = 替换队列并立即播放，同时把面板切回"当前队列"定位到该曲。
+  // skipShuffleOrder：随机模式下也不重排——上面排过的歌要保持原顺序留在队列里，不能被洗牌截走。
+  if (typeof switchPlaylistTab === 'function') switchPlaylistTab('queue', { animate: false, refresh: false });
   safeRenderQueuePanel('local-library-play', { scrollCurrent: true });
   safeShelfRebuild('local-library-play', true);
-  playQueueAt(currentIdx, { manual: true }).catch(function (e) { console.warn('[LocalLibraryPlay]', e); });
+  playQueueAt(currentIdx, { manual: true, skipShuffleOrder: true }).catch(function (e) { console.warn('[LocalLibraryPlay]', e); });
 }
 function playLocalFolderPlaylist(folderIndex, songIndex) {
   var folder = localFolderPlaylists[Number(folderIndex) || 0];

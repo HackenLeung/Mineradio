@@ -17323,7 +17323,9 @@ body.panel-reordering .mini-queue-item.is-reordering {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, .18) transparent
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
+  /* 卡片 hover 会上浮 3px，滚动容器贴顶会把上溢裁掉；顶部留裁剪余量。 */
+  padding-top: 5px
 }
 
 #empty-home .home-dashboard-right::-webkit-scrollbar {

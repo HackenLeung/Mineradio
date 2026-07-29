@@ -9,21 +9,62 @@ function queueItemKey(song) {
   if (song.id != null && song.id !== '') return 'song:' + song.id;
   return String(song.name || '') + '|' + String(song.artist || '');
 }
-function playbackRestoreSongSnapshot(song) {
+// 快照只保存可寻址的轻量字段。内嵌封面是 base64 data URL、内嵌歌词最多 512 KB，
+// 一旦写进队列快照，每次 tick 都要同步序列化几十上百 MB，会直接卡死主线程。
+// 这些内容在文件夹重扫时会由 syncResolvedLocalSongReferences 重新挂回来。
+var PLAYBACK_SNAPSHOT_QUEUE_LIMIT = 600;
+var PLAYBACK_SNAPSHOT_URL_MAX = 2048;
+var PLAYBACK_SNAPSHOT_IDENTITY_KEYS = [
+  'provider', 'source', 'type', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
+  'spotifyId', 'spotifyUri', 'spotifyUrl', 'uri', 'albumUri',
+  'hash', 'fileHash', 'audioHash', 'albumId', 'album_id', 'albumMid', 'albummid', 'albumAudioId', 'album_audio_id', 'mixSongId', 'hqHash', 'sqHash', 'resHash',
+  'name', 'title', 'artist', 'duration', 'durationMs', 'dt',
+  'programId', 'radioId', 'radioName', 'localKey', 'localPath'
+];
+var PLAYBACK_SNAPSHOT_EXTRA_KEYS = [
+  'album', 'fee', 'playable', 'playbackMode', 'recommendationSource',
+  'localFolderPath', 'localFolderName'
+];
+var PLAYBACK_SNAPSHOT_URL_KEYS = ['cover', 'sidecarCover'];
+// data URL 一律丢弃：体积不可控，且能从本地文件重新读取。
+function playbackSnapshotSafeUrl(value) {
+  var raw = typeof value === 'string' ? value : '';
+  if (!raw || /^data:/i.test(raw)) return '';
+  return raw.length > PLAYBACK_SNAPSHOT_URL_MAX ? '' : raw;
+}
+function playbackSnapshotSafeMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  var safe = {};
+  Object.keys(metadata).forEach(function (key) {
+    var value = metadata[key];
+    if (value == null || value === '') return;
+    if (typeof value === 'string') {
+      var trimmed = playbackSnapshotSafeUrl(value);
+      if (trimmed) safe[key] = trimmed;
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') safe[key] = value;
+  });
+  return Object.keys(safe).length ? safe : null;
+}
+function playbackRestoreSongSnapshot(song, minimal) {
   song = song || {};
   var snap = {};
-  [
-    'provider', 'source', 'type', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
-    'spotifyId', 'spotifyUri', 'spotifyUrl', 'uri', 'albumUri',
-    'hash', 'fileHash', 'audioHash', 'albumId', 'album_id', 'albumMid', 'albummid', 'albumAudioId', 'album_audio_id', 'mixSongId', 'hqHash', 'sqHash', 'resHash',
-    'name', 'title', 'artist', 'album', 'cover', 'duration', 'durationMs', 'dt', 'fee',
-    'playable', 'playbackMode', 'recommendationSource', 'programId', 'radioId', 'radioName', 'localKey',
-    'localPath', 'localFolderPath', 'localFolderName', 'sidecarCover', 'embeddedCover', 'localLyricText', 'embeddedLyrics'
-  ].forEach(function (key) {
+  var keys = minimal
+    ? PLAYBACK_SNAPSHOT_IDENTITY_KEYS
+    : PLAYBACK_SNAPSHOT_IDENTITY_KEYS.concat(PLAYBACK_SNAPSHOT_EXTRA_KEYS);
+  keys.forEach(function (key) {
     if (song[key] != null && song[key] !== '') snap[key] = song[key];
   });
-  if (Array.isArray(song.artists)) snap.artists = song.artists.slice(0, 6);
-  if (song.onlineMetadata && typeof song.onlineMetadata === 'object') snap.onlineMetadata = Object.assign({}, song.onlineMetadata);
+  PLAYBACK_SNAPSHOT_URL_KEYS.forEach(function (key) {
+    var safe = playbackSnapshotSafeUrl(song[key]);
+    if (safe) snap[key] = safe;
+  });
+  if (!minimal) {
+    if (Array.isArray(song.artists)) snap.artists = song.artists.slice(0, 6);
+    var safeMetadata = playbackSnapshotSafeMetadata(song.onlineMetadata);
+    if (safeMetadata) snap.onlineMetadata = safeMetadata;
+  }
   if (song.type === 'local' || song.localKey) snap.localMissing = true;
   return snap;
 }
@@ -44,11 +85,14 @@ function saveLastPlaybackSnapshot(force, reason) {
   var song = currentCoverSong();
   if (!song) return;
   if (!audio && restoredLastPlaybackSnapshot && restoredLastPlaybackSnapshot.current && queueItemKey(song) === queueItemKey(restoredLastPlaybackSnapshot.current)) return;
+  // 无论成功还是失败都推进节流时间戳：配额写不进去时若不推进，200ms 的 tick
+  // 会让整条队列的序列化每次都重跑，主线程会被彻底占死。
+  lastPlaybackSnapshotSavedAt = now;
   var durationSec = getPlaybackDurationSeconds();
   var currentSec = getPlaybackCurrentSeconds();
   if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
-  var packedQueue = Array.isArray(playQueue) ? playQueue.map(playbackRestoreSongSnapshot).filter(function (item) { return item && (item.id || item.mid || item.localKey || item.name); }) : [];
-  function payloadForQueue(queue) { return {
+  var sourceQueue = Array.isArray(playQueue) ? playQueue : [];
+  function payloadForQueue(queue, minimal) { return {
     version: 1,
     savedAt: now,
     reason: reason || '',
@@ -60,18 +104,26 @@ function saveLastPlaybackSnapshot(force, reason) {
     current: playbackRestoreSongSnapshot(song),
     queue: queue
   }; }
-  var limits = [packedQueue.length, 1000, 500, 200, 80];
-  for (var limitIndex = 0; limitIndex < limits.length; limitIndex++) {
-    var limit = Math.min(limits[limitIndex], packedQueue.length);
-    var start = limit >= packedQueue.length ? 0 : Math.max(0, Math.min(currentIdx - Math.floor(limit / 2), packedQueue.length - limit));
+  // 先缩短队列，再降级为精简字段；单曲字段本身臃肿时，只缩短长度是压不进配额的。
+  var attempts = [
+    { limit: PLAYBACK_SNAPSHOT_QUEUE_LIMIT, minimal: false },
+    { limit: 200, minimal: false },
+    { limit: 200, minimal: true },
+    { limit: 80, minimal: true }
+  ];
+  for (var i = 0; i < attempts.length; i++) {
+    var limit = Math.min(attempts[i].limit, sourceQueue.length);
+    var start = limit >= sourceQueue.length ? 0 : Math.max(0, Math.min(currentIdx - Math.floor(limit / 2), sourceQueue.length - limit));
     try {
-      var payload = payloadForQueue(packedQueue.slice(start, start + limit));
+      var packed = sourceQueue.slice(start, start + limit).map(function (item) {
+        return playbackRestoreSongSnapshot(item, attempts[i].minimal);
+      }).filter(function (item) { return item && (item.id || item.mid || item.localKey || item.name); });
+      var payload = payloadForQueue(packed, attempts[i].minimal);
       payload.currentIdx = Math.max(0, currentIdx - start);
       localStorage.setItem(LAST_PLAYBACK_STORE_KEY, JSON.stringify(payload));
-      lastPlaybackSnapshotSavedAt = now;
       return;
     } catch (error) {
-      if (limitIndex === limits.length - 1) console.warn('[PlaybackSnapshotSave]', error);
+      if (i === attempts.length - 1) console.warn('[PlaybackSnapshotSave]', error);
     }
   }
 }
