@@ -52,12 +52,17 @@ function fakeMedia() {
   };
 }
 
-test('smart transition keeps upstream priority and reuses Cuefield handoff primitives', () => {
+test('smart transition and CueField AutoMix are mutually exclusive', () => {
+  const setSmart = namedFunctionSource(integration, 'setSmartTransitionStyle');
+  const toggleCuefield = namedFunctionSource(integration, 'toggleCuefieldAutoMix');
   const prepare = namedFunctionSource(integration, 'runCuefieldAutoMixPrepare');
   const execute = namedFunctionSource(integration, 'executeCuefieldAutoMix');
+  assert.match(setSmart, /disableCuefieldAutoMixForSmartTransition/);
+  assert.match(toggleCuefield, /setSmartTransitionStyle\('off', true\)/);
+  assert.match(integration, /function cuefieldAutoMixEffectiveEnabled\([\s\S]*cuefieldAutoMixEnabled && !isSmartTransitionEnabled\(\)/);
   assert.match(prepare, /if \(cuefieldAutoMixBlockedByAlbumGapless\(currentIndex\)\) return/);
-  assert.match(prepare, /var result = await cuefieldAutoMix\.prepare\([\s\S]*if \(isSmartTransitionEnabled\(\)\) await prepareSmartTransitionFallback/,
-    'an enabled Cuefield planner must finish before the local smart-transition fallback');
+  assert.match(prepare, /if \(!cuefieldEnabled \|\| !cuefieldAutoMix\)[\s\S]*prepareSmartTransitionFallback/,
+    'smart transition must bypass the upstream planner when it owns the transition');
   assert.match(execute, /prepareCuefieldPendingAudio\(pending\)/);
   assert.match(execute, /runCuefieldTimeline\(pending, nextMedia, transitionContext\)/);
   assert.match(execute, /cuefieldAutoMix:\s*true/);
@@ -89,12 +94,43 @@ test('prepared media must advance its clock before a transition can continue', a
   assert.equal(await waitForProgress({}, stalled, {}, 0, 520), false);
 });
 
+test('adopted media must keep advancing after it becomes the main player', async () => {
+  const progressing = fakeMedia();
+  const sandbox = {
+    audio: progressing,
+    trackSwitchToken: 9,
+    currentIdx: 3,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    isFinite,
+    Number,
+    Math,
+  };
+  const waitForProgress = vm.runInNewContext(
+    `(${namedFunctionSource(integration, 'waitForAdoptedCuefieldPlaybackProgress')})`,
+    sandbox,
+  );
+  setTimeout(() => {
+    progressing.currentTime = 0.12;
+    progressing.emit('timeupdate');
+  }, 80);
+  assert.equal(await waitForProgress(progressing, 9, 3, 0, 700), true);
+
+  const stalled = fakeMedia();
+  sandbox.audio = stalled;
+  assert.equal(await waitForProgress(stalled, 9, 3, 0, 650), false);
+});
+
 test('failed start has timeout, clock-stall detection, and ordinary playback fallback', () => {
   const execute = namedFunctionSource(integration, 'executeCuefieldAutoMix');
   const recover = namedFunctionSource(integration, 'recoverCuefieldAutoMixEndedOutgoing');
   assert.match(execute, /cuefieldPromiseWithTimeout\(nextMedia\.play\(\), 3600/);
   assert.match(execute, /waitForCuefieldPlaybackProgress/);
+  assert.match(execute, /waitForAdoptedCuefieldPlaybackProgress/);
   assert.match(execute, /SMART_TRANSITION_CLOCK_STALLED/);
+  assert.match(execute, /replaceAudioElementForGraphRecovery\('cuefield-handoff-fallback'/);
   assert.match(execute, /runCuefieldNormalFallback/);
   assert.match(recover, /trackSwitchToken !== token/);
   assert.match(recover, /currentIdx !== index/);

@@ -162,6 +162,7 @@ var STARTUP_FAST_SKIP_STORE_KEY = 'mineradio-startup-fast-skip-v1';
 var STARTUP_RESUME_MODE_STORE_KEY = 'mineradio-startup-resume-mode-v1';
 var LOCAL_BEATMAP_STORE_KEY = 'mineradio-local-beatmaps-v1';
 var LOCAL_BEAT_PREF_STORE_KEY = 'mineradio-local-beatmap-prefs-v1';
+var LOCAL_BEAT_SKIP_STORE_KEY = 'mineradio-local-beatmap-skip-v1';
 var LOCAL_BEAT_COMBOS = ['', 'downbeat', 'push', 'drop', 'rebound', 'accent'];
 var HOTKEY_ACTIONS = [
   { key: 'togglePlay', label: '播放 / 暂停', category: '播放', local: 'Space', global: 'Ctrl+Alt+Space' },
@@ -183,6 +184,7 @@ var customLyricFonts = readCustomLyricFonts();
 registerSavedCustomLyricFonts();
 var localBeatMapCache = readLocalBeatMapCache();
 var localBeatMapPrefs = readLocalBeatPrefs();
+var localBeatSkipPrefs = readLocalBeatSkipPrefs();
 var playbackQualityPrefs = readPlaybackQualityPreference();
 var playbackQuality = getProviderPlaybackQuality('netease');
 var audioOutputDeviceId = readAudioOutputDevicePreference();

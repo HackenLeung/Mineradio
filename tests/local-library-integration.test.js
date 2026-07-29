@@ -13,6 +13,9 @@ const preload = read('desktop/preload.js');
 const upload = read('public/js/modules/06-lyrics/05-upload-dragdrop.js');
 const lyrics = read('public/js/modules/06-lyrics/00-lyrics-fetch-parse.js');
 const queueSnapshot = read('public/js/modules/05-playback/09-queue-snapshot-autoplay.js');
+const beatCacheModal = read('public/js/modules/03-beat/03-local-beat-cache-modal.js');
+const indexHtml = read('public/index.html');
+const indexCss = read('public/css/index.css');
 
 assert.equal(packageJson.dependencies['music-metadata'], '11.14.0');
 assert.match(desktopMain, /import\('music-metadata'\)/);
@@ -47,6 +50,13 @@ assert.match(queueSnapshot, /var limits = \[packedQueue\.length, 1000, 500, 200,
 assert.match(queueSnapshot, /'localPath'.*'localFolderPath'.*'localLyricText'.*'embeddedLyrics'/s);
 assert.match(queueSnapshot, /if \(snapshot\.playMode\) playMode = snapshot\.playMode/);
 assert.match(queueSnapshot, /currentLocalSong = isLocal \? playQueue\[currentIdx\] : null/);
+
+assert.match(beatCacheModal, /function isLocalBeatAnalysisSkipped\(song\)/);
+assert.match(beatCacheModal, /if \(isLocalBeatAnalysisSkipped\(song\)\) return/);
+assert.match(beatCacheModal, /localBeatSkipPrefs\[song\.localKey\] = Date\.now\(\)/);
+assert.match(indexHtml, /id="local-beat-later-btn"[^>]+onclick="deferLocalBeatAnalysis\(\)"/);
+assert.match(indexCss, /#local-beat-modal\s*\{\s*pointer-events:\s*none/s);
+assert.match(indexCss, /#local-beat-modal \.local-beat-modal\s*\{\s*pointer-events:\s*auto/s);
 
 const inlineBranch = lyrics.indexOf("var inlineText = String(song.localLyricText || song.embeddedLyrics || '')");
 const onlineBranch = lyrics.indexOf('var onlineSong = localOnlineSongForMetadata(song)');

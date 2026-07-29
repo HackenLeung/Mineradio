@@ -10288,6 +10288,14 @@ body.login-guide-active #login-guide-canvas {
   text-align: left
 }
 
+#local-beat-modal {
+  pointer-events: none
+}
+
+#local-beat-modal .local-beat-modal {
+  pointer-events: auto
+}
+
 .local-beat-modal h2 {
   text-align: center;
   margin-bottom: 14px

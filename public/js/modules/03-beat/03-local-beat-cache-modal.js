@@ -108,6 +108,16 @@ function readLocalBeatPrefs() {
 function saveLocalBeatPrefs() {
   try { localStorage.setItem(LOCAL_BEAT_PREF_STORE_KEY, JSON.stringify(localBeatMapPrefs || {})); } catch (e) { }
 }
+function readLocalBeatSkipPrefs() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_BEAT_SKIP_STORE_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function saveLocalBeatSkipPrefs() {
+  try { localStorage.setItem(LOCAL_BEAT_SKIP_STORE_KEY, JSON.stringify(localBeatSkipPrefs || {})); } catch (e) { }
+}
+function isLocalBeatAnalysisSkipped(song) {
+  return !!(song && song.localKey && localBeatSkipPrefs && localBeatSkipPrefs[song.localKey]);
+}
 function readLocalBeatMapCache() {
   var out = {};
   try {
@@ -214,6 +224,7 @@ function prepareLocalBeatAnalysis(song, audioUrl) {
     applyLocalBeatMap(song, cached === getLocalBeatEntry(song.localKey, 'dj') ? 'dj' : 'mr', cached, true);
     return;
   }
+  if (isLocalBeatAnalysisSkipped(song)) return;
   var diskToken = trackSwitchToken;
   (async function () {
     var firstMode = preferred;
@@ -245,6 +256,15 @@ function openLocalBeatModal(song, audioUrl) {
 function closeLocalBeatModal() {
   if (localBeatAnalysis.active) return;
   closeGsapModal(document.getElementById('local-beat-modal'));
+}
+function deferLocalBeatAnalysis() {
+  if (localBeatAnalysis.active) return;
+  var song = localBeatAnalysis.song || currentLocalSong;
+  if (song && song.localKey) {
+    localBeatSkipPrefs[song.localKey] = Date.now();
+    saveLocalBeatSkipPrefs();
+  }
+  closeLocalBeatModal();
 }
 function selectLocalBeatMode(mode) {
   if (localBeatAnalysis.active) return;
