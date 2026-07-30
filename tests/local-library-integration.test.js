@@ -83,6 +83,15 @@ assert.doesNotMatch(upload, /applyLocalOnlineMetadata\(song, metadata\);[\s\S]{0
 assert.match(upload, /function hasReusableLocalOnlineMetadata\(/);
 assert.match(upload, /function normalizeStoredLocalOnlineMetadata\(/);
 assert.match(upload, /var LOCAL_LYRIC_MATCH_PROVIDERS = \['netease', 'kugou', 'qq'\]/);
+assert.match(upload, /LOCAL_LYRIC_PROVIDER_INTERVAL_MS = \{ netease: 1100, kugou: 420, qq: 420 \}/);
+assert.match(upload, /function waitForLocalLyricProvider\(/);
+assert.match(upload, /function noteLocalLyricProviderResult\(/);
+assert.match(upload, /操作频繁/);
+assert.match(upload, /too many requests/);
+assert.match(upload, /rate\.\?limit/);
+assert.match(upload, /Math\.min\(30000, 4000 \* Math\.pow\(2, count - 1\)\)/);
+assert.match(upload, /while \(true\)[\s\S]*availableAt <= now[\s\S]*await localLyricMatchDelay/,
+  'queued workers must re-check a provider cooldown after another request is rate-limited');
 assert.match(upload, /function isLocalLyricMatchProvider\(/);
 assert.match(upload, /function localLyricMatchProviderOrder\(/);
 assert.match(upload, /function isAcceptableLocalLyricCandidate\(/);
@@ -111,6 +120,9 @@ assert.match(indexCss, /\.local-library-folder:hover \.folder-lyric-match-btn/);
 assert.match(coverLoading, /isInlineCoverSrc\(directUrl\)[\s\S]{0,120}applyCoverDataUrl\(directUrl, opts\)/);
 assert.match(desktopMain, /local-library-folders-v1\.json/);
 assert.match(desktopMain, /custom-covers-v1\.json/);
+['tlyric', 'ytlrc', 'romalrc', 'yromalrc', 'klyric', 'qrc', 'roma', 'trans'].forEach((field) => {
+  assert.match(desktopMain, new RegExp(`${field}: String\\(payload`), `persistent local lyric cache must retain ${field}`);
+});
 assert.match(desktopMain, /item\.embeddedMediaParsed = true/);
 assert.match(customCoverMap, /function hydrateCustomCoverMapFromDisk\(/);
 assert.match(customCoverMap, /Object\.assign\(\{\}, result\.payload, customCoverMap \|\| \{\}\)/);

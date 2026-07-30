@@ -218,6 +218,9 @@ async function fetchLocalMetadataCandidates(song, query, provider) {
     ? controlSourceSearchUrl(provider, query)
     : '/api/search?keywords=' + encodeURIComponent(query) + '&limit=10';
   var data = await apiJson(url, { timeoutMs: 6500 });
+  if (data && (data.error || data.code === 405 || data.status === 405)) {
+    throw localLyricProviderError(provider, data, 'LOCAL_LYRIC_SEARCH_FAILED');
+  }
   var list = data && (data.songs || data.result || []);
   if (!Array.isArray(list)) list = [];
   return list.map(function (candidate) { return normalizeLocalMatchCandidate(candidate, provider); });
@@ -460,9 +463,46 @@ async function readReusableLocalLyricCache(song, onlineSong, desktopApi) {
 }
 
 var LOCAL_LYRIC_MATCH_PROVIDERS = ['netease', 'kugou', 'qq'];
+var LOCAL_LYRIC_PROVIDER_INTERVAL_MS = { netease: 1100, kugou: 420, qq: 420 };
+var localLyricProviderNextRequestAt = { netease: 0, kugou: 0, qq: 0 };
+var localLyricProviderRateLimitCount = { netease: 0, kugou: 0, qq: 0 };
 function isLocalLyricMatchProvider(provider) {
   provider = typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(provider) : String(provider || '');
   return LOCAL_LYRIC_MATCH_PROVIDERS.indexOf(provider) >= 0;
+}
+function localLyricMatchDelay(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, Math.max(0, Number(ms) || 0)); });
+}
+async function waitForLocalLyricProvider(provider) {
+  provider = isLocalLyricMatchProvider(provider) ? provider : 'netease';
+  while (true) {
+    var now = Date.now();
+    var availableAt = Number(localLyricProviderNextRequestAt[provider]) || 0;
+    if (availableAt <= now) {
+      localLyricProviderNextRequestAt[provider] = now + (LOCAL_LYRIC_PROVIDER_INTERVAL_MS[provider] || 500);
+      return;
+    }
+    await localLyricMatchDelay(availableAt - now);
+  }
+}
+function localLyricProviderError(provider, payload, fallback) {
+  var message = String(payload && (payload.error || payload.message || (payload.body && (payload.body.message || payload.body.msg))) || fallback || 'LOCAL_LYRIC_PROVIDER_FAILED');
+  var error = new Error(message);
+  error.provider = provider;
+  error.rateLimited = /(?:^|\D)405(?:\D|$)|操作频繁|稍候再试|too many requests|rate.?limit/i.test(message);
+  return error;
+}
+function noteLocalLyricProviderResult(provider, error) {
+  if (!isLocalLyricMatchProvider(provider)) return;
+  if (!error || error.rateLimited !== true) {
+    localLyricProviderRateLimitCount[provider] = 0;
+    return;
+  }
+  var count = Math.min(4, (Number(localLyricProviderRateLimitCount[provider]) || 0) + 1);
+  localLyricProviderRateLimitCount[provider] = count;
+  var cooldown = Math.min(30000, 4000 * Math.pow(2, count - 1));
+  localLyricProviderNextRequestAt[provider] = Math.max(Number(localLyricProviderNextRequestAt[provider]) || 0, Date.now() + cooldown);
+  console.warn('[LocalFolderLyricRateLimit]', provider, 'cooldown:', cooldown + 'ms');
 }
 function localLyricMatchProviderOrder() {
   var preferred = typeof normalizePlaybackProvider === 'function'
@@ -500,13 +540,16 @@ async function localLyricCandidatesForProvider(song, provider, savedMetadata) {
   var query = localMetadataQuery(song);
   var ranked = [];
   try {
+    await waitForLocalLyricProvider(provider);
     var candidates = await fetchLocalMetadataCandidates(song, query, provider);
     ranked = candidates.map(function (candidate) {
       return { candidate: candidate, score: localMetadataMatchScore(song, candidate, query) };
     }).filter(function (entry) {
       return isAcceptableLocalLyricCandidate(song, entry.candidate, entry.score);
     }).sort(function (left, right) { return right.score - left.score; });
+    noteLocalLyricProviderResult(provider, null);
   } catch (error) {
+    noteLocalLyricProviderResult(provider, error);
     console.warn('[LocalFolderLyricSearch]', provider, song && song.name, error);
   }
   var out = [];
@@ -553,7 +596,11 @@ async function resolveLocalOnlineLyricMatch(song, desktopApi) {
         return { reused: true, source: 'cache', provider: provider, metadata: metadata, payload: cachedPayload };
       }
       try {
+        await waitForLocalLyricProvider(provider);
         var response = await apiJson(lyricEndpointForSong(onlineSong), { timeoutMs: 9000 });
+        if (response && (response.error || response.code === 405 || response.status === 405)) {
+          throw localLyricProviderError(provider, response, 'LOCAL_ONLINE_LYRIC_FAILED');
+        }
         if (!localFolderHasUsableLyricPayload(song, response)) throw new Error('LOCAL_ONLINE_LYRIC_EMPTY');
         var cacheKey = localLyricCacheKey(song, onlineSong);
         if (desktopApi && typeof desktopApi.setLocalLyricsCache === 'function') {
@@ -562,8 +609,10 @@ async function resolveLocalOnlineLyricMatch(song, desktopApi) {
         syncLocalMetadata(song, metadata);
         applyLocalOnlineMetadata(song, metadata);
         syncResolvedLocalSongReferences(song);
+        noteLocalLyricProviderResult(provider, null);
         return { reused: false, source: 'remote', provider: provider, metadata: metadata, payload: response };
       } catch (error) {
+        noteLocalLyricProviderResult(provider, error);
         lastError = error;
         console.warn('[LocalFolderLyricCandidate]', provider, song && song.name, error);
       }

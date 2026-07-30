@@ -121,12 +121,12 @@ function normalizePlaylistProvider(provider) {
 }
 function playlistProviderLabel(provider) {
   provider = normalizePlaylistProvider(provider);
-  return provider === 'qq' ? 'QQ' : (provider === 'kugou' ? 'KG' : (provider === 'qishui' ? 'QS' : (provider === 'spotify' ? 'SP' : 'NE')));
+  return provider === 'qq' ? '小Q' : (provider === 'kugou' ? '小狗' : (provider === 'qishui' ? '小汽' : (provider === 'spotify' ? 'SP' : '小云')));
 }
 function playlistProviderName(provider) {
   provider = normalizePlaylistProvider(provider);
   if (provider === 'spotify') return 'Spotify';
-  return provider === 'qq' ? 'QQ 音乐' : (provider === 'kugou' ? '酷狗音乐' : (provider === 'qishui' ? '汽水音乐' : '网易云音乐'));
+  return provider === 'qq' ? '小Q' : (provider === 'kugou' ? '小狗' : (provider === 'qishui' ? '小汽' : '小云'));
 }
 function playlistPanelKey(provider, id) {
   provider = normalizePlaylistProvider(provider);
@@ -556,7 +556,7 @@ function playlistPanelBuildVirtualEntries() {
   if (playlistPanelVirtualCache.revision === playlistCatalogRevision &&
       playlistPanelVirtualCache.detailKey === playlistPanelDetailState.key &&
       playlistPanelVirtualCache.detailSig === detailSig) return playlistPanelVirtualCache;
-  var labels = { netease: '网易云歌单', qq: 'QQ 音乐歌单', kugou: '酷狗音乐歌单', qishui: '汽水音乐歌单', spotify: 'Spotify 歌单' };
+  var labels = { netease: '小云歌单', qq: '小Q歌单', kugou: '小狗歌单', qishui: '小汽歌单', spotify: 'Spotify 歌单' };
   var order = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
   var groups = { netease: [], qq: [], kugou: [], qishui: [], spotify: [] };
   userPlaylists.forEach(function (pl, sourceIndex) {

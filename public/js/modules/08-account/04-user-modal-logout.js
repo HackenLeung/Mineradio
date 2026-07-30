@@ -25,16 +25,16 @@ function updateUserModalUi() {
   if (vipEl) {
     if (activeAccountProvider === 'netease') {
       var neVipLevel = providerVipLevel('netease', st);
-      var vipLabel = neVipLevel === 'svip' ? '网易云 SVIP' : (neVipLevel === 'vip' ? '网易云 VIP' : '普通用户');
+      var vipLabel = neVipLevel === 'svip' ? '小云 SVIP' : (neVipLevel === 'vip' ? '小云 VIP' : '普通用户');
       vipEl.textContent = 'UID: ' + ((st && st.userId) || '-') + '  /  ' + vipLabel;
       vipEl.style.color = hasProviderVip('netease', st) ? 'rgba(244,210,138,0.86)' : 'rgba(255,255,255,0.5)';
     } else if (activeAccountProvider === 'kugou') {
       var kgVipLevel = providerVipLevel('kugou', st);
-      var kgVipLabel = kgVipLevel === 'svip' ? '酷狗 SVIP 会员' : (kgVipLevel === 'vip' ? '酷狗 VIP 会员' : '酷狗音乐会话');
+      var kgVipLabel = kgVipLevel === 'svip' ? '小狗 SVIP 会员' : (kgVipLevel === 'vip' ? '小狗 VIP 会员' : '小狗会话');
       vipEl.textContent = 'UID: ' + ((st && st.userId) || '-') + '  /  ' + kgVipLabel;
       vipEl.style.color = hasProviderVip('kugou', st) ? 'rgba(86,224,255,0.86)' : 'rgba(86,224,255,0.58)';
     } else if (activeAccountProvider === 'qishui') {
-      var qishuiMode = st && st.webSession ? '本机汽水会话已导入' : (st && st.tokenConfigured ? 'OpenAPI 授权已保存' : '汽水登录态未导入');
+      var qishuiMode = st && st.webSession ? '本机小汽会话已导入' : (st && st.tokenConfigured ? 'OpenAPI 授权已保存' : '小汽登录态未导入');
       var qishuiSync = st && st.webSession ? '可同步我的喜欢、歌单并直接播放' : '匹配源';
       vipEl.textContent = qishuiMode + '  /  ' + qishuiSync;
       vipEl.style.color = 'rgba(69,214,143,0.78)';
@@ -44,7 +44,7 @@ function updateUserModalUi() {
       vipEl.style.color = hasProviderVip('spotify', st) ? 'rgba(30,215,96,0.86)' : 'rgba(30,215,96,0.60)';
     } else {
       var qqVipLevel = providerVipLevel('qq', st);
-      var qqVipLabel = qqLoginNeedsAuthorizationRefresh(st) ? 'QQ 会员待同步' : (qqVipLevel === 'svip' ? 'QQ SVIP 会员' : (qqVipLevel === 'vip' ? 'QQ VIP 会员' : 'QQ 音乐会话'));
+      var qqVipLabel = qqLoginNeedsAuthorizationRefresh(st) ? '小Q会员待同步' : (qqVipLevel === 'svip' ? '小Q SVIP 会员' : (qqVipLevel === 'vip' ? '小Q VIP 会员' : '小Q会话'));
       vipEl.textContent = 'UID: ' + ((st && st.userId) || '-') + '  /  ' + qqVipLabel;
       vipEl.style.color = qqLoginNeedsAuthorizationRefresh(st) ? 'rgba(255,232,174,0.86)' : (hasProviderVip('qq', st) ? 'rgba(0,245,212,0.82)' : 'rgba(0,245,212,0.58)');
     }
@@ -54,15 +54,15 @@ function updateUserModalUi() {
     if (btn) btn.classList.toggle('active', key === 'both' ? dualAccountMode : (!dualAccountMode && activeAccountProvider === key));
   });
   if (addNetease) addNetease.style.display = hasPlatformLogin('netease') ? 'none' : '';
-  if (addQQ) addQQ.textContent = hasPlatformLogin('qq') ? '查看 QQ 音乐' : '补登 QQ 音乐';
-  if (addKugou) addKugou.textContent = hasPlatformLogin('kugou') ? '查看酷狗音乐' : '补登酷狗音乐';
-  if (addQishui) addQishui.textContent = hasPlatformLogin('qishui') ? '重新导入汽水' : '导入汽水登录态';
+  if (addQQ) addQQ.textContent = hasPlatformLogin('qq') ? '查看小Q' : '补登小Q';
+  if (addKugou) addKugou.textContent = hasPlatformLogin('kugou') ? '查看小狗' : '补登小狗';
+  if (addQishui) addQishui.textContent = hasPlatformLogin('qishui') ? '重新导入小汽' : '导入小汽登录态';
   if (addSpotify) addSpotify.textContent = hasPlatformLogin('spotify') ? '查看 Spotify' : '连接 Spotify';
   if (logoutBtn) logoutBtn.textContent =
-    activeAccountProvider === 'qq' ? '退出 QQ 音乐' :
-    (activeAccountProvider === 'kugou' ? '退出酷狗音乐' :
-    (activeAccountProvider === 'qishui' ? '清除汽水登录态' :
-    (activeAccountProvider === 'spotify' ? '退出 Spotify' : '退出网易云')));
+    activeAccountProvider === 'qq' ? '退出小Q' :
+    (activeAccountProvider === 'kugou' ? '退出小狗' :
+    (activeAccountProvider === 'qishui' ? '清除小汽登录态' :
+    (activeAccountProvider === 'spotify' ? '退出 Spotify' : '退出小云')));
   if (hint) hint.textContent = dualAccountMode
     ? '右上角已切换为多平台并排展示。'
     : '可切换右上角展示的平台；“我两个都要”会并排显示当前已登录的平台。';
@@ -124,9 +124,9 @@ function logoutOperationFailure(result) {
 
 function resetAllProviderRendererLoginState() {
   loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
-  qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
-  kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
-  qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
+  qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: '小Q', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
+  kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '小狗', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
+  qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '小汽', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
   spotifyLoginStatus = { provider: 'spotify', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: 'Spotify', userId: '', avatar: '', product: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match', tokenConfigured: false, tokenFileExists: false, credentialsFileExists: false, localConfigMissing: false };
   loginStatusChecked = true;
   loginStatusCheckFailed = false;
@@ -246,7 +246,7 @@ async function logoutActiveAccount() {
         await window.desktopWindow.clearQishuiMusicLogin();
       }
     } catch (e) { }
-    qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
+    qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '小汽', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
     qishuiPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
     playlistCatalogRevision += 1;
@@ -256,7 +256,7 @@ async function logoutActiveAccount() {
     safeShelfRebuild('qishui-logout');
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
-    showToast('已清除汽水音乐授权');
+    showToast('已清除小汽授权');
     return;
   }
   if (activeAccountProvider === 'kugou') {
@@ -266,7 +266,7 @@ async function logoutActiveAccount() {
         await window.desktopWindow.clearKugouMusicLogin();
       }
     } catch (e) { }
-    kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
+    kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '小狗', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
     kugouPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'kugou'; });
     playlistCatalogRevision += 1;
@@ -275,7 +275,7 @@ async function logoutActiveAccount() {
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
-    showToast('已退出酷狗音乐');
+    showToast('已退出小狗');
     return;
   }
   if (activeAccountProvider === 'qq') {
@@ -286,7 +286,7 @@ async function logoutActiveAccount() {
       }
     } catch (e) { }
     if (typeof clearQQPlaybackVipEvidence === 'function') clearQQPlaybackVipEvidence();
-    qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
+    qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: '小Q', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
     qqPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qq'; });
     playlistCatalogRevision += 1;
@@ -295,7 +295,7 @@ async function logoutActiveAccount() {
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
-    showToast('已退出 QQ 音乐');
+    showToast('已退出小Q');
     return;
   }
   doLogout();

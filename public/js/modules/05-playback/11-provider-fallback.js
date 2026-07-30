@@ -2,11 +2,11 @@ var firstPlayDone = false;
 
 function playbackProviderLabel(song) {
   var provider = songProviderKey(song);
-  if (provider === 'qq') return 'QQ 音乐';
-  if (provider === 'kugou') return '酷狗音乐';
-  if (provider === 'qishui') return '汽水音乐';
+  if (provider === 'qq') return '小Q';
+  if (provider === 'kugou') return '小狗';
+  if (provider === 'qishui') return '小汽';
   if (provider === 'spotify') return 'Spotify';
-  return '网易云';
+  return '小云';
 }
 function playbackLoginProvider(song) {
   return normalizePlaybackProvider(songProviderKey(song));
@@ -107,7 +107,7 @@ function playbackRestrictionNotice(song, data) {
   var message = data.message || restriction.message || '';
   if (category === 'vip_required' || category === 'paid_required' || category === 'trial_only') {
     var needText = category === 'paid_required' ? '购买、数字专辑或更高权限' : (category === 'trial_only' ? '完整播放权限' : '会员权限');
-    var title = membershipPending ? 'QQ 会员状态待同步' : (loggedIn ? '当前平台没有会员状态' : '当前平台未登录会员');
+    var title = membershipPending ? '小Q会员状态待同步' : (loggedIn ? '当前平台没有会员状态' : '当前平台未登录会员');
     var body = message || (provider + ' 已识别为会员/付费曲目，当前状态是 ' + membership + '，缺少' + needText + '。');
     if (loggedIn && body.indexOf('当前状态') < 0) body += ' 当前状态是 ' + membership + '。';
     return { category: category, title: title, body: body + ' 可以登录会员账号、降低音质或切换到其它音源。', action: 'upgrade', toast: title };
@@ -202,7 +202,7 @@ async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data
   var nextQuality = candidates[0];
   var resolvedQuality = normalizePlaybackQuality(data && data.level);
   markPlaybackQualityRuntimeCap(song, 'qq', nextQuality, 'qq-url-unavailable');
-  if (!opts.startupAutoplay) showSourceFallbackNotice('QQ 音质自动兼容', '当前音质启动失败，正在切到 ' + playbackQualityLabel(nextQuality, 'qq') + '。');
+  if (!opts.startupAutoplay) showSourceFallbackNotice('小Q音质自动兼容', '当前音质启动失败，正在切到 ' + playbackQualityLabel(nextQuality, 'qq') + '。');
   var retryResumeAt = opts.resumeAt;
   if (retryResumeAt == null && opts.startupAutoplay && pendingPlaybackResumeAt > 0) retryResumeAt = pendingPlaybackResumeAt;
   var retryStarted = await playQueueAt(idx, Object.assign({}, opts, {
@@ -455,9 +455,9 @@ function awaitSourceFallbackBudget(promise, recovery) {
 }
 
 function sourceFallbackProviderTitle(provider) {
-  if (provider === 'qq') return 'QQ 音乐';
-  if (provider === 'kugou') return '酷狗音乐';
-  return '网易云';
+  if (provider === 'qq') return '小Q';
+  if (provider === 'kugou') return '小狗';
+  return '小云';
 }
 function sourceFallbackProviderReady(provider) {
   provider = normalizePlaybackProvider(provider);
@@ -542,7 +542,6 @@ function settleSourceFallbackTerminal(idx, token, message, opts) {
   forcePlaybackControlsInteractive();
   playToggleBusy = false;
   markQueueItemPlaybackFailed(idx, recovery);
-  if (typeof clearAlbumGaplessPreload === 'function') clearAlbumGaplessPreload('source-fallback-terminal');
   if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('source-fallback-terminal');
   if (typeof clearPlaybackResumeWatchdogs === 'function') clearPlaybackResumeWatchdogs();
   if (typeof playbackResumeRecovery !== 'undefined' && playbackResumeRecovery) {
@@ -694,14 +693,6 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
         return settleSourceFallbackTerminal(idx, token, '自动恢复已达到时间上限，请稍后手动重试。', skipOpts);
       }
       if (!alternate) continue;
-      var alternateData = typeof resolveAlbumGaplessPlaybackData === 'function'
-        ? await awaitSourceFallbackBudget(resolveAlbumGaplessPlaybackData(alternate), recovery)
-        : null;
-      if (token !== trackSwitchToken) return false;
-      if (alternateData === sourceFallbackBudgetTimeoutResult || !sourceFallbackRecoveryCanContinue(recovery)) {
-        return settleSourceFallbackTerminal(idx, token, '自动恢复已达到时间上限，请稍后手动重试。', skipOpts);
-      }
-      if (!alternateData || !alternateData.url) continue;
       var originalSong = playQueue[idx];
       alternate.autoFallbackFrom = songProviderKey(song);
       var committedCandidate = hydrateCustomCover(alternate);
@@ -713,7 +704,6 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
         startupAutoplay: !!opts.startupAutoplay,
         preserveHomeState: !!opts.preserveHomeState,
         suppressPlayFailureNotice: true,
-        preResolvedPlaybackData: alternateData,
         fallbackOriginalSong: originalSong,
         fallbackCandidateSong: committedCandidate,
         sourceFallbackRecovery: recovery,

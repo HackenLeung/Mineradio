@@ -1190,10 +1190,10 @@ function openHomeDashboardCharts() {
 
 function homePlatformRecommendationSourceLabel(source) {
   return {
-    netease: '网易云',
-    qishui: '汽水',
-    qq: 'QQ 音乐',
-    kugou: '酷狗音乐',
+    netease: '小云',
+    qishui: '小汽',
+    qq: '小Q',
+    kugou: '小狗',
     spotify: 'Spotify',
   }[source] || '当前平台';
 }
@@ -1203,16 +1203,16 @@ function homePlatformRecommendationFeedConfig(source) {
     qishui: {
       endpoint: '/api/qishui/feed?limit=12',
       sectionTitle: '推荐 Feed',
-      cardLabel: '汽水推荐 Feed',
-      readyText: '来自汽水推荐 Feed',
-      playlistName: '汽水推荐 Feed',
+      cardLabel: '小汽推荐 Feed',
+      readyText: '来自小汽推荐 Feed',
+      playlistName: '小汽推荐 Feed',
     },
     kugou: {
       endpoint: '/api/kugou/recommendations?limit=12',
       sectionTitle: '推荐 FM',
-      cardLabel: '酷狗推荐 FM',
-      readyText: '来自酷狗 FM 推荐',
-      playlistName: '酷狗推荐 FM',
+      cardLabel: '小狗推荐 FM',
+      readyText: '来自小狗 FM 推荐',
+      playlistName: '小狗推荐 FM',
     },
     spotify: {
       endpoint: '/api/spotify/recommendations?limit=12',
@@ -1295,7 +1295,7 @@ function renderHomePlatformDailyWindow(force) {
   if (!force && grid.getAttribute('data-render-window') === signature) return;
   var html = [homePlatformRecommendationSpacer(range.topRows, 'top')];
   for (var index = range.start; index < range.end; index += 1) {
-    html.push(homePlatformRecommendationCard('netease-song', index, songs[index], '网易云每日推荐'));
+    html.push(homePlatformRecommendationCard('netease-song', index, songs[index], '小云每日推荐'));
   }
   html.push(homePlatformRecommendationSpacer(range.bottomRows, 'bottom'));
   grid.innerHTML = html.join('');
@@ -1343,7 +1343,7 @@ function renderHomePlatformRecommendations() {
 
   if (source === 'netease') {
     if (homeDiscoverState.loading || homePlatformRecommendationState.neteaseLoading) {
-      status.textContent = '正在读取网易云平台推荐…';
+      status.textContent = '正在读取小云平台推荐…';
       list.innerHTML = '<div class="home-platform-recommend-loading">正在同步推荐内容</div>';
       return;
     }
@@ -1352,7 +1352,7 @@ function renderHomePlatformRecommendations() {
     var songs = Array.isArray(homeDiscoverState.songs) ? homeDiscoverState.songs : [];
     if (playlists.length) {
       sections.push('<section><h3>推荐歌单</h3><div class="home-platform-recommend-grid">' + playlists.map(function (item, index) {
-        return homePlatformRecommendationCard('netease-playlist', index, item, '网易云推荐歌单');
+        return homePlatformRecommendationCard('netease-playlist', index, item, '小云推荐歌单');
       }).join('') + '</div></section>');
     }
     if (songs.length) {
@@ -1362,15 +1362,15 @@ function renderHomePlatformRecommendations() {
     if (sections.length) {
       status.textContent = songs.length
         ? '已读取全部 ' + songs.length + ' 首每日推荐；滚动时仅渲染视窗附近歌曲'
-        : '来自网易云推荐歌单';
+        : '来自小云推荐歌单';
       list.innerHTML = sections.join('');
       if (songs.length) renderHomePlatformDailyWindow(true);
     } else {
-      status.textContent = homeDiscoverState.error ? '网易云推荐读取失败' : '网易云暂未返回推荐内容';
+      status.textContent = homeDiscoverState.error ? '小云推荐读取失败' : '小云暂未返回推荐内容';
       status.classList.toggle('is-error', !!homeDiscoverState.error);
       list.innerHTML = homePlatformRecommendationEmptyHtml('netease', homeDiscoverState.loggedIn
         ? '平台本次没有返回推荐内容，未使用搜索结果补位。'
-        : '登录网易云后可读取推荐歌单与每日推荐，未使用关键词搜索替代。');
+        : '登录小云后可读取推荐歌单与每日推荐，未使用关键词搜索替代。');
     }
     return;
   }
@@ -1390,8 +1390,8 @@ function renderHomePlatformRecommendations() {
       var readyText = feedConfig.readyText;
       if (source === 'qishui' && feedState.fallback) {
         sectionTitle = '你的音乐';
-        cardLabel = '汽水喜欢 / 最近播放';
-        readyText = '汽水推荐 Feed 暂不可用，当前显示你的喜欢与最近播放';
+        cardLabel = '小汽喜欢 / 最近播放';
+        readyText = '小汽推荐 Feed 暂不可用，当前显示你的喜欢与最近播放';
       } else if (source === 'spotify' && feedState.mode === 'liked-affinity') {
         sectionTitle = '你的喜欢';
         cardLabel = 'Spotify 喜欢的歌曲';

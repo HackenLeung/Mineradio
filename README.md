@@ -1,108 +1,100 @@
 # Mineradio
 
-![Mineradio 暗场启动页](./docs/assets/readme/cinema-beat-smoke.png)
+Mineradio 是 Windows Electron 桌面音乐播放器，包含在线搜索与播放、本地音乐库、歌词舞台、粒子视觉、3D 歌单架、音频调节、桌面模式和自动更新。
 
-Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、歌词舞台、粒子视觉、3D 歌单架和完整桌面模式组合成一个更接近现场感的私人音乐空间。
+当前维护仓库：[HackenLeung/Mineradio](https://github.com/HackenLeung/Mineradio)
 
-## 立即下载 Windows 安装包
+## 本次更新内容（v1.3.0）
 
-> 国内 GitHub 用户可优先使用蓝奏云下载；其他用户可直接使用 GitHub Release。
+- **模块化架构同步：** 主界面运行时同步到模块化前端结构，并融合原有 Home、本地音乐、歌词、视觉控制台、桌面功能和远程控制能力，后续维护不再依赖旧版单文件前端。
+- **多平台账号与歌单：** 支持小云、小Q、小狗、小汽和 Spotify 的账号/搜索/歌单能力；Spotify 使用官方 OAuth，同步歌单与 Liked Songs，播放时按匹配源自动换源。
+- **本地音乐增强：** 保留已添加文件夹、完整本地元数据和在线匹配结果；继续优先读取自定义、同目录和内嵌封面/歌词，并新增“定位到当前歌曲”。
+- **歌词匹配修复：** 自动匹配只使用小云、小狗、小Q，优先当前登录平台；已匹配且有可用歌词的歌曲直接复用，持久缓存保留翻译、逐字歌词和罗马音。批量匹配加入平台间隔和限流冷却，减少 `405 操作频繁`。
+- **播放与过渡：** 保留智能过渡的音频和画面联动，删除独立的专辑“无缝衔接”和 Cuefield AutoMix 运行时；音源失败时按已登录平台有限回退，失败候选会回滚队列。
+- **桌面与视觉：** 保留 Wallpaper Engine 原生 Scene 联动、锁定到桌面、桌面歌词、托盘控制、音乐魔方遥控器、均衡器、歌词布局、用户存档和视觉控制台。
+- **覆盖升级兼容：** 新旧用户统一使用安装目录下的 `user-data` 完整 Electron profile；缓存位于同级 `MineradioCache`。覆盖安装沿用原安装目录，默认卸载保留两个目录，不迁移到 AppData，也不逐文件合并 Cookies、Local Storage 或 IndexedDB。
+- **稳定性：** 加固完整队列恢复、小Q登录/会员状态、长暂停恢复、播放所有权、长列表虚拟化和安装/卸载路径安全。
 
-| 下载入口 | 推荐人群 | 链接 |
-| --- | --- | --- |
-| 蓝奏云满速下载 | 国内用户优先 | [下载 Mineradio 2.0.2 安装包](https://xxhuber.lanzout.com/s/Mineradio) |
-| GitHub Release | GitHub 用户 | [Mineradio 2.0.2 Release](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.0.2) |
+## 近期基线（v1.2.1 - v1.2.6）
 
-安装时只需要下载并运行 `Mineradio-2.0.2-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
+- 继续听恢复完整播放队列、当前歌曲、播放位置和“下一首播放”顺序。
+- 过渡歌单使用节奏网格填充率区分能量，支持本地库节奏扫描和已听在线歌曲候选。
+- Wallpaper Engine Scene 使用原生运行方式，桌面锁定会适配显示器坐标、分辨率和缩放变化。
+- 本地音乐优先读取音频内嵌封面/歌词，在线匹配避免 Live、翻唱或错误版本覆盖本地信息。
+- 桌面歌词、歌词设置、均衡器、托盘、悬浮遥控器和视觉用户存档均可持久化。
 
-## 下载或安装被拦截怎么办
+详细记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
-小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的蓝奏云或 GitHub Release 官方入口，文件名是 `Mineradio-2.0.2-Setup.exe`。
+## 安装与覆盖升级
 
-1. 浏览器下载栏提示风险时，打开下载列表，点这条下载右侧的 `...` 三个点，选择 `保留` / `仍要保留` / `显示更多` 后继续保留。
-2. Windows SmartScreen 弹出蓝色拦截窗口时，点 `更多信息`，再点 `仍要运行`。
-3. 如果杀毒软件明确显示木马、高危或已经隔离，不要强行运行；删除该文件后重新从蓝奏云或 GitHub Release 下载，仍然异常请带截图反馈给作者。
+发布后从 [GitHub Releases](https://github.com/HackenLeung/Mineradio/releases) 下载并运行：
 
-## 作者支持
+```text
+Mineradio-1.3.0-Setup.exe
+```
 
-如果 Mineradio 陪你多听了一首歌，也欢迎请作者一杯咖啡。
+- 已安装用户应直接选择原安装目录，例如 `D:\Mineradio`，安装器会优先采用注册表记录的原路径。
+- 正式用户数据位于 `<安装目录>\user-data`，包含设置、登录分区、Cookies、localStorage、IndexedDB、播放队列和本地库信息。
+- 缓存位于 `<安装目录>\MineradioCache`，与 `user-data` 同级；`sessionData` 不会移动到缓存目录。
+- 覆盖安装只替换程序文件，不复制、合并或移动上述两个目录。
+- 默认卸载保留 `user-data` 和 `MineradioCache`；只有明确勾选“删除用户数据”时才删除。
+- 旧目录存在但 `user-data` 缺失或不可写时，安装器会明确停止，不会创建空白数据冒充原用户资料。
 
-[查看完整支持页](./docs/SUPPORT.md)
+## 核心能力
 
-![Mineradio 作者支持渠道](./docs/assets/support/mineradio-author-support-poster.png)
+- 小云、小Q、小狗、小汽和 Spotify 账号、搜索及歌单接入
+- 本地文件夹音乐库、二级歌单、内嵌/同目录封面与歌词
+- 本地歌曲在线匹配、持久歌词缓存和当前歌曲定位
+- 智能过渡、倍速/音调、均衡器、节奏分析和电影镜头
+- 歌词舞台、桌面歌词、歌词布局、粒子视觉和 3D 歌单架
+- Wallpaper Engine 原生联动、桌面锁定、托盘和悬浮遥控器
+- Home、继续听、每日推荐、听歌画像、平台歌单和长列表虚拟化
+- GitHub Releases 更新检测、完整安装包和安全安装/卸载流程
 
-Mineradio 2.0 重新整理了视觉层次、桌面模式、主页与搜索体验，并收紧了连续播放、启动和后台性能表现。
+## 已知边界
 
-## 当前版本
+- 第三方接口、账号状态、地区版权或会员权限不可用时，搜索、歌单、歌词或在线播放可能失败。
+- Spotify 不直接提供可播放音频，Mineradio 仅使用其官方 Web API 同步账号资料、歌单和匹配信息，播放会自动换到可用来源。
+- 桌面歌词、透明窗口、Wallpaper Engine 和桌面锁定受 Windows、显卡驱动、桌面软件和安全软件影响。
+- 安装包目前未做商业代码签名，Windows SmartScreen 可能显示未知发布者，请只从当前维护仓库下载。
 
-当前版本：`2.0.2`
+## 项目来源、维护与使用边界
 
-状态：Mineradio 2.0.2 正式版。
-
-> 安全提示：`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请使用本页提供的 `Mineradio-2.0.2-Setup.exe`。
-
-## 核心特性
-
-- 首页包含每日推荐、平台推荐、继续听、听歌画像和我的歌单入口
-- 完整桌面模式保留播放器、主页、歌单和桌面交互
-- 支持本地 MP4 与 Wallpaper Engine 视觉内容
-- 播放后切换到 Emily / 默认播放态视觉，歌词舞台与粒子舞台同步工作
-- 基于节奏的电影镜头视觉系统
-- 面向长播客和 DJ 曲目的专属视觉模式
-- 歌词舞台、自定义歌词、歌词位置与视觉控制
-- 自定义专辑封面上传与裁剪
-- 右键唤起 3D 歌单架，支持歌单队列浏览
-- 网易云音乐账号、搜索、歌单、播客等体验接入
-- QQ 音乐搜索、登录态与音源补充接入
-- GitHub Releases 更新检测与下载入口
-- 首次启动内置「默认测试」视觉用户存档，软件内默认视觉参数与该存档一致
-
-## 使用说明
-
-Windows 用户可以在 GitHub Releases 中下载安装包。
-
-正式分发以 `Mineradio-2.0.2-Setup.exe` 为准，不建议直接使用 `win-unpacked` 目录。安装包会创建桌面快捷方式。
-
-已经安装过旧版本的用户可直接运行 `Mineradio-2.0.2-Setup.exe` 完成更新。
+- **当前项目与维护：** [HackenLeung/Mineradio](https://github.com/HackenLeung/Mineradio) 是 Mineradio 的 Windows Electron 社区维护版；当前功能融合、Windows 构建、版本发布和问题处理由 [@HackenLeung](https://github.com/HackenLeung) 负责。
+- **原项目与原作者：** 本项目基于 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio) 继续开发，原作者为 [@XxHuberrr](https://github.com/XxHuberrr)，仓库保留原始署名和版权信息。
+- **同步与参考：** v1.3.0 同步了原项目后续模块化架构和部分功能，并融合当前维护版既有实现；Wallpaper Engine 与完整桌面/Home 方向还参考了 [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music)。具体来源与边界见 [NOTICE.md](./NOTICE.md) 和 [THIRD_PARTY_PORTS.md](./docs/THIRD_PARTY_PORTS.md)。
+- **版本关系：** 当前仓库发布的修改版不是原项目作者发布或维护的官方版本；本仓库的修改、说明和发布行为不代表原作者或参考项目维护者认可、授权、担保或背书。
+- **内容与账号边界：** 仓库不分发歌曲、歌词库、专辑封面库、平台歌单数据库、壁纸素材或账号凭据，也不提供绕过付费、会员、地区或版权限制的能力。
+- **隐私与反馈：** 登录状态和 Cookie 仅保存在用户本机。详见 [PRIVACY.md](./PRIVACY.md) 与 [SECURITY.md](./SECURITY.md)；问题请提交到当前仓库的 [GitHub Issues](https://github.com/HackenLeung/Mineradio/issues)。
 
 ## 开发运行
 
-```bash
+```powershell
 npm install
 npm start
 npm run build:win
 ```
 
-桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
+桌面版由 Electron 主进程加载本地服务。前端运行时代码位于 `public/js/modules/`，入口由 `public/js/index-loader.js` 按顺序加载；不要再把当前模块化实现回退成旧版单文件架构。
 
-## 更新机制
+常用检查：
 
-Mineradio 会请求 GitHub Releases latest 检测新版本。远端版本高于本地版本时，应用内更新入口会展示 Release 内容、下载安装包到本机用户数据目录，并通过系统打开安装包。
-
-本地验证更新链路时，可以通过 `MINERADIO_UPDATE_MANIFEST` 指向一个本地 manifest JSON 或 HTTP 地址来模拟线上 Release。
-
-## 第三方音乐平台说明
-
-Mineradio 不是网易云音乐、QQ 音乐或腾讯音乐娱乐集团的官方客户端，也不隶属于任何音乐平台。
-
-项目中的第三方平台接入仅用于个人学习、本地客户端体验和用户自有账号的播放辅助。请遵守对应平台的用户协议、版权规则和会员权益规则。项目不会提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。
+```powershell
+git diff --check
+node scripts/quick-check.js
+npm run build:win
+```
 
 ## 用户数据与隐私
 
-登录 Cookie、搜索历史、自定义封面、自定义歌词、节奏分析缓存等数据只应保存在本机用户数据目录或浏览器本地存储中，不应提交到仓库。
+登录 Cookie（`.cookie`、`.qq-cookie`、`.kugou-cookie` 等）、搜索历史、自定义封面、自定义歌词、播放会话、听歌统计和本地节奏分析缓存只应保存在安装目录的 `user-data` 或 `MineradioCache` 中，不应提交到仓库。
 
 更多说明见 [PRIVACY.md](./PRIVACY.md)。
 
-## 致谢
-
-Mineradio 由 XxHuberrr 主要设计与打造。emily 作为早期视觉底层想法与 `emily` 视觉预设改进方向的共创者和灵感来源之一，特此感谢。
-
-同时感谢小天才e宝、应春日、锋将军、軌跡、林中、骊、风痕、花椰菜🥦在早期体验、测试反馈和发布准备中的帮助。
-
 ## 版权与授权
 
-Copyright (C) 2026 XxHuberrr.
+Copyright (C) 2026 XxHuberrr and contributors.
 
 本项目采用 GPL-3.0 授权。详见 [LICENSE](./LICENSE)。
 
-MR Logo、Mineradio 名称、界面视觉设计与原创视觉表达归作者所有；第三方依赖和第三方服务分别遵循其各自授权与服务条款。
+MR Logo、Mineradio 名称、界面视觉设计与原创视觉表达归原权利人所有；第三方依赖、第三方服务、平台名称、歌曲内容、歌词、封面和商标分别遵循其各自授权、版权规则和服务条款。

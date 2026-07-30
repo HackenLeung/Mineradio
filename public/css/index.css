@@ -6699,7 +6699,7 @@ body:not(.controls-visible) .lyric-timing-control::before,
 }
 
 .quality-option.locked:not(.cap-locked) small::after {
-  content: ' · 需网易云SVIP';
+  content: ' · 需小云SVIP';
   color: rgba(244, 210, 138, .88)
 }
 

@@ -281,7 +281,8 @@ function testDesktopReauthCookieSelectionAndBudgets() {
     vkeyBudget + audioProbeBudget < 15000,
     'the complete QQ URL handler deadline must finish before the renderer 15s request deadline'
   );
-  assert((playbackSource.match(/timeoutMs: 15000/g) || []).length >= 2);
+  assert.strictEqual((playbackSource.match(/timeoutMs: 15000/g) || []).length, 1,
+    'the main playback path must own the single QQ URL request after the removed gapless pre-resolver');
   assert(/timeoutMs: 15000/.test(prefetchSource));
 
   assert(!/vipEvidence:\s*playbackVipEvidence/.test(serverSource));

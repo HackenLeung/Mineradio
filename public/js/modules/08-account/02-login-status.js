@@ -135,7 +135,7 @@ async function refreshLoginStatus(force) {
 }
 
 function normalizeQQLoginStatus(info) {
-  var fallback = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, svipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false, vipCheckedAt: 0, vipSource: '', vipProbeAvailable: false, membershipKnown: false, membershipStale: false, authorizationIncomplete: false, vipSyncState: '' };
+  var fallback = { provider: 'qq', loggedIn: false, preview: false, nickname: '小Q', userId: '', avatar: '', vipType: 0, svipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false, vipCheckedAt: 0, vipSource: '', vipProbeAvailable: false, membershipKnown: false, membershipStale: false, authorizationIncomplete: false, vipSyncState: '' };
   if (!info || !info.loggedIn) return Object.assign({}, fallback, info || {}, {
     provider: 'qq',
     loggedIn: false,
@@ -195,10 +195,10 @@ function qqMembershipLabel(status) {
 }
 function qqLoginStatusText(info) {
   info = normalizeQQLoginStatus(info || qqLoginStatus);
-  if (!info.loggedIn) return '点击“扫码登录”打开 QQ 音乐官方窗口';
-  if (qqLoginNeedsAuthorizationRefresh(info)) return 'QQ 会话需要重新授权 · 会员状态待同步';
+  if (!info.loggedIn) return '点击“扫码登录”打开小Q官方窗口';
+  if (qqLoginNeedsAuthorizationRefresh(info)) return '小Q会话需要重新授权 · 会员状态待同步';
   var syncText = info.vipCheckedAt ? ' · 会员已复验' : '';
-  return '已保存 QQ 音乐会话 · ' + (info.nickname || 'QQ 音乐') + ' · ' + qqMembershipLabel(info) + syncText;
+  return '已保存小Q会话 · ' + (info.nickname || '小Q') + ' · ' + qqMembershipLabel(info) + syncText;
 }
 
 async function refreshQQLoginStatus(options) {
@@ -211,7 +211,7 @@ async function refreshQQLoginStatus(options) {
     qqLoginStatus = normalizeQQLoginStatus(info);
     auditProviderVipState('qq', qqLoginStatus);
     if (!qqLoginStatus.loggedIn) {
-      if (prevLogged || qqLoginWasLoggedIn) showToast(qqLoginStatus.stale ? 'QQ 音乐登录已失效' : 'QQ 音乐已掉登录');
+      if (prevLogged || qqLoginWasLoggedIn) showToast(qqLoginStatus.stale ? '小Q登录已失效' : '小Q已掉登录');
       qqPlaylists = [];
       userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qq'; });
       playlistCatalogRevision += 1;
@@ -222,7 +222,7 @@ async function refreshQQLoginStatus(options) {
       loadHomeDiscover(true);
       refreshUserPlaylists(true);
     } else if (qqLoginStatus.stale) {
-      showToast('QQ 音乐登录状态可能已失效');
+      showToast('小Q登录状态可能已失效');
     }
     qqLoginWasLoggedIn = !!qqLoginStatus.loggedIn;
     if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
@@ -268,7 +268,7 @@ function startQQLoginStatusAutoRefresh() {
 }
 
 function normalizeKugouLoginStatus(info) {
-  var fallback = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0, svipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false };
+  var fallback = { provider: 'kugou', loggedIn: false, preview: false, nickname: '小狗', userId: '', avatar: '', vipType: 0, svipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false };
   var normalizedLevel = info && info.loggedIn ? providerVipLevel('kugou', info) : (info && (info.vipLevel || info.vip_level) || 'none');
   if (!info || !info.loggedIn) return Object.assign({}, fallback, info || {}, {
     provider: 'kugou',
@@ -338,7 +338,7 @@ async function refreshKugouLoginStatus() {
     kugouLoginStatus = normalizeKugouLoginStatus(info);
     auditProviderVipState('kugou', kugouLoginStatus);
     if (!kugouLoginStatus.loggedIn) {
-      if (prevLogged || kugouLoginWasLoggedIn) showToast(kugouLoginStatus.stale ? '酷狗音乐登录已失效' : '酷狗音乐已掉登录');
+      if (prevLogged || kugouLoginWasLoggedIn) showToast(kugouLoginStatus.stale ? '小狗登录已失效' : '小狗已掉登录');
       kugouPlaylists = [];
       userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'kugou'; });
       playlistCatalogRevision += 1;
@@ -348,7 +348,7 @@ async function refreshKugouLoginStatus() {
       homeDiscoverState.loggedIn = true;
       refreshUserPlaylists(true);
     } else if (kugouLoginStatus.stale) {
-      showToast('酷狗音乐登录状态可能已失效');
+      showToast('小狗登录状态可能已失效');
     }
     kugouLoginWasLoggedIn = !!kugouLoginStatus.loggedIn;
     if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
@@ -369,7 +369,7 @@ function startKugouLoginStatusAutoRefresh() {
 }
 
 function normalizeQishuiLoginStatus(info) {
-  var fallback = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false, playbackMode: 'recommend-match', searchReady: false, publicCatalog: false };
+  var fallback = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '小汽', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false, playbackMode: 'recommend-match', searchReady: false, publicCatalog: false };
   var configured = !!(info && (info.configured || info.loggedIn));
   var webSession = !!(info && info.webSession);
   var capabilities = info && info.capabilities || {};
@@ -381,7 +381,7 @@ function normalizeQishuiLoginStatus(info) {
     oauthConfigured: !!(info && (info.oauthConfigured || (info.oauth && info.oauth.configured))),
     oauthMissing: info && Array.isArray(info.oauthMissing) ? info.oauthMissing : [],
     userId: info && (info.userId || info.openId || info.open_id || info.tokenSource || info.scope || '') || '',
-    nickname: info && info.nickname ? info.nickname : (webSession ? '汽水音乐账号' : (configured ? '汽水开放平台' : fallback.nickname)),
+    nickname: info && info.nickname ? info.nickname : (webSession ? '小汽账号' : (configured ? '小汽开放平台' : fallback.nickname)),
     avatar: info && info.avatar || '',
     vipType: Number(info && (info.vipType || info.vip_type) || 0) || 0,
     vipLevel: info && (info.vipLevel || info.vip_level) || 'none',
@@ -404,7 +404,7 @@ async function refreshQishuiLoginStatus() {
     qishuiLoginStatus = normalizeQishuiLoginStatus(info);
     auditProviderVipState('qishui', qishuiLoginStatus);
     if (!qishuiLoginStatus.loggedIn) {
-      if (prevLogged || qishuiLoginWasLoggedIn) showToast('汽水音乐授权已清除');
+      if (prevLogged || qishuiLoginWasLoggedIn) showToast('小汽授权已清除');
       qishuiPlaylists = [];
       userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
       playlistCatalogRevision += 1;

@@ -240,10 +240,6 @@ function setSmartTransitionStyle(style, silent) {
     hideSmartTransitionVisual();
     resetSmartCoverTransition();
   } else if (audio && !audio.paused && currentIdx >= 0) {
-    if (typeof albumGaplessState !== 'undefined' && albumGaplessState && albumGaplessState.preload) {
-      if (typeof restoreAlbumGaplessOutgoingIfCurrent === 'function') restoreAlbumGaplessOutgoingIfCurrent(albumGaplessState.preload, 120);
-      if (typeof clearAlbumGaplessPreload === 'function') clearAlbumGaplessPreload('smart-transition-enabled');
-    }
     scheduleSmartCrossfadePrepare(trackSwitchToken, currentIdx, 260);
   }
   updateSmartTransitionStyleControls();
@@ -392,10 +388,6 @@ function smartCrossfadeVisualTransitionBusy() {
   return false;
 }
 
-function smartCrossfadeBlockedByAlbumGapless(index) {
-  return typeof albumGaplessQueueCanAdvance === 'function' && albumGaplessQueueCanAdvance(index);
-}
-
 function transitionPendingEnabled(pending) {
   return !!(pending && pending.mode === 'smart-transition' && isSmartTransitionEnabled());
 }
@@ -405,7 +397,6 @@ function scheduleSmartCrossfadePrepare(token, index, delay, attempt) {
   var smartEnabled = isSmartTransitionEnabled();
   if (!smartEnabled || !audio || audio.paused || !playQueue || playQueue.length < 2) return false;
   var currentIndex = isFinite(Number(index)) ? Math.round(Number(index)) : currentIdx;
-  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return false;
   var nextIndex = smartCrossfadeNextIndex(currentIndex);
   if (nextIndex < 0 || nextIndex === currentIndex) return false;
   smartCrossfadePrepareTimer = setTimeout(function () {
@@ -418,7 +409,6 @@ function scheduleSmartCrossfadePrepare(token, index, delay, attempt) {
 async function runSmartCrossfadePrepare(token, currentIndex, nextIndex, attempt) {
   var smartEnabled = isSmartTransitionEnabled();
   if (!smartEnabled || token !== trackSwitchToken || currentIndex !== currentIdx) return;
-  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return;
   if (smartCrossfadeVisualTransitionBusy()) {
     scheduleSmartCrossfadePrepare(token, currentIndex, 900, attempt || 0);
     return;
@@ -428,7 +418,6 @@ async function runSmartCrossfadePrepare(token, currentIndex, nextIndex, attempt)
 
 async function prepareSmartTransitionFallback(token, currentIndex) {
   if (!isSmartTransitionEnabled() || token !== trackSwitchToken || currentIndex !== currentIdx || smartCrossfadeExecuting) return false;
-  if (smartCrossfadeBlockedByAlbumGapless(currentIndex)) return false;
   var nextIndex = typeof pickNextQueueIndex === 'function' ? pickNextQueueIndex(currentIndex) : smartCrossfadeNextIndex(currentIndex);
   if (nextIndex < 0 || nextIndex === currentIndex) return false;
   var currentSong = playQueue[currentIndex];
@@ -899,11 +888,6 @@ function waitForAdoptedSmartTransitionPlaybackProgress(media, expectedToken, exp
 async function executeSmartCrossfade(pending) {
   if (!pending || !transitionPendingEnabled(pending) || smartCrossfadeExecuting || pending.token !== trackSwitchToken || pending.currentIndex !== currentIdx) return;
   var isSmartTransition = pending.mode === 'smart-transition';
-  if (smartCrossfadeBlockedByAlbumGapless(pending.currentIndex)) {
-    stopSmartTransitionPreparedAudio(pending.preparedAudio);
-    updateSmartTransitionStyleControls();
-    return;
-  }
   if (pending.fromKey && smartTransitionSongKey(playQueue[pending.currentIndex]) !== pending.fromKey) return;
   if (pending.toKey && smartTransitionSongKey(playQueue[pending.nextIndex]) !== pending.toKey) return;
   var transitionContext = {
@@ -1021,8 +1005,7 @@ async function executeSmartCrossfade(pending) {
   try {
     var handoffResult = await playQueueAt(pending.nextIndex, {
       preserveHomeState: true,
-      albumGaplessHandoff: true,
-      albumGaplessMixed: true,
+      smartTransitionMixed: true,
       preloadedAudio: nextMedia,
       preloadedData: descriptor && descriptor.playbackData || { url: descriptor && descriptor.proxyUrl || '' },
       preloadedProxyAudioUrl: descriptor && descriptor.proxyUrl || '',

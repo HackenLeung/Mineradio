@@ -1,444 +1,17 @@
-function albumGaplessSongKey(song) {
-  if (!song) return '';
-  if (song.__albumGaplessKey) return String(song.__albumGaplessKey);
-  var provider = normalizePlaybackProvider(songProviderKey(song));
-  if (provider === 'qq') {
-    var albumMid = song.albumMid || song.albummid || song.album_mid || '';
-    return albumMid ? 'qq:' + albumMid : '';
-  }
-  if (provider === 'spotify') {
-    var spotifyAlbumId = song.albumId || song.spotifyAlbumId || '';
-    return spotifyAlbumId ? 'spotify:' + spotifyAlbumId : '';
-  }
-  if (provider === 'netease') {
-    var albumId = song.albumId || song.album_id || '';
-    return albumId ? 'netease:' + albumId : '';
-  }
-  if (provider === 'kugou') {
-    var kugouAlbumId = song.albumId || song.album_id || '';
-    return kugouAlbumId ? 'kugou:' + kugouAlbumId : '';
-  }
-  return '';
+function playbackSameAlbumCover(prevSong, nextSong) {
+  if (!prevSong || !nextSong) return false;
+  var prevProvider = normalizePlaybackProvider(songProviderKey(prevSong));
+  var nextProvider = normalizePlaybackProvider(songProviderKey(nextSong));
+  if (prevProvider !== nextProvider) return false;
+  var prevAlbum = prevSong.albumId || prevSong.album_id || prevSong.albumMid || prevSong.albummid || prevSong.spotifyAlbumId || '';
+  var nextAlbum = nextSong.albumId || nextSong.album_id || nextSong.albumMid || nextSong.albummid || nextSong.spotifyAlbumId || '';
+  if (!prevAlbum || String(prevAlbum) !== String(nextAlbum)) return false;
+  var prevCover = String(prevSong.customCover || prevSong.cover || prevSong.picUrl || prevSong.albumCover || prevSong.coverUrl || '').trim();
+  var nextCover = String(nextSong.customCover || nextSong.cover || nextSong.picUrl || nextSong.albumCover || nextSong.coverUrl || '').trim();
+  return !!(prevCover && prevCover === nextCover);
 }
 
-function albumGaplessCoverKey(song) {
-  if (!song) return '';
-  return String(song.customCover || song.cover || song.picUrl || song.albumCover || song.coverUrl || '').trim();
-}
-
-function albumGaplessSameAlbumCover(prevSong, nextSong) {
-  var prevAlbum = albumGaplessSongKey(prevSong);
-  var nextAlbum = albumGaplessSongKey(nextSong);
-  if (!prevAlbum || prevAlbum !== nextAlbum) return false;
-  var prevCover = albumGaplessCoverKey(prevSong);
-  var nextCover = albumGaplessCoverKey(nextSong);
-  return !!(prevCover && nextCover && prevCover === nextCover);
-}
-
-var ALBUM_GAPLESS_PREROLL_SECONDS = 8.5;
-var ALBUM_GAPLESS_MIX_SECONDS = 0.72;
-var ALBUM_GAPLESS_NEXT_ENTRY_FLOOR = 0.90;
-var ALBUM_GAPLESS_NEXT_ATTACK_MS = 56;
-var ALBUM_GAPLESS_ADOPT_SLEW_MS = 180;
-var ALBUM_GAPLESS_GAIN_STEP_MS = 8;
-var ALBUM_GAPLESS_BOUNDARY_RELEASE_SECONDS = ALBUM_GAPLESS_MIX_SECONDS;
-var ALBUM_GAPLESS_MUTED_PREROLL_SECONDS = 1.05;
-var ALBUM_GAPLESS_MIN_MIX_MS = 360;
-var ALBUM_GAPLESS_BIND_AFTER_MIX_MS = 40;
-var ALBUM_GAPLESS_SILENCE_HOLD_MS = 180;
-var ALBUM_GAPLESS_FAST_SILENCE_HOLD_MS = 48;
-var ALBUM_GAPLESS_LONG_SILENCE_SECONDS = 1.05;
-var ALBUM_GAPLESS_SILENCE_LEVEL = 0.018;
-var ALBUM_GAPLESS_DIRECT_SILENCE_RMS = 0.0065;
-var ALBUM_GAPLESS_DEEP_SILENCE_RMS = 0.0032;
-var ALBUM_GAPLESS_DIRECT_SILENCE_PEAK = 0.030;
-var ALBUM_GAPLESS_DEEP_SILENCE_PEAK = 0.017;
-var ALBUM_GAPLESS_RESIDUAL_FREQ_AVG = 0.010;
-var ALBUM_GAPLESS_RESIDUAL_FREQ_PEAK = 0.075;
-var ALBUM_GAPLESS_DIRECT_SILENCE_HOLD_MS = 112;
-var ALBUM_GAPLESS_DEEP_SILENCE_HOLD_MS = 56;
-var albumGaplessTailTimeData = null;
-var albumGaplessTailFreqData = null;
-
-function disposeAlbumGaplessPreload(preload) {
-  if (!preload) return;
-  if (preload) {
-    if (preload.handoffTimer) clearTimeout(preload.handoffTimer);
-    if (preload.cleanupTimer) clearTimeout(preload.cleanupTimer);
-    if (preload.fadeFrame) cancelAnimationFrame(preload.fadeFrame);
-    if (preload.fadeWatchdogTimer) clearInterval(preload.fadeWatchdogTimer);
-    preload.fadeFrame = 0;
-    preload.fadeWatchdogTimer = 0;
-    preload.mixPending = false;
-    preload.mixStarted = false;
-    if (preload.fadeResolve) {
-      var resolveFade = preload.fadeResolve;
-      preload.fadeResolve = null;
-      resolveFade(false);
-    }
-  }
-  if (preload.previousAudio && preload.previousAudio === audio && preload.previousAudioOnEnded) {
-    preload.previousAudio.onended = preload.previousAudioOnEnded;
-  }
-  if (preload && preload.media) {
-    try {
-      preload.media.pause();
-      preload.media.removeAttribute('src');
-      preload.media.load();
-    } catch (e) { }
-  }
-}
-
-function clearAlbumGaplessPreload(reason) {
-  if (!albumGaplessState) return;
-  albumGaplessState.serial++;
-  if (albumGaplessState.monitorTimer) {
-    clearInterval(albumGaplessState.monitorTimer);
-    albumGaplessState.monitorTimer = 0;
-  }
-  var preload = albumGaplessState.preload;
-  albumGaplessState.preload = null;
-  disposeAlbumGaplessPreload(preload);
-}
-
-function restoreAlbumGaplessOutgoingIfCurrent(preload, durationMs) {
-  if (
-    !preload
-    || preload.transitionToken !== trackSwitchToken
-    || preload.transitionIndex !== currentIdx
-    || !preload.previousAudio
-    || preload.previousAudio !== audio
-    || preload.previousAudio.paused
-    || preload.previousAudio.ended
-  ) return false;
-  if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(targetVolume, Math.max(80, Number(durationMs) || 120));
-  return true;
-}
-
-function albumGaplessDefaultEnabledForContext(context) {
-  var albumKey = context && context.albumKey ? String(context.albumKey) : '';
-  if (albumGaplessState && albumGaplessState.enabled && albumKey && albumGaplessState.albumKey === albumKey) return true;
-  if (albumGaplessState && albumKey && albumGaplessState.disabledAlbumKey === albumKey) return false;
-  return !albumGaplessState || albumGaplessState.defaultEnabled !== false;
-}
-
-function albumGaplessTailLevel() {
-  return Math.max(
-    Math.abs(Number(audioEnergy) || 0),
-    Math.abs(Number(smoothEnergy) || 0),
-    Math.abs(Number(bass) || 0) * 0.55,
-    Math.abs(Number(mid) || 0) * 0.42,
-    Math.abs(Number(treble) || 0) * 0.32
-  );
-}
-
-function albumGaplessDirectTailSample() {
-  if (!analyser || !audio || audio.paused) return null;
-  try {
-    var size = Math.max(32, Number(analyser.fftSize) || FFT_SIZE || 2048);
-    if (!albumGaplessTailTimeData || albumGaplessTailTimeData.length !== size) {
-      albumGaplessTailTimeData = new Uint8Array(size);
-    }
-    var freqSize = Math.max(16, Number(analyser.frequencyBinCount) || Math.floor(size / 2));
-    if (!albumGaplessTailFreqData || albumGaplessTailFreqData.length !== freqSize) {
-      albumGaplessTailFreqData = new Uint8Array(freqSize);
-    }
-    analyser.getByteTimeDomainData(albumGaplessTailTimeData);
-    analyser.getByteFrequencyData(albumGaplessTailFreqData);
-    var stride = Math.max(1, Math.floor(albumGaplessTailTimeData.length / 384));
-    var sum = 0;
-    var peak = 0;
-    var count = 0;
-    for (var i = 0; i < albumGaplessTailTimeData.length; i += stride) {
-      var v = Math.abs((albumGaplessTailTimeData[i] - 128) / 128);
-      sum += v * v;
-      if (v > peak) peak = v;
-      count++;
-    }
-    var freqStride = Math.max(1, Math.floor(albumGaplessTailFreqData.length / 256));
-    var freqSum = 0;
-    var freqPeak = 0;
-    var freqCount = 0;
-    for (var j = 0; j < albumGaplessTailFreqData.length; j += freqStride) {
-      var f = albumGaplessTailFreqData[j] / 255;
-      freqSum += f;
-      if (f > freqPeak) freqPeak = f;
-      freqCount++;
-    }
-    return {
-      rms: Math.sqrt(sum / Math.max(1, count)),
-      peak: peak,
-      freqAvg: freqSum / Math.max(1, freqCount),
-      freqPeak: freqPeak
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-function albumGaplessTailSilenceProbe(remaining) {
-  if (!isFinite(remaining) || remaining > ALBUM_GAPLESS_PREROLL_SECONDS) {
-    return { quiet: false, smoothedQuiet: false, directQuiet: false, deepQuiet: false, level: 1, rms: 1, peak: 1 };
-  }
-  var level = albumGaplessTailLevel();
-  var sample = albumGaplessDirectTailSample();
-  var rms = sample ? sample.rms : 1;
-  var peak = sample ? sample.peak : 1;
-  var freqAvg = sample ? sample.freqAvg : 1;
-  var freqPeak = sample ? sample.freqPeak : 1;
-  var deepQuiet = !!(sample && rms <= ALBUM_GAPLESS_DEEP_SILENCE_RMS && peak <= ALBUM_GAPLESS_DEEP_SILENCE_PEAK);
-  var residualTail = !!(sample && !deepQuiet && (freqAvg > ALBUM_GAPLESS_RESIDUAL_FREQ_AVG || freqPeak > ALBUM_GAPLESS_RESIDUAL_FREQ_PEAK));
-  var directQuiet = !!(sample && !residualTail && rms <= ALBUM_GAPLESS_DIRECT_SILENCE_RMS && peak <= ALBUM_GAPLESS_DIRECT_SILENCE_PEAK);
-  var smoothedQuiet = level <= ALBUM_GAPLESS_SILENCE_LEVEL;
-  return {
-    quiet: smoothedQuiet || directQuiet,
-    smoothedQuiet: smoothedQuiet,
-    directQuiet: directQuiet,
-    deepQuiet: deepQuiet,
-    residualTail: residualTail,
-    level: level,
-    rms: rms,
-    peak: peak,
-    freqAvg: freqAvg,
-    freqPeak: freqPeak
-  };
-}
-
-function albumGaplessCurrentTailQuiet(remaining) {
-  return albumGaplessTailSilenceProbe(remaining).quiet;
-}
-
-function startAlbumGaplessPreroll(preload) {
-  if (!preload || !preload.media || preload.prerollStarted || preload.prerollPending || preload.prerollFailed) return false;
-  preload.prerollPending = true;
-  preload.prerollStarted = true;
-  preload.prerollStartedAt = performance.now();
-  preload.prerollStartTime = isFinite(preload.media.currentTime) ? preload.media.currentTime : 0;
-  try {
-    preload.media.muted = true;
-    preload.media.volume = 0;
-    preload.media.play().then(function () {
-      preload.prerollPending = false;
-      preload.prerollPlaying = true;
-      preload.prerollLiveAt = performance.now();
-    }).catch(function (err) {
-      preload.prerollPending = false;
-      preload.prerollFailed = true;
-      console.warn('[AlbumGapless] preroll play failed:', err);
-    });
-    return true;
-  } catch (err) {
-    preload.prerollPending = false;
-    preload.prerollFailed = true;
-    console.warn('[AlbumGapless] preroll start failed:', err);
-    return false;
-  }
-}
-
-function albumGaplessDirectVolumeTarget() {
-  return clampRange(Number(targetVolume) || 0, 0, 1);
-}
-
-function albumGaplessEqualPowerGains(progress, outgoingStart, incomingTarget) {
-  var t = clampRange(Number(progress) || 0, 0, 1);
-  var theta = t * Math.PI * 0.5;
-  return {
-    outgoing: clampRange((Number(outgoingStart) || 0) * Math.cos(theta), 0, 1),
-    incoming: clampRange((Number(incomingTarget) || 0) * Math.sin(theta), 0, 1)
-  };
-}
-
-function albumGaplessEqualPowerEntryProgress(elapsedMs, durationMs) {
-  durationMs = Math.max(1, Number(durationMs) || 1);
-  elapsedMs = clampRange(Number(elapsedMs) || 0, 0, durationMs);
-  var whole = clampRange(elapsedMs / durationMs, 0, 1);
-  if (whole >= 1) return 1;
-  var attackMs = Math.min(ALBUM_GAPLESS_NEXT_ATTACK_MS, Math.max(1, durationMs - 1));
-  var floorAngleProgress = Math.asin(ALBUM_GAPLESS_NEXT_ENTRY_FLOOR) / (Math.PI * 0.5);
-  if (elapsedMs <= attackMs) {
-    var attackT = clampRange(elapsedMs / attackMs, 0, 1);
-    var attackEased = attackT * attackT * (3 - 2 * attackT);
-    return floorAngleProgress * attackEased;
-  }
-  var releaseT = clampRange((elapsedMs - attackMs) / Math.max(1, durationMs - attackMs), 0, 1);
-  var releaseEased = releaseT * releaseT * (3 - 2 * releaseT);
-  return floorAngleProgress + (1 - floorAngleProgress) * releaseEased;
-}
-
-function runAlbumGaplessBalancedCrossfade(preload, durationMs) {
-  if (!preload || !preload.media) return Promise.resolve(false);
-  if (preload.fadeFrame) cancelAnimationFrame(preload.fadeFrame);
-  var media = preload.media;
-  var serial = ++audioFadeSerial;
-  clearAudioFadeTimers();
-  var startCurrent = currentAudioOutputGain();
-  var initialTarget = Math.max(0.0001, albumGaplessDirectVolumeTarget());
-  var outgoingRatio = clampRange(startCurrent / initialTarget, 0, 1);
-  try {
-    media.muted = false;
-    media.volume = 0;
-  } catch (e0) { }
-  var started = performance.now();
-  durationMs = Math.max(1, Number(durationMs) || 1);
-  preload.fadeCompleted = false;
-  return new Promise(function (resolve) {
-    var settled = false;
-    preload.fadeResolve = resolve;
-    function finish(ok) {
-      if (settled) return;
-      settled = true;
-      if (preload.fadeResolve === resolve) preload.fadeResolve = null;
-      if (preload.fadeFrame) cancelAnimationFrame(preload.fadeFrame);
-      if (preload.fadeWatchdogTimer) clearInterval(preload.fadeWatchdogTimer);
-      preload.fadeFrame = 0;
-      preload.fadeWatchdogTimer = 0;
-      preload.fadeCompleted = !!ok;
-      resolve(!!ok);
-    }
-    function applyStep(nowMs) {
-      if (settled) return;
-      if (serial !== audioFadeSerial || !preload.mixStarted || albumGaplessState.preload !== preload) {
-        finish(false);
-        return;
-      }
-      var elapsedMs = clampRange(nowMs - started, 0, durationMs);
-      var t = clampRange(elapsedMs / durationMs, 0, 1);
-      var curveProgress = albumGaplessEqualPowerEntryProgress(elapsedMs, durationMs);
-      var liveTarget = albumGaplessDirectVolumeTarget();
-      var gains = albumGaplessEqualPowerGains(curveProgress, liveTarget * outgoingRatio, liveTarget);
-      writeAudioOutputGain(gains.outgoing);
-      try {
-        media.muted = false;
-        media.volume = gains.incoming;
-      } catch (e) { }
-      if (t >= 1) {
-        writeAudioOutputGain(0);
-        try { media.volume = liveTarget; } catch (e2) { }
-        finish(true);
-      }
-    }
-    function tick(nowMs) {
-      applyStep(nowMs);
-      if (!settled) preload.fadeFrame = requestAnimationFrame(tick);
-    }
-    preload.fadeWatchdogTimer = setInterval(function () {
-      applyStep(performance.now());
-    }, ALBUM_GAPLESS_GAIN_STEP_MS);
-    preload.fadeFrame = requestAnimationFrame(tick);
-  });
-}
-
-function startAlbumGaplessMix(preload, reason, remaining) {
-  if (!preload || !preload.media || preload.mixStarted || preload.mixPending || albumGaplessState.handoff) return false;
-  if (!albumGaplessQueueCanAdvance(currentIdx)) return false;
-  if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) return false;
-  var outgoingMedia = audio;
-  var outgoingToken = trackSwitchToken;
-  var outgoingIndex = currentIdx;
-  preload.mixPending = true;
-  preload.releaseReason = reason || 'crossmix';
-  if ((reason === 'boundary-crossmix-reset' || reason === 'tail-silence-fast-crossmix' || reason === 'tail-direct-silence-crossmix') && preload.prerollStarted) {
-    try {
-      preload.media.pause();
-      preload.media.currentTime = 0;
-    } catch (e) { }
-    preload.prerollPlaying = false;
-  }
-  try {
-    preload.media.muted = false;
-    preload.media.volume = 0;
-    var playResult = preload.media.play();
-  } catch (err) {
-    preload.mixPending = false;
-    preload.prerollFailed = true;
-    console.warn('[AlbumGapless] crossmix start failed:', err);
-    return false;
-  }
-  Promise.resolve(playResult).then(function () {
-    var stillCurrent = albumGaplessState.preload === preload
-      && outgoingToken === trackSwitchToken
-      && outgoingIndex === currentIdx
-      && outgoingMedia === audio
-      && albumGaplessQueueCanAdvance(currentIdx)
-      && queueItemKey(playQueue[preload.index]) === preload.key;
-    if (!stillCurrent) {
-      if (albumGaplessState.preload === preload) clearAlbumGaplessPreload('album-gapless-mix-stale');
-      else disposeAlbumGaplessPreload(preload);
-      return false;
-    }
-    preload.mixPending = false;
-    preload.mixStarted = true;
-    preload.mixStartedAt = performance.now();
-    preload.transitionToken = outgoingToken;
-    preload.transitionIndex = outgoingIndex;
-    preload.previousAudio = outgoingMedia || null;
-    preload.previousAudioOnEnded = preload.previousAudio ? preload.previousAudio.onended : null;
-    if (preload.previousAudio) preload.previousAudio.onended = null;
-    var mixMs = Math.round(ALBUM_GAPLESS_MIX_SECONDS * 1000);
-    if (isFinite(remaining) && remaining > 0) {
-      mixMs = Math.min(mixMs, Math.max(ALBUM_GAPLESS_MIN_MIX_MS, Math.round(remaining * 1000 + 80)));
-    }
-    preload.mixDurationMs = mixMs;
-    return runAlbumGaplessBalancedCrossfade(preload, mixMs);
-  }).then(function (completed) {
-    if (!completed) {
-      if (albumGaplessState.preload === preload) restoreAlbumGaplessOutgoingIfCurrent(preload, 120);
-      if (albumGaplessState.preload === preload) clearAlbumGaplessPreload('album-gapless-mix-cancelled');
-      else disposeAlbumGaplessPreload(preload);
-      return;
-    }
-    if (albumGaplessState.preload !== preload || !preload.fadeCompleted) return;
-    preload.handoffTimer = setTimeout(function () {
-      preload.handoffTimer = 0;
-      if (albumGaplessState.preload === preload && preload.fadeCompleted) {
-        startAlbumGaplessHandoff(preload, preload.releaseReason || reason || 'crossmix');
-      }
-    }, Math.max(24, ALBUM_GAPLESS_BIND_AFTER_MIX_MS));
-  }).catch(function (err) {
-    preload.mixPending = false;
-    preload.mixStarted = false;
-    preload.prerollFailed = true;
-    console.warn('[AlbumGapless] crossmix play failed:', err);
-    if (albumGaplessState.preload === preload) restoreAlbumGaplessOutgoingIfCurrent(preload, 120);
-    if (albumGaplessState.preload === preload) clearAlbumGaplessPreload('album-gapless-mix-play-failed');
-    else disposeAlbumGaplessPreload(preload);
-  });
-  return true;
-}
-
-function setAlbumGaplessPlaybackContext(enabled, context, opts) {
-  opts = opts || {};
-  var albumKey = context ? String(context.albumKey || '') : '';
-  if (opts.userToggle && albumKey) {
-    albumGaplessState.disabledAlbumKey = enabled ? '' : albumKey;
-  }
-  albumGaplessState.enabled = !!enabled;
-  albumGaplessState.context = context || null;
-  albumGaplessState.albumKey = enabled && context ? albumKey : '';
-  if (!albumGaplessState.enabled || !albumGaplessState.albumKey) {
-    albumGaplessState.enabled = false;
-    if (albumGaplessState.preload && albumGaplessState.preload.mixStarted) {
-      restoreAlbumGaplessOutgoingIfCurrent(albumGaplessState.preload, 120);
-    }
-    clearAlbumGaplessPreload('album-gapless-disabled');
-    return false;
-  }
-  scheduleAlbumGaplessPreloadForCurrent(trackSwitchToken, 'context-enabled');
-  return true;
-}
-
-function albumGaplessQueueCanAdvance(idx) {
-  // Smart Transition and album gapless both own a second audio deck. Let only
-  // one coordinator touch the next track; disabling Smart Transition restores
-  // the upstream album-gapless path unchanged.
-  if (typeof isSmartTransitionEnabled === 'function' && isSmartTransitionEnabled()) return false;
-  if (!albumGaplessState || !albumGaplessState.enabled || !albumGaplessState.albumKey) return false;
-  if (playMode === 'single') return false;
-  if (idx < 0 || idx + 1 >= playQueue.length) return false;
-  var currentKey = albumGaplessSongKey(playQueue[idx]);
-  var nextKey = albumGaplessSongKey(playQueue[idx + 1]);
-  return currentKey === albumGaplessState.albumKey && nextKey === albumGaplessState.albumKey;
-}
+var SMART_TRANSITION_HANDOFF_GAIN_SETTLE_MS = 180;
 
 function qqPlaybackEvidenceQuery(song) {
   song = song || {};
@@ -538,8 +111,8 @@ async function retryNeteaseSourceMatchPlayback(song, data, idx, token, opts, req
   if (sourceRecovery && (nextData === sourceFallbackBudgetTimeoutResult || !sourceFallbackRecoveryCanContinue(sourceRecovery))) return null;
   if (!nextData || !nextData.url || !nextData.sourceMatch) return null;
   var retryOpts = Object.assign({}, opts, {
-    albumGaplessHandoff: false,
-    albumGaplessMixed: false,
+    smartTransitionHandoff: false,
+    smartTransitionMixed: false,
     preloadedAudio: null,
     preloadedData: null,
     preloadedProxyAudioUrl: '',
@@ -553,267 +126,6 @@ async function retryNeteaseSourceMatchPlayback(song, data, idx, token, opts, req
   var retryStarted = await retryPromise;
   if (retryToken !== trackSwitchToken) return false;
   return retryStarted === true;
-}
-
-async function resolveAlbumGaplessPlaybackData(song) {
-  if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return null;
-  var playbackProvider = normalizePlaybackProvider(songProviderKey(song));
-  var requestedQuality = normalizePlaybackQualityForProvider(getProviderPlaybackQuality(playbackProvider), playbackProvider);
-  if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
-  var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
-  if (playbackQualityAboveCap(requestedQuality, playbackProvider, runtimeQualityCap)) requestedQuality = runtimeQualityCap;
-  var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
-  if (playbackProvider === 'qq') {
-    return apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qqPlaybackEvidenceQuery(song) + qualityParam, { timeoutMs: 15000 });
-  }
-  if (playbackProvider === 'kugou') {
-    return apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.fileHash || song.audioHash || song.id || '') +
-      '&albumId=' + encodeURIComponent(song.albumId || song.album_id || '') +
-      '&albumAudioId=' + encodeURIComponent(song.albumAudioId || song.album_audio_id || song.mixSongId || '') +
-      '&mixSongId=' + encodeURIComponent(song.mixSongId || '') +
-      '&hqHash=' + encodeURIComponent(song.hqHash || song.hq_hash || '') +
-      '&sqHash=' + encodeURIComponent(song.sqHash || song.sq_hash || '') +
-      '&resHash=' + encodeURIComponent(song.resHash || song.res_hash || '') +
-      '&vipRequired=' + encodeURIComponent(song.vipRequired || song.needVip || song.onlyVipPlayable || song.only_vip_playable ? '1' : '') +
-      '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
-      '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
-      qualityParam, { timeoutMs: 9000 });
-  }
-  if (playbackProvider === 'qishui') {
-    return apiJson('/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qqPlaybackEvidenceQuery(song) + qualityParam, { timeoutMs: 9000 });
-  }
-  if (playbackProvider === 'spotify') {
-    return apiJson('/api/spotify/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '') +
-      '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +
-      '&uri=' + encodeURIComponent(song.spotifyUri || song.uri || '') +
-      qualityParam, { timeoutMs: 9000 });
-  }
-  return apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
-}
-
-function consumeAlbumGaplessPreload(preload) {
-  if (albumGaplessState.monitorTimer) {
-    clearInterval(albumGaplessState.monitorTimer);
-    albumGaplessState.monitorTimer = 0;
-  }
-  if (albumGaplessState.preload === preload) albumGaplessState.preload = null;
-}
-
-function startAlbumGaplessHandoff(preload, reason) {
-  if (!preload || albumGaplessState.handoff) return false;
-  if (
-    !albumGaplessQueueCanAdvance(currentIdx)
-    || preload.index !== currentIdx + 1
-    || preload.token !== trackSwitchToken
-    || queueItemKey(playQueue[preload.index]) !== preload.key
-  ) {
-    if (albumGaplessState.preload === preload) {
-      restoreAlbumGaplessOutgoingIfCurrent(preload, 120);
-      clearAlbumGaplessPreload('album-gapless-handoff-invalid');
-    } else {
-      disposeAlbumGaplessPreload(preload);
-    }
-    return false;
-  }
-  preload.releaseReason = reason || 'boundary';
-  albumGaplessState.handoff = true;
-  consumeAlbumGaplessPreload(preload);
-  var handoffSourceToken = trackSwitchToken;
-  var handoffPreviousAudio = preload.previousAudio || audio;
-  function scheduleAlbumGaplessNormalFallback() {
-    var expectedFailedToken = handoffSourceToken + 1;
-    if (
-      trackSwitchToken !== expectedFailedToken
-      || currentIdx !== preload.index
-      || (audio !== preload.media && audio !== handoffPreviousAudio)
-    ) return false;
-    var fallbackOwnerMedia = audio;
-    if (fallbackOwnerMedia === preload.media) {
-      try {
-        preload.media.pause();
-        preload.media.removeAttribute('src');
-        preload.media.load();
-      } catch (e) { }
-      if (handoffPreviousAudio && handoffPreviousAudio !== fallbackOwnerMedia) {
-        try {
-          handoffPreviousAudio.pause();
-          handoffPreviousAudio.removeAttribute('src');
-          handoffPreviousAudio.load();
-        } catch (e2) { }
-      }
-    } else {
-      disposeAlbumGaplessPreload(preload);
-    }
-    setTimeout(function () {
-      if (
-        trackSwitchToken === expectedFailedToken
-        && currentIdx === preload.index
-        && audio === fallbackOwnerMedia
-      ) {
-        playQueueAt(preload.index, { skipShuffleOrder: true, suppressPlayFailureNotice: true, preserveHomeState: true });
-      }
-    }, 0);
-    return true;
-  }
-  if (preload.song) {
-    preload.song.__albumGaplessKey = albumGaplessState.albumKey;
-    playQueue[preload.index] = hydrateCustomCover(preload.song);
-  }
-  Promise.resolve(playQueueAt(preload.index, {
-    skipShuffleOrder: true,
-    suppressPlayFailureNotice: true,
-    preserveHomeState: true,
-    albumGaplessHandoff: true,
-    albumGaplessMixed: !!preload.mixStarted,
-    albumGaplessReleaseReason: preload.releaseReason || reason || '',
-    preloadedAudio: preload.media,
-    preloadedData: preload.data,
-    preloadedProxyAudioUrl: preload.proxyAudioUrl,
-  })).then(function (success) {
-    var adopted = success === true
-      && audio === preload.media
-      && currentIdx === preload.index
-      && preload.media.src
-      && !preload.media.paused
-      && !preload.media.ended;
-    if (adopted) return true;
-    if (!scheduleAlbumGaplessNormalFallback() && audio !== preload.media) disposeAlbumGaplessPreload(preload);
-    return false;
-  }).catch(function (err) {
-    console.warn('[AlbumGapless] handoff failed:', err);
-    if (!scheduleAlbumGaplessNormalFallback() && audio !== preload.media) disposeAlbumGaplessPreload(preload);
-  }).finally(function () {
-    albumGaplessState.handoff = false;
-  });
-  return true;
-}
-
-function armAlbumGaplessMonitor(token) {
-  if (albumGaplessState.monitorTimer) clearInterval(albumGaplessState.monitorTimer);
-  albumGaplessState.monitorTimer = setInterval(function () {
-    var preload = albumGaplessState.preload;
-    if (
-      !preload
-      || token !== trackSwitchToken
-      || preload.token !== token
-      || preload.index !== currentIdx + 1
-      || queueItemKey(playQueue[preload.index]) !== preload.key
-      || !albumGaplessQueueCanAdvance(currentIdx)
-    ) {
-      restoreAlbumGaplessOutgoingIfCurrent(preload, 120);
-      clearAlbumGaplessPreload('album-gapless-monitor-invalid');
-      return;
-    }
-    if (!audio || !isFinite(audio.duration) || audio.duration <= 0 || !isFinite(audio.currentTime)) return;
-    var remaining = audio.duration - audio.currentTime;
-    if (remaining <= ALBUM_GAPLESS_MUTED_PREROLL_SECONDS) startAlbumGaplessPreroll(preload);
-    if (!preload.media || preload.media.readyState < 2) return;
-    var nowMs = performance.now();
-    var tailProbe = albumGaplessTailSilenceProbe(remaining);
-    var longTailSilence = remaining > ALBUM_GAPLESS_LONG_SILENCE_SECONDS;
-    if (tailProbe.smoothedQuiet && (!longTailSilence || !tailProbe.residualTail)) {
-      if (!preload.quietSince) preload.quietSince = nowMs;
-    } else {
-      preload.quietSince = 0;
-    }
-    if (tailProbe.directQuiet) {
-      if (!preload.directQuietSince) preload.directQuietSince = nowMs;
-    } else {
-      preload.directQuietSince = 0;
-    }
-    var silenceHoldMs = longTailSilence ? ALBUM_GAPLESS_FAST_SILENCE_HOLD_MS : ALBUM_GAPLESS_SILENCE_HOLD_MS;
-    var smoothedSilenceReady = !!(preload.quietSince && nowMs - preload.quietSince >= silenceHoldMs);
-    var directHoldMs = tailProbe.deepQuiet ? ALBUM_GAPLESS_DEEP_SILENCE_HOLD_MS : ALBUM_GAPLESS_DIRECT_SILENCE_HOLD_MS;
-    var directSilenceReady = !!(longTailSilence && preload.directQuietSince && nowMs - preload.directQuietSince >= directHoldMs);
-    var silenceReady = smoothedSilenceReady || directSilenceReady;
-    var boundaryReady = remaining <= ALBUM_GAPLESS_BOUNDARY_RELEASE_SECONDS;
-    if (!silenceReady && !boundaryReady) return;
-    startAlbumGaplessMix(preload, silenceReady ? (directSilenceReady ? 'tail-direct-silence-crossmix' : (longTailSilence ? 'tail-silence-fast-crossmix' : 'tail-silence-preroll-mix')) : 'boundary-crossmix-reset', remaining);
-  }, 70);
-}
-
-async function scheduleAlbumGaplessPreloadForCurrent(token, reason) {
-  if (!albumGaplessQueueCanAdvance(currentIdx) || token !== trackSwitchToken) {
-    if (!albumGaplessState.handoff) clearAlbumGaplessPreload(reason || 'album-gapless-not-eligible');
-    return false;
-  }
-  var sourceIdx = currentIdx;
-  var nextIdx = sourceIdx + 1;
-  var nextSong = playQueue[nextIdx];
-  var nextKey = queueItemKey(nextSong);
-  if (albumGaplessState.preload && albumGaplessState.preload.index === nextIdx && albumGaplessState.preload.key === nextKey) return true;
-  clearAlbumGaplessPreload(reason || 'album-gapless-new-preload');
-  var serial = ++albumGaplessState.serial;
-  try {
-    var resolvedSong = nextSong;
-    var data = await resolveAlbumGaplessPlaybackData(nextSong);
-    if ((!data || !data.url) && typeof searchAlternatePlatformSong === 'function') {
-      var alternate = await searchAlternatePlatformSong(nextSong);
-      if (alternate) {
-        alternate.__albumGaplessKey = albumGaplessState.albumKey;
-        alternate.__albumTrackIndex = nextSong && nextSong.__albumTrackIndex;
-        var alternateData = await resolveAlbumGaplessPlaybackData(alternate);
-        if (alternateData && alternateData.url) {
-          resolvedSong = alternate;
-          data = alternateData;
-        }
-      }
-    }
-    if (
-      serial !== albumGaplessState.serial
-      || token !== trackSwitchToken
-      || sourceIdx !== currentIdx
-      || queueItemKey(playQueue[nextIdx]) !== nextKey
-      || !albumGaplessQueueCanAdvance(currentIdx)
-    ) return false;
-    if (!data || !data.url) return false;
-    var proxyAudioUrl = '/api/audio?url=' + encodeURIComponent(data.url);
-    var media = new Audio();
-    media.crossOrigin = 'anonymous';
-    media.preload = 'auto';
-    media.volume = 0;
-    media.src = proxyAudioUrl;
-    await applyAudioOutputDevice(media);
-    if (
-      serial !== albumGaplessState.serial
-      || token !== trackSwitchToken
-      || sourceIdx !== currentIdx
-      || queueItemKey(playQueue[nextIdx]) !== nextKey
-      || !albumGaplessQueueCanAdvance(currentIdx)
-    ) {
-      disposeAlbumGaplessPreload({ media: media });
-      return false;
-    }
-    media.load();
-    albumGaplessState.preload = {
-      index: nextIdx,
-      key: nextKey,
-      token: token,
-      serial: serial,
-      media: media,
-      data: data,
-      song: resolvedSong,
-      proxyAudioUrl: proxyAudioUrl,
-    };
-    armAlbumGaplessMonitor(token);
-    return true;
-  } catch (err) {
-    if (typeof media !== 'undefined' && media && (!albumGaplessState.preload || albumGaplessState.preload.media !== media)) {
-      disposeAlbumGaplessPreload({ media: media });
-    }
-    if (serial === albumGaplessState.serial) console.warn('[AlbumGapless] preload failed:', err);
-    return false;
-  }
-}
-
-function playAlbumGaplessNextOnEnded(token) {
-  if (!albumGaplessQueueCanAdvance(currentIdx)) return false;
-  var nextIdx = currentIdx + 1;
-  setTimeout(function () {
-    if (token !== trackSwitchToken) return;
-    playQueueAt(nextIdx, { skipShuffleOrder: true, suppressPlayFailureNotice: true, preserveHomeState: true });
-  }, 0);
-  return true;
 }
 
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
@@ -866,7 +178,6 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
       return;
     }
     finalizeListenSession(true);
-    if (playAlbumGaplessNextOnEnded(token)) return;
     if (playMode === 'single') setTimeout(function () { playQueueAt(currentIdx, { autoRepeat: true, suppressPlayFailureNotice: true }); }, 0);
     else setTimeout(nextTrack, 0);
   };
@@ -943,7 +254,6 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   fetchLyric(song, token);
   safeRenderQueuePanel('play-local-queue', { scrollCurrent: miniQueueOpen });
   scheduleShelfRebuild('play-local-queue', true);
-  scheduleAlbumGaplessPreloadForCurrent(token, 'local-started');
   setTimeout(function () {
     if (token === trackSwitchToken && currentLocalSong && currentLocalSong.localKey === song.localKey) {
       prepareLocalBeatAnalysis(currentLocalSong, song.localUrl);
@@ -957,10 +267,10 @@ async function playQueueAt(idx, opts) {
   if (typeof beginSourceFallbackPlaybackInvocation === 'function' && !beginSourceFallbackPlaybackInvocation(opts)) return false;
   if (idx < 0 || idx >= playQueue.length) return false;
   if (typeof ensurePlaylistQueueHydratedAhead === 'function') ensurePlaylistQueueHydratedAhead(idx);
-  var albumGaplessHandoff = !!(opts.albumGaplessHandoff && opts.preloadedAudio && opts.preloadedData);
-  var albumGaplessMixed = !!(albumGaplessHandoff && opts.albumGaplessMixed);
-  var albumGaplessPreviousAudio = albumGaplessHandoff ? audio : null;
-  var albumGaplessAdoptedGain = 0;
+  var transitionHandoff = !!(opts.smartTransitionHandoff && opts.preloadedAudio && opts.preloadedData);
+  var transitionMixed = !!(transitionHandoff && opts.smartTransitionMixed !== false);
+  var transitionPreviousAudio = transitionHandoff ? audio : null;
+  var transitionAdoptedGain = 0;
   var playbackMedia = null;
   var previousSongForTransition = currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
   if (
@@ -995,7 +305,6 @@ async function playQueueAt(idx, opts) {
         preserveExecution: !!opts.smartTransitionHandoff
       });
     }
-    if (!albumGaplessHandoff) clearAlbumGaplessPreload('track-switch');
     if (localBeatAnalysis.active) cancelLocalBeatAnalysis();
     closeGsapModal(document.getElementById('local-beat-modal'));
     beatMapToken++;
@@ -1015,7 +324,7 @@ async function playQueueAt(idx, opts) {
     markPlayPhase('track-setup');
     var song = safePlaybackStep('hydrate-song', function () { return hydrateCustomCover(playQueue[idx]); }) || playQueue[idx];
     playQueue[idx] = song;
-    var sameAlbumCoverSwitch = albumGaplessSameAlbumCover(previousSongForTransition, song);
+    var sameAlbumCoverSwitch = playbackSameAlbumCover(previousSongForTransition, song);
     var earlyLyricFetchStarted = false;
     function startTrackLyricFetch() {
       if (earlyLyricFetchStarted) return false;
@@ -1046,7 +355,7 @@ async function playQueueAt(idx, opts) {
     activeRadioContext = playbackContext || null;
     safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
     safePlaybackStep('shelf-preview-suppress', suppressShelfPreviewForPlaybackSwitch);
-    if (!albumGaplessHandoff) pauseCurrentAudioForTrackSwitch();
+    if (!transitionHandoff) pauseCurrentAudioForTrackSwitch();
     else {
       playToggleBusy = false;
       forcePlaybackControlsInteractive();
@@ -1138,7 +447,7 @@ async function playQueueAt(idx, opts) {
       }
       var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
       var data;
-      if (albumGaplessHandoff) {
+      if (transitionHandoff) {
         data = opts.preloadedData;
       } else if (opts.preResolvedPlaybackData && opts.preResolvedPlaybackData.url) {
         data = opts.preResolvedPlaybackData;
@@ -1211,7 +520,7 @@ async function playQueueAt(idx, opts) {
       var qualityDowngraded = !!(data && data.level && playbackQualityWasDowngraded(requestedQuality, data.level, playbackProvider));
       if (qualityDowngraded) markPlaybackQualityRuntimeCap(song, playbackProvider, data.level, 'resolved-lower');
       if (!opts.startupAutoplay && !isQQPlayback && qualityDowngraded) {
-        showSourceFallbackNotice((isKugouPlayback ? '酷狗' : (isQishuiPlayback ? '汽水' : '网易云')) + '音质自动降级', '请求 ' + playbackQualityLabel(requestedQuality, playbackProvider) + '，实际播放 ' + resolvedQualityText + '。');
+        showSourceFallbackNotice((isKugouPlayback ? '小狗' : (isQishuiPlayback ? '小汽' : '小云')) + '音质自动降级', '请求 ' + playbackQualityLabel(requestedQuality, playbackProvider) + '，实际播放 ' + resolvedQualityText + '。');
       } else if (!opts.startupAutoplay && opts.qualitySwitch) {
         showSourceFallbackNotice('音质已切换', '实际播放: ' + resolvedQualityText + '。');
       }
@@ -1231,25 +540,25 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('audio-element');
       var proxyAudioUrl = opts.preloadedProxyAudioUrl || '/api/audio?url=' + encodeURIComponent(data.url);
-      if (albumGaplessHandoff) {
+      if (transitionHandoff) {
         audioFadeSerial++;
         clearAudioFadeTimers();
-        if (albumGaplessPreviousAudio) albumGaplessPreviousAudio.onended = null;
+        if (transitionPreviousAudio) transitionPreviousAudio.onended = null;
         audio = opts.preloadedAudio;
-        if (opts.smartTransitionHandoff && typeof claimSmartTransitionPreparedAudioForPlayback === 'function') {
+        if (typeof claimSmartTransitionPreparedAudioForPlayback === 'function') {
           claimSmartTransitionPreparedAudioForPlayback(audio);
         }
-        var preparedGraphGain = opts.smartTransitionHandoff && audio.__mineradioPreparedAudioGraph && audio.__mineradioPreparedAudioGraph.gainNode
+        var preparedGraphGain = audio.__mineradioPreparedAudioGraph && audio.__mineradioPreparedAudioGraph.gainNode
           ? Number(audio.__mineradioPreparedAudioGraph.gainNode.gain.value)
           : NaN;
-        albumGaplessAdoptedGain = albumGaplessMixed
+        transitionAdoptedGain = transitionMixed
           ? clampRange(isFinite(preparedGraphGain) ? preparedGraphGain : (Number(audio.volume) || 0), 0, 1)
           : audioSilentFloor();
         audio.crossOrigin = 'anonymous';
         audio.autoplay = true;
         audio.preload = 'auto';
         if (!audio.src) audio.src = proxyAudioUrl;
-        if (!albumGaplessMixed) audio.volume = 0;
+        if (!transitionMixed) audio.volume = 0;
         else audio.muted = false;
       } else if (!audio) {
         audio = new Audio();
@@ -1259,7 +568,7 @@ async function playQueueAt(idx, opts) {
         clearAudioFadeTimers();
         audio.pause();
       }
-      resetPlaybackAudioGraphForSourceSwitch(albumGaplessHandoff ? 'album-gapless-handoff' : 'track-switch');
+      resetPlaybackAudioGraphForSourceSwitch(transitionHandoff ? 'smart-transition-handoff' : 'track-switch');
       audio.autoplay = true;
       audio.preload = 'auto';
       // resetPlaybackAudioGraphForSourceSwitch may deliberately replace a
@@ -1268,7 +577,7 @@ async function playQueueAt(idx, opts) {
       // a stale, already-paused element reference.
       playbackMedia = audio;
       bindPlaybackProgressEvents(audio);
-      if (albumGaplessHandoff) setAudioOutputGainImmediate(albumGaplessMixed ? albumGaplessAdoptedGain : audioSilentFloor());
+      if (transitionHandoff) setAudioOutputGainImmediate(transitionMixed ? transitionAdoptedGain : audioSilentFloor());
       else applyVolumeToAudio();
       await applyAudioOutputDevice(playbackMedia);
       if (!playbackInvocationStillCurrent(playbackMedia)) {
@@ -1282,7 +591,7 @@ async function playQueueAt(idx, opts) {
       ) {
         return settleExpiredSourceFallbackPlayback(idx, token, opts);
       }
-      if (!albumGaplessHandoff) audio.src = proxyAudioUrl;
+      if (!transitionHandoff) audio.src = proxyAudioUrl;
       audio.__mineradioQueueItemKey = queueItemKey(song);
       audio.__mineradioTrackSwitchToken = token;
       updatePlaybackProgressUi();
@@ -1294,13 +603,12 @@ async function playQueueAt(idx, opts) {
           return;
         }
         finalizeListenSession(true);
-        if (playAlbumGaplessNextOnEnded(token)) return;
         if (playMode === 'single') setTimeout(function () { playQueueAt(currentIdx, { autoRepeat: true, suppressPlayFailureNotice: true }); }, 0);
         else setTimeout(nextTrack, 0);
       };
       scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : restoreResumeAt, token);
       if (restoreResumeAt > 0) pendingPlaybackResumeAt = 0;
-      if (!albumGaplessHandoff) audio.load();
+      if (!transitionHandoff) audio.load();
       markPlayPhase(qualitySwitch ? 'visual-prep-skip' : 'visual-prep');
       if (qualitySwitch) {
         if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume('quality-switch-audio-ready');
@@ -1308,8 +616,8 @@ async function playQueueAt(idx, opts) {
         // 重置 beatmap 状态
         currentBeatMap = null;
         beatMapNextIdx = 0;
-        resetAudioVisualState({ preserveEnvelope: albumGaplessMixed });
-        resetBeatCameraSync(audio && isFinite(audio.currentTime) ? audio.currentTime : 0, { preserveMomentum: albumGaplessMixed });
+        resetAudioVisualState({ preserveEnvelope: transitionMixed });
+        resetBeatCameraSync(audio && isFinite(audio.currentTime) ? audio.currentTime : 0, { preserveMomentum: transitionMixed });
         cancelBeatAnalysisTimer();
         beatMapToken++;
         var bmTok = beatMapToken;
@@ -1340,7 +648,7 @@ async function playQueueAt(idx, opts) {
           // 如果缓存有, 直接用
           currentBeatMap = beatMapCache[bmKey];
           applyCinemaProfileFromBeatMap(currentBeatMap);
-          syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, albumGaplessMixed);
+          syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, transitionMixed);
           notifyDesktopLyricsBeatMapReady();
           console.log('beatmap 缓存命中:', currentBeatMap.kicks.length, '个鼓点');
           scheduleQueueBeatPrefetch(idx, 2600);
@@ -1353,7 +661,7 @@ async function playQueueAt(idx, opts) {
           if (diskBeatMap) {
             currentBeatMap = diskBeatMap;
             applyCinemaProfileFromBeatMap(currentBeatMap);
-            syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, albumGaplessMixed);
+            syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, transitionMixed);
             notifyDesktopLyricsBeatMapReady();
             console.log('beatmap D盘缓存命中:', currentBeatMap.kicks.length, '个鼓点');
             scheduleQueueBeatPrefetch(idx, 2600);
@@ -1370,7 +678,7 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('audio-start');
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
-      var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, fade: albumGaplessHandoff ? false : opts.fade, preserveGain: albumGaplessMixed, expectedMedia: playbackMedia, expectedToken: token });
+      var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, fade: transitionHandoff ? false : opts.fade, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
       if (
         typeof sourceFallbackRecoveryFromOptions === 'function'
@@ -1432,17 +740,17 @@ async function playQueueAt(idx, opts) {
       }
       if (!opts.startupAutoplay && !opts.qualitySwitch && data && data.sourceMatch && !song.neteaseSourceMatchNotified && typeof showSourceFallbackNotice === 'function') {
         song.neteaseSourceMatchNotified = true;
-        showSourceFallbackNotice('网易云已匹配可播音源', '已在网易云内切换到同一首歌的可播版本；歌词、封面、专辑和队列仍保持原曲。');
+        showSourceFallbackNotice('小云已匹配可播音源', '已在小云内切换到同一首歌的可播版本；歌词、封面、专辑和队列仍保持原曲。');
       }
-      if (albumGaplessHandoff && albumGaplessMixed && typeof rampAudioOutputGain === 'function') {
-        rampAudioOutputGain(targetVolume, ALBUM_GAPLESS_ADOPT_SLEW_MS);
+      if (transitionHandoff && transitionMixed && typeof rampAudioOutputGain === 'function') {
+        rampAudioOutputGain(targetVolume, SMART_TRANSITION_HANDOFF_GAIN_SETTLE_MS);
       }
-      if (albumGaplessHandoff && albumGaplessPreviousAudio && albumGaplessPreviousAudio !== audio) {
+      if (transitionHandoff && transitionPreviousAudio && transitionPreviousAudio !== audio) {
         setTimeout(function () {
           try {
-            albumGaplessPreviousAudio.pause();
-            albumGaplessPreviousAudio.removeAttribute('src');
-            albumGaplessPreviousAudio.load();
+            transitionPreviousAudio.pause();
+            transitionPreviousAudio.removeAttribute('src');
+            transitionPreviousAudio.load();
           } catch (e) { }
         }, 220);
       }
@@ -1473,7 +781,6 @@ async function playQueueAt(idx, opts) {
           : 4200;
         scheduleSmartCrossfadePrepare(token, idx, smartTransitionPrepareDelay);
       }
-      scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
       safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
       if (typeof completeSourceFallbackRecovery === 'function') {
         completeSourceFallbackRecovery(sourceFallbackRecoveryFromOptions(opts));

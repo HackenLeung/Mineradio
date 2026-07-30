@@ -176,16 +176,7 @@ function playbackTransitionHasAudibleNextDeck() {
     && !smartTransitionMedia.ended
     && Number(smartTransitionMedia.volume) > 0.001
   ) return true;
-  var preload = typeof albumGaplessState !== 'undefined' && albumGaplessState ? albumGaplessState.preload : null;
-  return !!(
-    preload
-    && preload.mixStarted
-    && preload.media
-    && preload.media !== audio
-    && !preload.media.paused
-    && !preload.media.ended
-    && Number(preload.media.volume) > 0.001
-  );
+  return false;
 }
 
 function bindPlaybackProgressEvents(audioEl) {
@@ -435,13 +426,6 @@ var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function (e) {
   if (!audio || !getPlaybackDurationSeconds()) return;
   if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('manual-seek');
-  if (
-    typeof albumGaplessState !== 'undefined'
-    && albumGaplessState
-    && albumGaplessState.preload
-    && (albumGaplessState.preload.mixPending || albumGaplessState.preload.mixStarted)
-    && typeof clearAlbumGaplessPreload === 'function'
-  ) clearAlbumGaplessPreload('manual-seek');
   progressDragState.active = true;
   progressDragState.media = audio;
   progressDragState.mediaSrc = audio.currentSrc || audio.src || '';

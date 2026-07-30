@@ -154,7 +154,7 @@ function showQishuiTrackStartStallNotice() {
   var now = performance.now();
   if (now - (playbackResumeRecovery.lastQishuiStartNoticeAt || 0) < 8000) return;
   playbackResumeRecovery.lastQishuiStartNoticeAt = now;
-  var title = '汽水播放未响应';
+  var title = '小汽播放未响应';
   var body = '音频开头解码卡住，已尝试重新接入；如果仍不播放，请拖动一下进度或切换音质。';
   if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice(title, body);
   else if (typeof showToast === 'function') showToast(title + '：' + body);
@@ -560,13 +560,6 @@ async function togglePlay() {
       if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting && typeof resetSmartCrossfade === 'function') {
         resetSmartCrossfade('manual-pause');
       }
-      if (
-        typeof albumGaplessState !== 'undefined'
-        && albumGaplessState
-        && albumGaplessState.preload
-        && (albumGaplessState.preload.mixPending || albumGaplessState.preload.mixStarted)
-        && typeof clearAlbumGaplessPreload === 'function'
-      ) clearAlbumGaplessPreload('manual-pause');
       await fadeOutAndPauseAudio();
       playing = false;
       setPlayIcon(false);

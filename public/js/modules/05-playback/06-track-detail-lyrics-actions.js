@@ -11,12 +11,12 @@ function songDurationLabel(song) {
 function songSourceLabel(song) {
   if (!song) return '未知';
   if (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify' || song.spotifyId || song.spotifyUri) return 'Spotify';
-  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'QQ 音乐';
-  if (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui') return '汽水音乐';
-  if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.audioHash) return '酷狗音乐';
+  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return '小Q';
+  if (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui') return '小汽';
+  if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.audioHash) return '小狗';
   if (song.type === 'local') return '本地上传';
-  if (song.type === 'podcast' || song.source === 'podcast') return '网易云播客';
-  return '网易云音乐';
+  if (song.type === 'podcast' || song.source === 'podcast') return '小云播客';
+  return '小云';
 }
 function detailRow(label, value) {
   value = value == null || value === '' ? '未知' : value;
@@ -117,17 +117,17 @@ function albumDetailUrlForSong(song) {
 }
 function albumDetailMissingText(song) {
   var provider = songProviderKey(song);
-  if (provider === 'kugou') return '当前酷狗歌曲缺少稳定专辑详情接口，暂不能按当前音源打开专辑。';
-  if (provider === 'qishui') return '汽水当前作为匹配源接入，暂不能按当前音源打开专辑详情。';
+  if (provider === 'kugou') return '当前小狗歌曲缺少稳定专辑详情接口，暂不能按当前音源打开专辑。';
+  if (provider === 'qishui') return '小汽当前作为匹配源接入，暂不能按当前音源打开专辑详情。';
   return '当前歌曲缺少可用专辑 ID，重新搜索或播放新版结果后再打开专辑。';
 }
 function albumCollectionConfig(song) {
   var provider = songProviderKey(song);
   var albumId = song && (song.albumId || song.album_id || song.spotifyAlbumId || '');
   if (!albumId) return null;
-  if (provider === 'netease') return { provider: provider, id: String(albumId), endpoint: '/api/album/subscribe', field: 'subscribed', label: '网易云' };
+  if (provider === 'netease') return { provider: provider, id: String(albumId), endpoint: '/api/album/subscribe', field: 'subscribed', label: '小云' };
   if (provider === 'spotify') return { provider: provider, id: String(albumId), endpoint: '/api/spotify/album/like', field: 'like', label: 'Spotify' };
-  if (provider === 'qishui') return { provider: provider, id: String(albumId), endpoint: '/api/qishui/album/collect', field: 'collected', label: '汽水音乐' };
+  if (provider === 'qishui') return { provider: provider, id: String(albumId), endpoint: '/api/qishui/album/collect', field: 'collected', label: '小汽' };
   return null;
 }
 function albumCollectionKey(song) {
@@ -267,7 +267,7 @@ function detailCommentsConfig(song) {
     var qqMid = song.mid || song.songmid || song.id || '';
     return {
       provider: 'qq',
-      title: 'QQ 音乐评论',
+      title: '小Q评论',
       readUrl: '/api/qq/song/comments?id=' + encodeURIComponent(qqId) + '&mid=' + encodeURIComponent(qqMid) + '&limit=18',
       writeUrl: '',
       canWrite: false,
@@ -277,7 +277,7 @@ function detailCommentsConfig(song) {
     var qishuiId = song.providerSongId || song.trackId || song.id || '';
     return qishuiId ? {
       provider: 'qishui',
-      title: '汽水音乐评论',
+      title: '小汽评论',
       readUrl: '/api/qishui/song/comments?id=' + encodeURIComponent(qishuiId) + '&limit=18',
       writeUrl: '/api/qishui/song/comments?id=' + encodeURIComponent(qishuiId),
       canWrite: true,
@@ -287,7 +287,7 @@ function detailCommentsConfig(song) {
   if (provider === 'netease' && song.id) {
     return {
       provider: 'netease',
-      title: '网易云评论',
+      title: '小云评论',
       readUrl: '/api/song/comments?id=' + encodeURIComponent(song.id) + '&limit=18',
       writeUrl: '/api/song/comments?id=' + encodeURIComponent(song.id),
       canWrite: true,
@@ -580,7 +580,7 @@ function ensureLocalMatchModal() {
 function renderLocalMatchProviderTabs() {
   var target = document.getElementById('local-match-provider-tabs');
   if (!target) return;
-  var providers = [{ key: 'netease', label: '网易云' }, { key: 'kugou', label: '酷狗' }, { key: 'qq', label: 'QQ' }];
+  var providers = [{ key: 'netease', label: '小云' }, { key: 'kugou', label: '小狗' }, { key: 'qq', label: '小Q' }];
   target.innerHTML = providers.map(function (item) {
     return '<button type="button" class="local-match-provider ' + (item.key === localMatchModalState.provider ? 'active' : '') + '" aria-pressed="' + (item.key === localMatchModalState.provider ? 'true' : 'false') + '" onclick="setLocalMatchProvider(\'' + item.key + '\')">' + item.label + '</button>';
   }).join('');
@@ -778,9 +778,9 @@ function openTrackDetailModal(type, songOverride) {
     var artistInitial = artistName && artistName !== '未知歌手' ? artistName.slice(0, 1) : '歌';
     var artistCoverHtml = '<div id="artist-detail-cover" class="detail-cover detail-artist-avatar">' + escHtml(artistInitial) + '</div>';
     var artistEmptyText = songProviderKey(song) === 'qq'
-      ? '当前 QQ 歌曲缺少 singerMid，无法打开 QQ 歌手主页。'
+      ? '当前小Q歌曲缺少 singerMid，无法打开小Q歌手主页。'
       : '当前歌曲缺少可用的歌手主页信息';
-    var artistLoadingText = songProviderKey(song) === 'qq' ? '正在载入 QQ 歌手主页...' : '正在载入歌手主页...';
+    var artistLoadingText = songProviderKey(song) === 'qq' ? '正在载入小Q歌手主页...' : '正在载入歌手主页...';
     heading.textContent = '歌手详情';
     body.innerHTML =
       '<div class="detail-hero">' + artistCoverHtml +
@@ -1205,7 +1205,7 @@ function updateCustomLyricControls() {
   var customBtn = document.getElementById('lyric-source-custom');
   if (originalBtn) {
     originalBtn.classList.toggle('active', lyricSourceMode !== 'custom');
-    originalBtn.title = '使用网易云或本地解析歌词';
+    originalBtn.title = '使用小云或本地解析歌词';
   }
   if (customBtn) {
     customBtn.classList.toggle('active', lyricSourceMode === 'custom');
@@ -1361,7 +1361,7 @@ var QISHUI_PLAYLIST_WRITE_ACTIONS_ENABLED = true;
 var SONG_ACCOUNT_ACTION_ADAPTERS = {
   netease: {
     provider: 'netease',
-    label: '网易云音乐',
+    label: '小云',
     like: true,
     collect: true,
     createPlaylist: true,
@@ -1374,7 +1374,7 @@ var SONG_ACCOUNT_ACTION_ADAPTERS = {
   },
   kugou: {
     provider: 'kugou',
-    label: '酷狗音乐',
+    label: '小狗',
     like: true,
     collect: true,
     createPlaylist: false,
@@ -1400,7 +1400,7 @@ var SONG_ACCOUNT_ACTION_ADAPTERS = {
   },
   qishui: {
     provider: 'qishui',
-    label: '汽水音乐',
+    label: '小汽',
     like: QISHUI_LIKE_ACCOUNT_ACTIONS_ENABLED,
     collect: QISHUI_PLAYLIST_WRITE_ACTIONS_ENABLED,
     createPlaylist: false,
@@ -1413,7 +1413,7 @@ var SONG_ACCOUNT_ACTION_ADAPTERS = {
   },
   qq: {
     provider: 'qq',
-    label: 'QQ 音乐',
+    label: '小Q',
     like: false,
     collect: false,
     createPlaylist: false,
@@ -1486,7 +1486,7 @@ function isSongAccountLoggedIn(provider) {
 function songAccountUnsupportedMessage(provider, action) {
   var adapter = songAccountAdapter(provider);
   if (adapter && adapter.readOnly) return adapter.label + '当前仅支持读取账号收藏，暂不支持写回';
-  if (provider === 'qishui') return '汽水音乐当前会话暂不支持此账号操作';
+  if (provider === 'qishui') return '小汽当前会话暂不支持此账号操作';
   if (provider === 'local') return '本地文件暂不支持同步' + (action === 'collect' ? '到歌单' : '红心');
   return (adapter && adapter.label || '当前平台') + '暂不支持此操作';
 }

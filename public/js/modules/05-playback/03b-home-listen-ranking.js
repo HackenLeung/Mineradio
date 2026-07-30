@@ -9,7 +9,7 @@ var homeListenRankingState = {
 };
 
 function homeListenRankingSourceLabel(source) {
-  return { recent: '最近播放', netease: '网易云', kugou: '酷狗', qq: 'QQ', local: '本地音乐' }[source] || '当前平台';
+  return { recent: '最近播放', netease: '小云', kugou: '小狗', qq: '小Q', local: '本地音乐' }[source] || '当前平台';
 }
 
 function homeListenRankingProvider(item) {
@@ -96,14 +96,14 @@ function renderHomeListenRankingRows(rows, source, remote) {
   if (!rows.length) {
     list.innerHTML = '<div class="home-platform-recommend-empty"><strong>还没有' + homeListenRankingEscape(homeListenRankingSourceLabel(source)) + '排行</strong>' +
       '<span>完整播放、听满约 45 秒或达到歌曲一半后，才会计入有效听歌。</span></div>';
-    status.textContent = source === 'netease' ? '网易云账号周榜为空；本机记录也暂时为空。' : '这里显示本机有效听歌记录。';
+    status.textContent = source === 'netease' ? '小云账号周榜为空；本机记录也暂时为空。' : '这里显示本机有效听歌记录。';
     return;
   }
   status.classList.remove('is-error');
   status.textContent = source === 'recent'
     ? '本机最近有效播放 · 共 ' + rows.length + ' 首'
     : remote
-    ? '网易云账号周榜 · 点击歌曲即可播放'
+    ? '小云账号周榜 · 点击歌曲即可播放'
     : homeListenRankingSourceLabel(source) + '本机有效听歌排行 · 共 ' + rows.length + ' 首';
   list.innerHTML = rows.map(function (item, index) {
     var plays = Number(item.playCount != null ? item.playCount : item.plays) || 0;
@@ -136,7 +136,7 @@ function syncHomeListenRankingHeading(source) {
   if (title) title.textContent = recent ? '最近播放' : '听歌排行';
   if (description) description.textContent = recent
     ? '按最近播放时间展示本机有效听歌记录；点击歌曲可重新播放。'
-    : '网易云显示账号周榜；酷狗、QQ 和本地显示本机有效听歌记录。';
+    : '小云显示账号周榜；小狗、小Q和本地显示本机有效听歌记录。';
   if (refresh) refresh.textContent = recent ? '刷新最近记录' : '刷新当前排行';
 }
 
@@ -156,7 +156,7 @@ async function loadHomeListenRanking(source, refresh) {
   var requestToken = ++homeListenRankingState.requestToken;
   homeListenRankingState.loading = true;
   status.classList.remove('is-error');
-  status.textContent = '正在读取网易云账号周榜…';
+  status.textContent = '正在读取小云账号周榜…';
   list.innerHTML = '<div class="home-platform-recommend-loading">正在加载听歌排行</div>';
   try {
     var payload = await apiJson('/api/listen/ranking?type=week' + (refresh ? '&refresh=1' : ''), { timeoutMs: 9000 });
@@ -171,8 +171,8 @@ async function loadHomeListenRanking(source, refresh) {
     renderHomeListenRankingRows(localRows, source, false);
     status.classList.toggle('is-error', !localRows.length);
     status.textContent = localRows.length
-      ? '网易云账号周榜暂不可用，已显示本机网易云有效听歌记录。'
-      : '网易云账号周榜暂不可用；登录后重试，或先完整播放歌曲生成本机记录。';
+      ? '小云账号周榜暂不可用，已显示本机小云有效听歌记录。'
+      : '小云账号周榜暂不可用；登录后重试，或先完整播放歌曲生成本机记录。';
   } finally {
     if (requestToken === homeListenRankingState.requestToken) homeListenRankingState.loading = false;
   }
@@ -207,7 +207,7 @@ function playHomeListenRankingItem(index) {
   safeRenderQueuePanel('home-listen-ranking');
   safeShelfRebuild('home-listen-ranking', true);
   forcePlaybackControlsInteractive();
-  Promise.resolve(playQueueAt(0, { manual: true, context: { type: 'listen-ranking', playlistName: '网易云听歌排行' } }))
+  Promise.resolve(playQueueAt(0, { manual: true, context: { type: 'listen-ranking', playlistName: '小云听歌排行' } }))
     .catch(function (error) { console.warn('[HomeListenRanking]', error); });
 }
 

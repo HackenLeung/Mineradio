@@ -67,7 +67,6 @@ test('smart transition owns the crossfade path without the removed upstream Auto
   assert.doesNotMatch(loader, /cuefield|automix/i);
   assert.doesNotMatch(integration, /cuefield|automix/i);
   assert.match(setSmart, /scheduleSmartCrossfadePrepare/);
-  assert.match(prepare, /if \(smartCrossfadeBlockedByAlbumGapless\(currentIndex\)\) return/);
   assert.match(prepare, /prepareSmartTransitionFallback\(token, currentIndex\)/);
   assert.match(execute, /prepareSmartTransitionPendingAudio\(pending\)/);
   assert.match(execute, /runSmartTransitionTimeline\(pending, nextMedia, transitionContext\)/);
@@ -75,6 +74,8 @@ test('smart transition owns the crossfade path without the removed upstream Auto
   assert.match(execute, /smartTransition:\s*isSmartTransition/);
   assert.match(playback, /transitionHandoff = !!\(opts\.smartTransitionHandoff && opts\.preloadedAudio\)/);
   assert.match(playback, /claimSmartTransitionPreparedAudioForPlayback\(audio\)/);
+  assert.doesNotMatch(integration, /albumGapless|AlbumGapless|ALBUM_GAPLESS|__albumGapless/);
+  assert.doesNotMatch(playback, /albumGapless|AlbumGapless|ALBUM_GAPLESS|__albumGapless/);
 });
 
 test('album detail no longer exposes or activates a separate gapless mode', () => {

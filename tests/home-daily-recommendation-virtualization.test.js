@@ -53,7 +53,7 @@ test('daily recommendation modal consumes the full frontend dataset without an e
   assert.match(render, /id="home-platform-daily-grid"/);
   assert.match(render, /renderHomePlatformDailyWindow\s*\(\s*true\s*\)/);
   assert.match(render, /已读取全部/);
-  assert.doesNotMatch(render, /热门播客|网易云热门播客|netease-podcast/);
+  assert.doesNotMatch(render, /热门播客|小云热门播客|netease-podcast/);
 });
 
 test('daily recommendation viewport range exposes every index while keeping each DOM window bounded', () => {

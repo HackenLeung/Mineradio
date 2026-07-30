@@ -74,7 +74,6 @@ function createSandbox(queue, statusOverrides) {
     hideLoading() {},
     forcePlaybackControlsInteractive() {},
     clearAudioFadeTimers() {},
-    clearAlbumGaplessPreload() { sandbox.albumGaplessClears = (sandbox.albumGaplessClears || 0) + 1; },
     resetSmartCrossfade() { sandbox.smartTransitionClears = (sandbox.smartTransitionClears || 0) + 1; },
     clearPlaybackResumeWatchdogs() { sandbox.watchdogClears = (sandbox.watchdogClears || 0) + 1; },
     setPlayIcon(value) { sandbox.iconPlaying = value; },
@@ -86,7 +85,6 @@ function createSandbox(queue, statusOverrides) {
     showSourceFallbackNotice(title, body) { notices.push({ title, body }); },
     document: { getElementById() { return null; }, body: { appendChild() {} } },
     apiJson: async function () { return { songs: [] }; },
-    resolveAlbumGaplessPlaybackData: async function () { return null; },
     playQueueAt: async function () { return false; },
     notices,
   };
@@ -143,9 +141,6 @@ async function testDuplicateSongProviderDeduplication() {
     return {
       songs: [{ provider: 'qq', id: 'qq-a', mid: 'qq-a', name: source.name, artist: source.artist }],
     };
-  };
-  sandbox.resolveAlbumGaplessPlaybackData = async function () {
-    return { url: 'https://candidate.invalid/audio' };
   };
   sandbox.playQueueAt = async function () {
     childCalls++;

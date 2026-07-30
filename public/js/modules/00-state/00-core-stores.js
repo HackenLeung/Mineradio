@@ -23,9 +23,9 @@ var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleB
 var localLibrarySongs = [], localFolderPlaylists = [];
 var searchMode = 'song', podcastResults = [], podcastPrograms = [], podcastCurrentRadio = null;
 var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
-var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
-var kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
-var qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
+var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: '小Q', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
+var kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '小狗', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
+var qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, preview: false, nickname: '小汽', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
 var qqLoginAutoRefreshTimer = null;
 var qqLoginStatusLastForcedAt = 0;
 var kugouLoginAutoRefreshTimer = null;
@@ -57,7 +57,6 @@ var qrPollTimer = null, qrKey = null;
 var volumeTween = null, trackSwitchToken = 0;
 var audioFadeTimer = null, audioElementFadeFrame = 0, audioFadeSerial = 0;
 var playbackResumeRecovery = { serial: 0, pending: false, lastAttemptAt: 0, lastReason: '', pausedAt: 0, pausedSongKey: '', pausedSrc: '', pausedPosition: 0, timerIds: [] };
-var albumGaplessState = { enabled: false, defaultEnabled: true, albumKey: '', disabledAlbumKey: '', context: null, preload: null, serial: 0, monitorTimer: 0, handoff: false };
 var PLAYBACK_RESUME_STALL_DELAYS = [1600, 3600];
 var PLAYBACK_RESUME_LONG_PAUSE_MS = 8 * 60 * 1000;
 var PLAYBACK_RESUME_LONG_PAUSE_PROVIDER_MS = { qishui: 3 * 60 * 1000, qq: 8 * 60 * 1000, kugou: 8 * 60 * 1000, netease: 12 * 60 * 1000 };
@@ -125,19 +124,19 @@ var PLAYBACK_QUALITY_OPTIONS = {
     { key: 'standard', title: '标准', sub: '128kbps' }
   ],
   qq: [
-    { key: 'hires', title: 'Hi-Res FLAC', sub: 'QQ 高解析 / 优先尝试' },
-    { key: 'lossless', title: '无损 FLAC', sub: 'QQ SQ / 稳定优先' },
-    { key: 'exhigh', title: '320k MP3', sub: 'QQ 高品质' },
+    { key: 'hires', title: 'Hi-Res FLAC', sub: '小Q高解析 / 优先尝试' },
+    { key: 'lossless', title: '无损 FLAC', sub: '小Q SQ / 稳定优先' },
+    { key: 'exhigh', title: '320k MP3', sub: '小Q高品质' },
     { key: 'standard', title: '128k MP3', sub: '兼容优先' }
   ],
   kugou: [
-    { key: 'hires', title: 'Hi-Res / 臻品', sub: '酷狗高解析 / 优先尝试' },
-    { key: 'lossless', title: '无损 FLAC', sub: '酷狗 SQ / 稳定优先' },
-    { key: 'exhigh', title: '320k MP3', sub: '酷狗高品质' },
+    { key: 'hires', title: 'Hi-Res / 臻品', sub: '小狗高解析 / 优先尝试' },
+    { key: 'lossless', title: '无损 FLAC', sub: '小狗 SQ / 稳定优先' },
+    { key: 'exhigh', title: '320k MP3', sub: '小狗高品质' },
     { key: 'standard', title: '128k MP3', sub: '兼容优先' }
   ],
   qishui: [
-    { key: 'standard', title: '汽水匹配源', sub: 'QS 推荐 / 播放自动换源' }
+    { key: 'standard', title: '小汽匹配源', sub: 'QS 推荐 / 播放自动换源' }
   ],
   spotify: [
     { key: 'standard', title: 'Spotify 匹配源', sub: 'SP 搜索 / 播放自动换源' }

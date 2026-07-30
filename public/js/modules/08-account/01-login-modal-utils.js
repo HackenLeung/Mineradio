@@ -218,11 +218,11 @@ function syncAccountProviderOrderUi() {
   }
 }
 function platformMeta(provider) {
-  if (provider === 'qq') return { key: 'qq', short: 'QQ', label: 'QQ 音乐', app: 'QQ 音乐 App', dot: 'qq' };
-  if (provider === 'kugou') return { key: 'kugou', short: 'KG', label: '酷狗音乐', app: '酷狗音乐 App', dot: 'kugou' };
-  if (provider === 'qishui') return { key: 'qishui', short: 'QS', label: '汽水音乐', app: '汽水音乐 App', dot: 'qishui' };
+  if (provider === 'qq') return { key: 'qq', short: '小Q', label: '小Q', app: '小Q App', dot: 'qq' };
+  if (provider === 'kugou') return { key: 'kugou', short: '小狗', label: '小狗', app: '小狗 App', dot: 'kugou' };
+  if (provider === 'qishui') return { key: 'qishui', short: '小汽', label: '小汽', app: '小汽 App', dot: 'qishui' };
   if (provider === 'spotify') return { key: 'spotify', short: 'SP', label: 'Spotify', app: 'Spotify', dot: 'spotify' };
-  return { key: 'netease', short: 'NE', label: '网易云音乐', app: '网易云音乐 App', dot: 'netease' };
+  return { key: 'netease', short: '小云', label: '小云', app: '小云 App', dot: 'netease' };
 }
 function platformStatus(provider) {
   if (provider === 'spotify') return spotifyLoginStatus;
@@ -342,7 +342,7 @@ function providerAccountIdentity(provider, status) {
     profile.public_name,
     profile.name
   ];
-  var syntheticPrefixes = [meta.label, meta.short, provider, 'QQ 音乐', 'QQ', '酷狗音乐', '酷狗', '汽水音乐', '网易云音乐', '网易云', 'Spotify']
+  var syntheticPrefixes = [meta.label, meta.short, provider, '小Q', 'QQ', '小狗', 'KG', '小汽', 'QS', '小云', 'NE', 'Spotify']
     .map(function (value) { return String(value || '').replace(/[\s·:_-]+/g, '').toLowerCase(); })
     .filter(Boolean);
   for (var i = 0; i < candidates.length; i += 1) {

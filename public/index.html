@@ -117,10 +117,10 @@
           <button id="search-mode-song" class="active" type="button" onclick="setSearchMode('song')"
             aria-selected="true">All</button>
           <button id="search-mode-netease" type="button" onclick="setSearchMode('netease')"
-            aria-selected="false">NE</button>
-          <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
-          <button id="search-mode-kugou" type="button" onclick="setSearchMode('kugou')" aria-selected="false">KG</button>
-          <button id="search-mode-qishui" type="button" onclick="setSearchMode('qishui')" aria-selected="false">QS</button>
+            aria-selected="false">小云</button>
+          <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">小Q</button>
+          <button id="search-mode-kugou" type="button" onclick="setSearchMode('kugou')" aria-selected="false">小狗</button>
+          <button id="search-mode-qishui" type="button" onclick="setSearchMode('qishui')" aria-selected="false">小汽</button>
           <button id="search-mode-spotify" type="button" onclick="setSearchMode('spotify')" aria-selected="false">SP</button>
           <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')"
             aria-selected="false">Podcast</button>
@@ -266,7 +266,7 @@
                 onclick="openHomeListenRanking()" aria-label="打开听歌排行">
                 <span class="home-insight-kicker">RANKING</span>
                 <span class="home-listen-ranking-title">听歌排行</span>
-                <span class="home-listen-ranking-sub">网易云 · 酷狗 · QQ · 本地</span>
+                <span class="home-listen-ranking-sub">小云 · 小狗 · 小Q · 本地</span>
               </button>
             </div>
 
@@ -312,10 +312,10 @@
         </div>
         <div id="home-platform-recommend-tabs" class="home-platform-recommend-tabs" role="tablist"
           aria-label="推荐平台">
-          <button type="button" role="tab" data-home-recommend-source="netease" aria-selected="true">网易云</button>
-          <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">汽水</button>
-          <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
-          <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
+          <button type="button" role="tab" data-home-recommend-source="netease" aria-selected="true">小云</button>
+          <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">小汽</button>
+          <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">小Q</button>
+          <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">小狗</button>
           <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
         </div>
         <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status"
@@ -334,16 +334,16 @@
         <div class="home-platform-recommend-head">
           <div>
             <h2 id="home-listen-ranking-title">听歌排行</h2>
-            <p id="home-listen-ranking-description">网易云显示账号周榜；酷狗、QQ 和本地显示本机有效听歌记录。</p>
+            <p id="home-listen-ranking-description">小云显示账号周榜；小狗、小Q和本地显示本机有效听歌记录。</p>
           </div>
           <button id="home-listen-ranking-close" class="home-platform-recommend-close" type="button"
             aria-label="关闭听歌排行">×</button>
         </div>
         <div id="home-listen-ranking-tabs" class="home-platform-recommend-tabs" role="tablist" aria-label="排行平台">
           <button type="button" role="tab" data-listen-ranking-source="recent" aria-selected="false">最近</button>
-          <button type="button" role="tab" data-listen-ranking-source="netease" aria-selected="true">网易云</button>
-          <button type="button" role="tab" data-listen-ranking-source="kugou" aria-selected="false">酷狗</button>
-          <button type="button" role="tab" data-listen-ranking-source="qq" aria-selected="false">QQ</button>
+          <button type="button" role="tab" data-listen-ranking-source="netease" aria-selected="true">小云</button>
+          <button type="button" role="tab" data-listen-ranking-source="kugou" aria-selected="false">小狗</button>
+          <button type="button" role="tab" data-listen-ranking-source="qq" aria-selected="false">小Q</button>
           <button type="button" role="tab" data-listen-ranking-source="local" aria-selected="false">本地</button>
         </div>
         <div id="home-listen-ranking-status" class="home-platform-recommend-status" role="status" aria-live="polite"></div>
@@ -1146,7 +1146,7 @@
       </div>
       <div id="pl-pane" style="display:none">
         <div class="queue-toolbar">
-          <div class="queue-chip">登录后显示网易云 / QQ 歌单</div>
+          <div class="queue-chip">登录后显示小云 / 小Q歌单</div>
           <button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)"
             style="height:26px;padding:0 10px;font-size:11px">刷新</button>
         </div>
@@ -1526,13 +1526,13 @@
           <svg id="login-workflow-svg" class="workflow-link-layer login-link-layer" aria-hidden="true"></svg>
           <div class="login-platform-tabs login-node-providers" id="login-platform-tabs">
             <button id="login-provider-netease" class="netease active workflow-node" type="button" data-login-provider="netease"
-              onclick="selectLoginProviderNode('netease')"><span class="provider-logo">NE</span><b>网易云</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="netease" title="拖到 MR 接入口"></span></button>
+              onclick="selectLoginProviderNode('netease')"><span class="provider-logo">小云</span><b>小云</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="netease" title="拖到 MR 接入口"></span></button>
             <button id="login-provider-qq" class="qq workflow-node" type="button" data-login-provider="qq" onclick="selectLoginProviderNode('qq')"><span
-                class="provider-logo">QQ</span><b>QQ 音乐</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="qq" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">小Q</span><b>小Q</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="qq" title="拖到 MR 接入口"></span></button>
             <button id="login-provider-kugou" class="kugou workflow-node" type="button" data-login-provider="kugou" onclick="selectLoginProviderNode('kugou')"><span
-                class="provider-logo">KG</span><b>酷狗音乐</b><small>官方窗口 / Cookie</small><span class="flow-port out" data-login-provider-output="kugou" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">小狗</span><b>小狗</b><small>官方窗口 / Cookie</small><span class="flow-port out" data-login-provider-output="kugou" title="拖到 MR 接入口"></span></button>
             <button id="login-provider-qishui" class="qishui workflow-node" type="button" data-login-provider="qishui" onclick="selectLoginProviderNode('qishui')"><span
-                class="provider-logo">QS</span><b>汽水音乐</b><small>本地会话 / PC 客户端</small><span class="flow-port out" data-login-provider-output="qishui" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">小汽</span><b>小汽</b><small>本地会话 / PC 客户端</small><span class="flow-port out" data-login-provider-output="qishui" title="拖到 MR 接入口"></span></button>
             <button id="login-provider-spotify" class="spotify workflow-node" type="button" data-login-provider="spotify" onclick="selectLoginProviderNode('spotify')"><span
                 class="provider-logo">SP</span><b>Spotify</b><small>官方 OAuth</small><span class="flow-port out" data-login-provider-output="spotify" title="拖到 MR 接入口"></span></button>
           </div>
@@ -1550,15 +1550,15 @@
         </div>
         <div id="login-auth-drawer" class="login-auth-drawer">
           <div class="login-auth-copy">
-            <h2 id="login-modal-title">扫码登录网易云音乐</h2>
-            <div id="login-modal-desc" class="desc">使用 <b>网易云音乐 App</b> 扫码，可同步歌单、红心与播客。</div>
+            <h2 id="login-modal-title">扫码登录小云</h2>
+            <div id="login-modal-desc" class="desc">使用 <b>小云 App</b> 扫码，可同步歌单、红心与播客。</div>
             <div id="qr-status">拖动接口到 MR 接入口后开始登录。</div>
           </div>
           <div class="login-auth-body">
             <div id="qr-shell" class="qr-shell">
               <img id="qr-img" src="" alt="">
               <button id="qq-web-login-card" class="qq-login-mark" type="button"
-                onclick="openProviderWebLogin()"><b>QQ</b><span>打开官方扫码窗口</span></button>
+                onclick="openProviderWebLogin()"><b>小Q</b><span>打开官方扫码窗口</span></button>
             </div>
             <div id="qq-cookie-panel" class="qq-cookie-panel">
               <textarea id="qq-cookie-input" class="qq-cookie-input" spellcheck="false" autocomplete="off"
@@ -1604,7 +1604,7 @@
       <div class="modal dual-user-modal">
         <h2>账号信息</h2>
         <div id="account-provider-chip" class="account-provider-chip netease"><span
-            class="account-source-dot netease"></span><span>网易云音乐</span></div>
+            class="account-source-dot netease"></span><span>小云</span></div>
         <img id="user-modal-avatar" src=""
           style="width:72px;height:72px;border-radius:50%;margin:0 auto 12px;object-fit:cover;background:rgba(255,255,255,0.1);display:block">
         <div id="user-modal-name" style="font-size:15px;margin-bottom:4px"></div>
@@ -1612,21 +1612,21 @@
           style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:20px;letter-spacing:.5px"></div>
         <div class="user-platform-tabs" id="user-platform-tabs">
           <button id="user-provider-netease" class="netease active" type="button"
-            onclick="setActiveAccountProvider('netease')">网易云</button>
-          <button id="user-provider-qq" class="qq" type="button" onclick="setActiveAccountProvider('qq')">QQ 音乐</button>
-          <button id="user-provider-kugou" class="kugou" type="button" onclick="setActiveAccountProvider('kugou')">酷狗音乐</button>
-          <button id="user-provider-qishui" class="qishui" type="button" onclick="setActiveAccountProvider('qishui')">汽水音乐</button>
+            onclick="setActiveAccountProvider('netease')">小云</button>
+          <button id="user-provider-qq" class="qq" type="button" onclick="setActiveAccountProvider('qq')">小Q</button>
+          <button id="user-provider-kugou" class="kugou" type="button" onclick="setActiveAccountProvider('kugou')">小狗</button>
+          <button id="user-provider-qishui" class="qishui" type="button" onclick="setActiveAccountProvider('qishui')">小汽</button>
           <button id="user-provider-spotify" class="spotify" type="button" onclick="setActiveAccountProvider('spotify')">Spotify</button>
           <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我两个都要</button>
         </div>
         <div class="account-modal-actions">
-          <button id="account-add-netease" class="modal-btn" onclick="openProviderLogin('netease')">补登网易云</button>
-          <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登 QQ 音乐</button>
-          <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登酷狗音乐</button>
-          <button id="account-add-qishui" class="modal-btn" onclick="openProviderLogin('qishui')">导入汽水登录态</button>
+          <button id="account-add-netease" class="modal-btn" onclick="openProviderLogin('netease')">补登小云</button>
+          <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登小Q</button>
+          <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登小狗</button>
+          <button id="account-add-qishui" class="modal-btn" onclick="openProviderLogin('qishui')">导入小汽登录态</button>
           <button id="account-add-spotify" class="modal-btn" onclick="openProviderLogin('spotify')">连接 Spotify</button>
         </div>
-        <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
+        <div id="account-hint" class="account-hint">小Q真实登录暂未接入，当前先预览双平台账号交互。</div>
         <div class="btn-row">
           <button class="modal-btn" onclick="closeUserModal()">关闭</button>
           <button id="account-logout-btn" class="modal-btn primary" onclick="logoutActiveAccount()">退出当前平台</button>
@@ -1831,7 +1831,7 @@
               <div class="update-kicker">MINERADIO</div>
               <div id="update-modal-title" class="update-title">New release</div>
               <div class="update-version-row">
-                <div id="update-modal-version" class="update-version">v2.0.2</div>
+                <div id="update-modal-version" class="update-version">v1.3.0</div>
                 <a class="update-project-link" href="https://github.com/HackenLeung/Mineradio" target="_blank"
                   rel="noopener noreferrer" title="https://github.com/HackenLeung/Mineradio">HackenLeung/Mineradio</a>
               </div>

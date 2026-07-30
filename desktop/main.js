@@ -3213,7 +3213,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: '网易云音乐登录',
+      title: '小云登录',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -3285,9 +3285,9 @@ async function openNeteaseMusicLoginWindow(owner) {
         const cookie = await readNeteaseLoginCookieHeader(cookieSession);
         resolve(neteaseCookieHasLogin(cookie)
           ? { ok: true, cookie }
-          : { ok: false, cancelled: true, message: '网易云登录窗口已关闭' });
+          : { ok: false, cancelled: true, message: '小云登录窗口已关闭' });
       } catch (e) {
-        resolve({ ok: false, error: e.message || '网易云登录窗口已关闭' });
+        resolve({ ok: false, error: e.message || '小云登录窗口已关闭' });
       }
     });
 
@@ -3323,7 +3323,7 @@ async function openQQMusicLoginWindow(owner, options) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: 'QQ 音乐登录',
+      title: '小Q登录',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -3395,9 +3395,9 @@ async function openQQMusicLoginWindow(owner, options) {
         const cookie = await readQQLoginCookieHeader(cookieSession);
         resolve(qqCookieHasLogin(cookie)
           ? { ok: true, cookie, partial: !qqCookieHasPlaybackLogin(cookie) }
-          : { ok: false, cancelled: true, message: 'QQ 登录窗口已关闭' });
+          : { ok: false, cancelled: true, message: '小Q登录窗口已关闭' });
       } catch (e) {
-        resolve({ ok: false, error: e.message || 'QQ 登录窗口已关闭' });
+        resolve({ ok: false, error: e.message || '小Q登录窗口已关闭' });
       }
     });
 
@@ -3433,7 +3433,7 @@ async function openKugouMusicLoginWindow(owner) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: '酷狗音乐登录',
+      title: '小狗登录',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -3504,10 +3504,10 @@ async function openKugouMusicLoginWindow(owner) {
         resolve(kugouCookieHasPlayback(cookie)
           ? { ok: true, cookie }
           : (kugouCookieHasLogin(cookie)
-            ? { ok: true, cookie, partial: true, message: '酷狗账号已登录，但播放 token 不完整，请稍后在播放器内重试登录' }
-            : { ok: false, cancelled: true, message: '酷狗登录窗口已关闭' }));
+            ? { ok: true, cookie, partial: true, message: '小狗账号已登录，但播放 token 不完整，请稍后在播放器内重试登录' }
+            : { ok: false, cancelled: true, message: '小狗登录窗口已关闭' }));
       } catch (e) {
-        resolve({ ok: false, error: e.message || '酷狗登录窗口已关闭' });
+        resolve({ ok: false, error: e.message || '小狗登录窗口已关闭' });
       }
     });
 
@@ -3557,7 +3557,7 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: '汽水音乐扫码登录',
+      title: '小汽扫码登录',
       backgroundColor: '#10110f',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -3600,8 +3600,8 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
       oauthConfigured: false,
       oauthMissing: config && config.missing || [],
       message: cookie
-        ? '汽水音乐扫码登录态已获取，可同步我的喜欢和歌单；播放仍会按匹配源自动换源。'
-        : '已打开汽水音乐扫码窗口；未确认前 QS 搜索匹配源仍可用。',
+        ? '小汽扫码登录态已获取，可同步我的喜欢和歌单；播放仍会按匹配源自动换源。'
+        : '已打开小汽扫码窗口；未确认前 QS 搜索匹配源仍可用。',
       ...(extra || {}),
     });
 
@@ -3617,10 +3617,10 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
 
     const buildQrHtml = (statusText) => {
       const qrImg = qrPayload && qrPayload.qrcode || '';
-      const statusLine = statusText || '等待汽水音乐 App 扫码…';
+      const statusLine = statusText || '等待小汽 App 扫码…';
       return [
         '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐扫码登录</title>',
+        '<title>小汽扫码登录</title>',
         '<style>',
         'html,body{margin:0;height:100%;background:#10110f;color:#ecf6df;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
         'body{display:grid;place-items:center;}',
@@ -3634,11 +3634,11 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
         'a{color:#d6f89b;text-decoration:none;}',
         '</style><main>',
         '<div class="brand">QISHUI MUSIC</div>',
-        '<h1>使用汽水音乐 App 扫码</h1>',
-        '<p>请用汽水音乐 App 扫码并确认。确认后 Mineradio 会自动保存汽水登录态，同步汽水歌单与我的喜欢。</p>',
-        qrImg ? ('<div class="qr"><img src="' + escaped(qrImg) + '" alt="汽水音乐扫码登录"></div>') : '',
+        '<h1>使用小汽 App 扫码</h1>',
+        '<p>请用小汽 App 扫码并确认。确认后 Mineradio 会自动保存小汽登录态，同步小汽歌单与我的喜欢。</p>',
+        qrImg ? ('<div class="qr"><img src="' + escaped(qrImg) + '" alt="小汽扫码登录"></div>') : '',
         '<div class="status" id="status">' + escaped(statusLine) + '</div>',
-        qrPayload && qrPayload.qrcodeIndexUrl ? '<p>这个二维码来自汽水 PC 登录接口；抖音 App 扫描可能打开 404 页面，请用汽水音乐 App。</p>' : '',
+        qrPayload && qrPayload.qrcodeIndexUrl ? '<p>这个二维码来自小汽 PC 登录接口；抖音 App 扫描可能打开 404 页面，请用小汽 App。</p>' : '',
         '</main>'
       ].join('');
     };
@@ -3659,7 +3659,7 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
       const ttlMs = qrPayload && qrPayload.expireTime ? Math.max(30000, qrPayload.expireTime * 1000 - Date.now()) : 180000;
       expireTimer = setTimeout(() => {
         if (!canUseLoginWindow()) return;
-        lastStatus = '二维码已过期，请重新打开汽水授权';
+        lastStatus = '二维码已过期，请重新打开小汽授权';
         setQrStatusText(lastStatus);
       }, Math.min(240000, ttlMs + 3000));
     };
@@ -3715,7 +3715,7 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
     const pollQrStatus = async () => {
       if (!canUseLoginWindow()) return;
       if (qrPollBackoffUntil && Date.now() < qrPollBackoffUntil) {
-        setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
+        setQrStatusText(lastStatus || '小汽确认接口临时限流，已自动降频继续确认…');
         scheduleQrPoll(qrPollBackoffUntil - Date.now() + 250);
         return;
       }
@@ -3732,16 +3732,16 @@ async function openQishuiOfficialWebLoginWindow(owner, config) {
         }
         if (status && status.retryAfterMs) {
           qrPollBackoffUntil = Date.now() + Math.max(5000, Math.min(90000, Number(status.retryAfterMs) || 0));
-          setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
+          setQrStatusText(lastStatus || '小汽确认接口临时限流，已自动降频继续确认…');
           return;
         }
         if (status && status.needsSms) {
           qrPollBackoffUntil = Date.now() + 10000;
-          setQrStatusText(lastStatus || '汽水要求短信或二次验证，请先在汽水 App 内完成账号安全验证');
+          setQrStatusText(lastStatus || '小汽要求短信或二次验证，请先在小汽 App 内完成账号安全验证');
           return;
         }
         if (status && status.confirmed) {
-          setQrStatusText(lastStatus || '已确认，正在换取汽水登录态…');
+          setQrStatusText(lastStatus || '已确认，正在换取小汽登录态…');
           return;
         }
         if (status && /error|fail|expire/i.test(String(status.status || ''))) {
@@ -3797,7 +3797,7 @@ async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
       modal: false,
       show: false,
       autoHideMenuBar: true,
-      title: '汽水音乐官方窗口',
+      title: '小汽官方窗口',
       backgroundColor: '#111111',
       icon: APP_ICON_ICO,
       webPreferences: {
@@ -3832,8 +3832,8 @@ async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
       oauthConfigured: false,
       oauthMissing: config && config.missing || [],
       message: cookie
-        ? '汽水官方网页登录态已保留；当前仍以汽水搜索/匹配源接入。'
-        : '已打开汽水/抖音官方窗口；当前仍以汽水搜索/匹配源接入。',
+        ? '小汽官方网页登录态已保留；当前仍以小汽搜索/匹配源接入。'
+        : '已打开小汽/抖音官方窗口；当前仍以小汽搜索/匹配源接入。',
       ...(extra || {}),
     });
 
@@ -3880,14 +3880,14 @@ async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
 
     const showLoadFallbackPage = (message) => {
       if (!canUseLoginWindow()) return;
-      lastLoadError = message || lastLoadError || '汽水官方网页打开失败';
+      lastLoadError = message || lastLoadError || '小汽官方网页打开失败';
       const html = [
         '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐官方窗口</title>',
+        '<title>小汽官方窗口</title>',
         '<style>body{margin:0;background:#10110f;color:#e8f4d2;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;height:100vh}main{max-width:560px;padding:28px;text-align:center}h1{font-size:24px;margin:0 0 12px}p{color:rgba(232,244,210,.72);line-height:1.7}a{color:#cde98a}</style>',
-        '<main><h1>汽水官方窗口暂时打不开</h1><p>',
+        '<main><h1>小汽官方窗口暂时打不开</h1><p>',
         String(lastLoadError).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch])),
-        '</p><p>窗口不会自动关闭；可以稍后重试，或在浏览器里打开汽水官方扫码页。</p></main>'
+        '</p><p>窗口不会自动关闭；可以稍后重试，或在浏览器里打开小汽官方扫码页。</p></main>'
       ].join('');
       safeLoadLoginWindowUrl('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
         if (canUseLoginWindow() && !loginWindow.isVisible()) loginWindow.show();
@@ -3907,7 +3907,7 @@ async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
         if (loadResult && loadResult.skipped) return;
         if (fallbackLoadQueued) return;
         fallbackLoadQueued = true;
-        lastLoadError = loadResult && loadResult.error || '汽水官方网页打开失败';
+        lastLoadError = loadResult && loadResult.error || '小汽官方网页打开失败';
         console.warn('Qishui official window load failed:', lastLoadError);
         scheduleOfficialLoginLoad();
       });
@@ -4028,7 +4028,7 @@ async function openQishuiMusicLoginWindow(owner) {
       source: imported.source,
       importMethod: imported.method || 'cookie-db',
       localSessionDiagnostics: imported.diagnostics || null,
-      message: '已读取本机汽水 PC 登录态，正在导入 Mineradio 并同步我的喜欢和歌单',
+      message: '已读取本机小汽 PC 登录态，正在导入 Mineradio 并同步我的喜欢和歌单',
     };
   }
 
@@ -4064,8 +4064,8 @@ async function openQishuiMusicLoginWindow(owner) {
       importMethod: saved.method,
       localSessionDiagnostics: imported && imported.diagnostics || null,
       message: imported && imported.locked
-        ? '本机汽水登录数据库暂时被占用，已继续使用 Mineradio 上次导入的有效登录态。'
-        : '已继续使用 Mineradio 上次从本机汽水 PC 导入的登录态。',
+        ? '本机小汽登录数据库暂时被占用，已继续使用 Mineradio 上次导入的有效登录态。'
+        : '已继续使用 Mineradio 上次从本机小汽 PC 导入的登录态。',
     };
   }
 
@@ -4081,8 +4081,8 @@ async function openQishuiMusicLoginWindow(owner) {
     localSessionDiagnostics: imported && imported.diagnostics || null,
     error: locked ? 'QISHUI_LOCAL_COOKIE_DB_LOCKED' : 'QISHUI_LOCAL_COOKIE_NOT_FOUND',
     message: locked
-      ? '汽水 PC 客户端正在占用本地登录数据库。请先完全退出汽水音乐 PC 端，再点击“重新导入”。'
-      : '没有读到本机汽水 PC 登录态。请先安装并登录汽水音乐 PC 客户端，然后重新导入。',
+      ? '小汽 PC 客户端正在占用本地登录数据库。请先完全退出小汽 PC 端，再点击“重新导入”。'
+      : '没有读到本机小汽 PC 登录态。请先安装并登录小汽 PC 客户端，然后重新导入。',
   };
 }
 
@@ -5547,10 +5547,10 @@ function loginCookieExportMeta(provider) {
   const key = String(provider || '').toLowerCase();
   const userData = app.getPath('userData');
   const entries = {
-    netease: { label: '网易云音乐', files: [process.env.COOKIE_FILE, path.join(userData, '.cookie')] },
-    qq: { label: 'QQ音乐', files: [process.env.QQ_COOKIE_FILE, path.join(userData, '.qq-cookie')] },
-    kugou: { label: '酷狗音乐', files: [process.env.KUGOU_COOKIE_FILE, path.join(userData, '.kugou-cookie')] },
-    qishui: { label: '汽水音乐', files: [process.env.QISHUI_COOKIE_FILE, path.join(userData, '.qishui-cookie'), process.env.QISHUI_TOKEN_FILE, path.join(userData, '.qishui-token')] },
+    netease: { label: '小云', files: [process.env.COOKIE_FILE, path.join(userData, '.cookie')] },
+    qq: { label: '小Q', files: [process.env.QQ_COOKIE_FILE, path.join(userData, '.qq-cookie')] },
+    kugou: { label: '小狗', files: [process.env.KUGOU_COOKIE_FILE, path.join(userData, '.kugou-cookie')] },
+    qishui: { label: '小汽', files: [process.env.QISHUI_COOKIE_FILE, path.join(userData, '.qishui-cookie'), process.env.QISHUI_TOKEN_FILE, path.join(userData, '.qishui-token')] },
     spotify: { label: 'Spotify', files: [process.env.SPOTIFY_TOKEN_FILE, path.join(userData, '.spotify-token.json')] },
   };
   return entries[key] || null;
@@ -5864,7 +5864,16 @@ ipcMain.handle('mineradio-local-lyrics-cache-set', async (_event, cacheKey, payl
       provider: String(payload && payload.provider || '').slice(0, 24),
       songId: String(payload && payload.songId || '').slice(0, 160),
       lyric: String(payload && payload.lyric || '').slice(0, 1024 * 1024),
+      tlyric: String(payload && payload.tlyric || '').slice(0, 1024 * 1024),
       yrc: String(payload && payload.yrc || '').slice(0, 1024 * 1024),
+      ytlrc: String(payload && payload.ytlrc || '').slice(0, 1024 * 1024),
+      romalrc: String(payload && payload.romalrc || '').slice(0, 1024 * 1024),
+      yromalrc: String(payload && payload.yromalrc || '').slice(0, 1024 * 1024),
+      klyric: String(payload && payload.klyric || '').slice(0, 1024 * 1024),
+      qrc: String(payload && payload.qrc || '').slice(0, 1024 * 1024),
+      roma: String(payload && payload.roma || '').slice(0, 1024 * 1024),
+      trans: String(payload && payload.trans || '').slice(0, 1024 * 1024),
+      source: String(payload && payload.source || '').slice(0, 80),
       updatedAt: Date.now(),
     };
     const filePath = localLyricsCachePath(cacheKey);

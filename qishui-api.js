@@ -11,7 +11,7 @@ const QISHUI_RELATED_MEDIA_PATH = '/api/luna/v1/platform/feed/related-media/';
 const QISHUI_FEED_SONG_TAB_PATH = '/api/luna/v1/platform/feed/song-tab/';
 const QISHUI_SCOPE = 'luna.openapi.platform.play_core';
 const DEFAULT_QISHUI_TOKEN_FILE = path.join(__dirname, '.qishui-token');
-const QISHUI_UA = 'Mineradio/2.0.2 (Qishui official OpenAPI bridge)';
+const QISHUI_UA = 'Mineradio/1.3.0 (Qishui official OpenAPI bridge)';
 const QISHUI_OAUTH_AUTH_URL = (process.env.QISHUI_OAUTH_AUTH_URL || 'https://open.douyin.com/platform/oauth/connect').replace(/\/+$/, '');
 const QISHUI_OAUTH_TOKEN_URL = process.env.QISHUI_OAUTH_TOKEN_URL || 'https://open.douyin.com/oauth/access_token/';
 const QISHUI_PUBLIC_ENABLED = process.env.QISHUI_PUBLIC_ENABLED !== '0';
@@ -27,7 +27,7 @@ const QISHUI_WEB_API_BASES = (process.env.QISHUI_WEB_API_BASES || 'https://api5-
 const QISHUI_WEB_PC_API_BASE = (process.env.QISHUI_WEB_PC_API_BASE || 'https://api.qishui.com').replace(/\/+$/, '');
 const QISHUI_PUBLIC_HEADERS = {
   'Accept': 'application/json,text/plain,*/*',
-  'User-Agent': 'Mineradio/2.0.2 (Qishui public catalog bridge)',
+  'User-Agent': 'Mineradio/1.3.0 (Qishui public catalog bridge)',
 };
 const QISHUI_WEB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SodaMusic/3.1.0 Chrome/136.0.7103.59 Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
 const QISHUI_PC_APP_UA = 'LunaPC/3.3.0(359450208)';
@@ -434,12 +434,12 @@ function qishuiQrBoolParam(value, fallback) {
 
 function qishuiPcQrStatusMessage(status, hasCookie) {
   const key = normalizeText(status).toLowerCase();
-  if (hasCookie) return '汽水登录已确认，正在同步歌单';
-  if (!key || key === 'new' || key === 'wait') return '等待汽水音乐 App 扫码';
-  if (/scan|scanned/.test(key)) return '已扫码，等待在汽水音乐 App 内确认';
-  if (/confirm|success|login/.test(key)) return '已确认，正在换取汽水登录态';
-  if (/verify|mfa|sms/.test(key)) return '已确认，汽水要求短信验证';
-  if (/expire/.test(key)) return '二维码已过期，请重新打开汽水授权';
+  if (hasCookie) return '小汽登录已确认，正在同步歌单';
+  if (!key || key === 'new' || key === 'wait') return '等待小汽 App 扫码';
+  if (/scan|scanned/.test(key)) return '已扫码，等待在小汽 App 内确认';
+  if (/confirm|success|login/.test(key)) return '已确认，正在换取小汽登录态';
+  if (/verify|mfa|sms/.test(key)) return '已确认，小汽要求短信验证';
+  if (/expire/.test(key)) return '二维码已过期，请重新打开小汽授权';
   if (/error|fail/.test(key)) return '扫码状态异常，正在继续确认当前二维码';
   return '等待确认：' + status;
 }
@@ -617,10 +617,10 @@ async function checkQishuiPcQrLogin(token, cookieText, qrOptions) {
   const needsSms = status === 'verify' || errorCode === 2046 || /verify|mfa|sms/.test(accountFlow);
   const retryAfterMs = errorCode === 7 ? 60000 : 0;
   let message = qishuiPcQrStatusMessage(status, !!loginCookie);
-  if (errorCode === 7) message = '汽水确认接口临时限流，已自动降频继续确认当前二维码';
-  else if (needsSms) message = '汽水已确认扫码，但账号要求短信或二次验证，当前二维码不能直接换到登录态';
-  else if (/confirm|confirmed|success|login/i.test(status) && !loginCookie) message = '汽水已确认扫码，正在等待登录态下发';
-  else if (errorCode) message = '汽水扫码返回 error_code=' + errorCode + (errorDescription ? ('：' + errorDescription) : '，保留当前二维码继续确认');
+  if (errorCode === 7) message = '小汽确认接口临时限流，已自动降频继续确认当前二维码';
+  else if (needsSms) message = '小汽已确认扫码，但账号要求短信或二次验证，当前二维码不能直接换到登录态';
+  else if (/confirm|confirmed|success|login/i.test(status) && !loginCookie) message = '小汽已确认扫码，正在等待登录态下发';
+  else if (errorCode) message = '小汽扫码返回 error_code=' + errorCode + (errorDescription ? ('：' + errorDescription) : '，保留当前二维码继续确认');
   return {
     provider: 'qishui',
     ok: true,
@@ -845,7 +845,7 @@ function qishuiRestriction(category, message, action, extra) {
 function qishuiUnavailable(message, category, extra) {
   const restriction = qishuiRestriction(
     category || 'provider_limited',
-    message || '汽水音乐开放平台当前没有公开可交给播放器直连的音频 URL，已按匹配源处理。',
+    message || '小汽开放平台当前没有公开可交给播放器直连的音频 URL，已按匹配源处理。',
     'switch_source',
     { playbackMode: 'recommend-match', scope: QISHUI_SCOPE }
   );
@@ -872,7 +872,7 @@ function getQishuiStatus(cookieText) {
   const oauthConfig = getQishuiOAuthConfig();
   return {
     provider: 'qishui',
-    label: '汽水音乐',
+    label: '小汽',
     short: 'QS',
     configured,
     tokenConfigured,
@@ -882,7 +882,7 @@ function getQishuiStatus(cookieText) {
     playbackMode: webSession ? 'direct-url' : 'recommend-match',
     scope: QISHUI_SCOPE,
     userId: webSession ? qishuiCookieUserId(cookie) : '',
-    nickname: webSession ? '汽水音乐账号' : (tokenConfigured ? '汽水开放平台' : ''),
+    nickname: webSession ? '小汽账号' : (tokenConfigured ? '小汽开放平台' : ''),
     vipType: 0,
     vipLevel: 'none',
     isVip: false,
@@ -909,12 +909,12 @@ function getQishuiStatus(cookieText) {
       webSession,
     },
     message: webSession
-      ? '本机汽水 PC 登录态已导入，可同步汽水歌单与我的喜欢，并直接解析播放地址。'
+      ? '本机小汽 PC 登录态已导入，可同步小汽歌单与我的喜欢，并直接解析播放地址。'
       : tokenConfigured
-      ? '汽水开放平台 token 已配置，可使用官方推荐/相关歌曲能力。'
+      ? '小汽开放平台 token 已配置，可使用官方推荐/相关歌曲能力。'
       : (QISHUI_PUBLIC_ENABLED
-        ? '请先登录本机汽水音乐 PC 客户端，再由 Mineradio 读取本地会话；未导入时仅保留公开搜索匹配。'
-        : '请先登录本机汽水音乐 PC 客户端，再由 Mineradio 读取本地会话。'),
+        ? '请先登录本机小汽 PC 客户端，再由 Mineradio 读取本地会话；未导入时仅保留公开搜索匹配。'
+        : '请先登录本机小汽 PC 客户端，再由 Mineradio 读取本地会话。'),
   };
 }
 
@@ -1804,7 +1804,7 @@ function mapQishuiMedia(raw, index, query, opts) {
     qishuiQuery: query || '',
     lyric: lyricData.lyric,
     tlyric: lyricData.tlyric,
-    restriction: qishuiRestriction('provider_limited', '汽水音乐当前作为推荐/匹配源接入，播放时会自动寻找其它可播版本。', 'switch_source'),
+    restriction: qishuiRestriction('provider_limited', '小汽当前作为推荐/匹配源接入，播放时会自动寻找其它可播版本。', 'switch_source'),
   };
 }
 
@@ -2097,7 +2097,7 @@ function extractQishuiPlaylistCards(payload) {
         cover: qishuiPlaylistCoverFromItem(item),
         trackCount: count,
         playCount: Number(item.play_count || item.playCount || 0) || 0,
-        creator: normalizeText(item.creator_name || item.author_name || item.owner_name || item.owner && (item.owner.nickname || item.owner.public_name) || '汽水音乐'),
+        creator: normalizeText(item.creator_name || item.author_name || item.owner_name || item.owner && (item.owner.nickname || item.owner.public_name) || '小汽'),
         subscribed: true,
         virtual: false,
         webSession: true,
@@ -2123,7 +2123,7 @@ function buildQishuiVirtualPlaylist(id, name, songs, extra) {
     cover: extra.cover || songs.map(song => song && song.cover).find(Boolean) || '',
     trackCount: Number(extra.trackCount || songs.length || 0) || 0,
     playCount: Number(extra.playCount || 0) || 0,
-    creator: extra.creator || '汽水音乐',
+    creator: extra.creator || '小汽',
     subscribed: !!extra.subscribed,
     shelfPane: extra.shelfPane || '',
     owned: !!extra.owned,
@@ -2378,7 +2378,7 @@ async function fetchQishuiWebPlaylistTracks(playlistId, cookieText, opts) {
       .map(song => song && !song.cover && playlistCover ? Object.assign({}, song, { cover: playlistCover }) : song);
     const tracks = allTracks.slice(offset, offset + limit);
     const total = Number(meta.count_tracks || meta.track_count || data.total || data.count || data.total_num || allRawItems.length || allTracks.length) || allTracks.length;
-    const playlist = buildQishuiVirtualPlaylist(id, qishuiPlaylistNameFromItem(meta) || '汽水歌单', tracks, {
+    const playlist = buildQishuiVirtualPlaylist(id, qishuiPlaylistNameFromItem(meta) || '小汽歌单', tracks, {
       cover: playlistCover,
       trackCount: total,
       subscribed: true,
@@ -2433,7 +2433,7 @@ function mapQishuiPublicItem(raw, index, query) {
     qishuiQuery: query || '',
     lyric,
     tlyric: '',
-    restriction: qishuiRestriction('provider_limited', '汽水音乐当前作为搜索/匹配源接入，播放时会自动寻找其它可播版本。', 'switch_source'),
+    restriction: qishuiRestriction('provider_limited', '小汽当前作为搜索/匹配源接入，播放时会自动寻找其它可播版本。', 'switch_source'),
   };
 }
 
@@ -2513,7 +2513,7 @@ async function handleQishuiPublicSearch(keywords, limit, cookieText, offset) {
     limit,
     nextOffset: offset + songs.length,
     hasMore: songs.length >= limit && (offset + songs.length < rankedSongs.length || requestLimit < 100),
-    message: songs.length ? '' : '汽水公开搜索暂时没有返回匹配结果。',
+    message: songs.length ? '' : '小汽公开搜索暂时没有返回匹配结果。',
   };
 }
 
@@ -2716,11 +2716,11 @@ function buildQishuiFeedPlaylist(songs) {
     source: 'qishui',
     type: 'playlist',
     id: QISHUI_VIRTUAL_FEED_PLAYLIST_ID,
-    name: '汽水推荐',
+    name: '小汽推荐',
     cover: firstCover,
     trackCount: songs.length,
     playCount: 0,
-    creator: '汽水音乐',
+    creator: '小汽',
     subscribed: false,
     virtual: true,
     playbackMode: 'recommend-match',
@@ -2738,7 +2738,7 @@ async function handleQishuiUserPlaylists(cookieText) {
       const profile = library.profile || {};
       const recentTracks = library.recentTracks || [];
       const playlists = [
-        buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '汽水我的喜欢', likedTracks, {
+        buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '小汽我的喜欢', likedTracks, {
           subscribed: false,
           shelfPane: 'mine',
           owned: true,
@@ -2753,7 +2753,7 @@ async function handleQishuiUserPlaylists(cookieText) {
         playlists.push(pl);
       });
       if (recentTracks.length) {
-        playlists.push(buildQishuiVirtualPlaylist(QISHUI_WEB_RECENT_PLAYLIST_ID, '汽水最近播放', recentTracks, {
+        playlists.push(buildQishuiVirtualPlaylist(QISHUI_WEB_RECENT_PLAYLIST_ID, '小汽最近播放', recentTracks, {
           subscribed: false,
           shelfPane: 'mine',
           owned: true,
@@ -2782,11 +2782,11 @@ async function handleQishuiUserPlaylists(cookieText) {
         configured: true,
         webSession: true,
         playlists: [
-          buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '汽水我的喜欢', [], { subscribed: false, shelfPane: 'mine', owned: true, webSession: true }),
+          buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '小汽我的喜欢', [], { subscribed: false, shelfPane: 'mine', owned: true, webSession: true }),
           buildQishuiFeedPlaylist([]),
         ],
         error: err && err.message || 'QISHUI_WEB_LIBRARY_FAILED',
-        message: '汽水账号已登录，但歌单同步暂时失败，请稍后重试。',
+        message: '小汽账号已登录，但歌单同步暂时失败，请稍后重试。',
       };
     }
   }
@@ -2818,7 +2818,7 @@ async function handleQishuiUserPlaylists(cookieText) {
       configured: true,
       playlists: [],
       error: err && err.message || 'QISHUI_FEED_FAILED',
-      message: '汽水推荐歌单暂时同步失败，请稍后重试。',
+      message: '小汽推荐歌单暂时同步失败，请稍后重试。',
     };
   }
 }
@@ -2836,7 +2836,7 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
       if (!allSongs.length && library.likedCard && library.likedCard.id) {
         const detail = await fetchQishuiWebPlaylistTracks(library.likedCard.id, cookieText, opts).catch(() => null);
         if (detail && detail.tracks) {
-          const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '汽水我的喜欢', detail.tracks, {
+          const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '小汽我的喜欢', detail.tracks, {
             subscribed: false,
             shelfPane: 'mine',
             owned: true,
@@ -2861,7 +2861,7 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
         }
       }
       const tracks = allSongs.slice(offset, offset + limit);
-      const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '汽水我的喜欢', allSongs, {
+      const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_LIKED_PLAYLIST_ID, '小汽我的喜欢', allSongs, {
         subscribed: false,
         shelfPane: 'mine',
         owned: true,
@@ -2888,7 +2888,7 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
       const library = await fetchQishuiWebLibrary(cookieText);
       const allSongs = library.recentTracks || [];
       const tracks = allSongs.slice(offset, offset + limit);
-      const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_RECENT_PLAYLIST_ID, '汽水最近播放', allSongs, {
+      const playlist = buildQishuiVirtualPlaylist(QISHUI_WEB_RECENT_PLAYLIST_ID, '小汽最近播放', allSongs, {
         subscribed: false,
         shelfPane: 'mine',
         owned: true,
@@ -2933,7 +2933,7 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
       tracks: [],
       total: 0,
       error: 'QISHUI_PLAYLIST_NOT_FOUND',
-      message: '当前汽水接入只支持官方推荐歌单。',
+      message: '当前小汽接入只支持官方推荐歌单。',
     };
   }
   const fetchCount = Math.max(limit, Math.min(50, offset + limit));
@@ -3497,7 +3497,7 @@ async function handleQishuiSongUrl(opts, cookieText) {
       const trackRestriction = qishuiTrackPlaybackRestriction(payload);
       const requestRestriction = qishuiTrackPlaybackRestriction(opts);
       if ((trackRestriction.vipRequired || requestRestriction.vipRequired) && !membership.isVip) {
-        return qishuiUnavailable('汽水音乐歌曲需要会员权限，当前账号未取得可验证的会员权益。', 'vip_required', {
+        return qishuiUnavailable('小汽歌曲需要会员权限，当前账号未取得可验证的会员权益。', 'vip_required', {
           loggedIn: true,
           playbackKeyReady: true,
           vipRequired: true,
@@ -3544,7 +3544,7 @@ async function handleQishuiSongUrl(opts, cookieText) {
       const standardOnly = !!(err && err.code === 'QISHUI_STANDARD_AUDIO_SOURCE_EMPTY');
       return qishuiUnavailable(
         standardOnly
-          ? '汽水音乐没有为当前普通或未知会员状态返回标准音质的可播放地址。'
+          ? '小汽没有为当前普通或未知会员状态返回标准音质的可播放地址。'
           : 'Qishui did not return a playable audio source: ' + (err && err.message || String(err)),
         standardOnly ? 'quality_unavailable' : 'source_unavailable', {
         loggedIn: true,

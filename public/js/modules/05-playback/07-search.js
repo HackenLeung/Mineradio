@@ -199,9 +199,9 @@ function updateSearchModeTabs() {
   if ($input) {
     $input.placeholder = searchMode === 'podcast'
       ? '搜索播客、电台...'
-      : (searchMode === 'kugou' ? '搜索酷狗音乐...' : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...')));
+      : (searchMode === 'kugou' ? '搜索小狗...' : (searchMode === 'qq' ? '搜索小Q...' : (searchMode === 'netease' ? '搜索小云...' : '搜索歌曲、歌手...')));
   }
-  if ($input && searchMode === 'qishui') $input.placeholder = '搜索汽水音乐匹配源...';
+  if ($input && searchMode === 'qishui') $input.placeholder = '搜索小汽匹配源...';
   if ($input && searchMode === 'spotify') $input.placeholder = '搜索 Spotify 匹配源...';
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
@@ -453,7 +453,7 @@ function songSourceTagHtml(song, opts) {
   opts = opts || {};
   var rawKey = song && (song.resolvedPlaybackProvider || song.playbackProvider || song.audioProvider || song.providerResolved || '');
   var key = /^(netease|qq|kugou|qishui|spotify)$/.test(String(rawKey || '')) ? String(rawKey) : songProviderKey(song);
-  var label = key === 'qq' ? 'QQ' : (key === 'kugou' ? 'KG' : (key === 'qishui' ? 'QS' : (key === 'spotify' ? 'SP' : 'NE')));
+  var label = key === 'qq' ? '小Q' : (key === 'kugou' ? '小狗' : (key === 'qishui' ? '小汽' : (key === 'spotify' ? 'SP' : '小云')));
   if (opts.switcher) {
     return '<button type="button" class="tag-source ' + key + ' control-source-chip" title="切换音源" aria-haspopup="true" onclick="toggleControlSourceSwitcher(event)">' + label + '</button>';
   }
@@ -462,10 +462,10 @@ function songSourceTagHtml(song, opts) {
 var controlSourceSwitcherState = { open: false, loading: false, requestId: 0, anchor: null };
 function controlSourceProviders() {
   return [
-    { key: 'netease', label: 'NE', title: '网易云' },
-    { key: 'qq', label: 'QQ', title: 'QQ音乐' },
-    { key: 'kugou', label: 'KG', title: '酷狗' },
-    { key: 'qishui', label: 'QS', title: '汽水' },
+    { key: 'netease', label: '小云', title: '小云' },
+    { key: 'qq', label: '小Q', title: '小Q' },
+    { key: 'kugou', label: '小狗', title: '小狗' },
+    { key: 'qishui', label: '小汽', title: '小汽' },
     { key: 'spotify', label: 'SP', title: 'Spotify' }
   ];
 }
@@ -723,9 +723,9 @@ function searchResultMetaText(song) {
   var bits = [];
   if (song.artist) bits.push(song.artist);
   if (song.album) bits.push(song.album);
-  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('QQ 播放需会话/授权');
-  if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('酷狗播放需会话/授权');
-  if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('汽水匹配源，播放会自动换源');
+  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('小Q播放需会话/授权');
+  if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('小狗播放需会话/授权');
+  if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('小汽匹配源，播放会自动换源');
   if (songProviderKey(song) === 'spotify' && !song.playable) bits.push('Spotify 匹配源，播放会自动换源');
   return bits.join('  ·  ') || songSourceLabel(song);
 }
@@ -734,9 +734,9 @@ function searchResultMetaHtml(song, index) {
   var artist = String(song.artist || '').trim();
   var bits = [];
   if (song.album) bits.push(song.album);
-  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('QQ 播放需会话/授权');
-  if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('酷狗播放需会话/授权');
-  if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('汽水匹配源，播放会自动换源');
+  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('小Q播放需会话/授权');
+  if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('小狗播放需会话/授权');
+  if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('小汽匹配源，播放会自动换源');
   if (songProviderKey(song) === 'spotify' && !song.playable) bits.push('Spotify 匹配源，播放会自动换源');
   var tail = bits.length ? (' · ' + escHtml(bits.join('  ·  '))) : '';
   if (!artist) return escHtml(searchResultMetaText(song));
@@ -808,7 +808,7 @@ function searchQueryTokens(text) {
   return raw.split(/[\s·・，。,.!?！？"“”‘’()（）【】\[\]\-_/]+/).map(function (token) {
     return simpleSearchNorm(token);
   }).filter(function (token, index, all) {
-    if (!token || /^(qq|网易云|网易云音乐|酷狗|酷狗音乐|汽水|汽水音乐|spotify)$/.test(token)) return false;
+    if (!token || /^(qq|网易云(?:音乐)?|小云|酷狗(?:音乐)?|小狗|汽水(?:音乐)?|小汽|spotify)$/i.test(token)) return false;
     return all.indexOf(token) === index;
   });
 }

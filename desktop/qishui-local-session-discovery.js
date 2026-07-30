@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const QISHUI_CLIENT_NAME_PATTERN = /(?:soda[\s._-]*music|qishui|qi[\s._-]*shui|luna(?:[\s._-]*(?:music|pc))?|汽水)/i;
+const QISHUI_CLIENT_NAME_PATTERN = /(?:soda[\s._-]*music|qishui|qi[\s._-]*shui|luna(?:[\s._-]*(?:music|pc))?|汽水(?:音乐)?|小汽)/i;
 const QISHUI_KNOWN_DATA_DIR_NAMES = [
   'SodaMusic',
   'Soda Music',

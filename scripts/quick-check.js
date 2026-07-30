@@ -1410,7 +1410,7 @@ function checkQishuiProviderGuard() {
   if (/vsaa\.cn|QISHUI_VIP_PROXY|music\.qishui\.vip/.test(qishuiText)) {
     fail('Qishui playback must not depend on third-party VIP/proxy endpoints');
   }
-  if (!/search: configured \|\| QISHUI_PUBLIC_ENABLED/.test(qishuiText) || !/请先登录本机汽水音乐 PC 客户端/.test(qishuiText)) {
+  if (!/search: configured \|\| QISHUI_PUBLIC_ENABLED/.test(qishuiText) || !/请先登录本机小汽 PC 客户端/.test(qishuiText)) {
     fail('Qishui status must keep public search separate from the required local SodaMusic session import');
   }
   const oldQishuiCredentialPrompt = new RegExp('当前版本还没有内置' + '抖音开放平台应用凭证');
@@ -1438,10 +1438,10 @@ function checkQishuiProviderGuard() {
   if (qishuiLocalLoginStart < 0 || qishuiLocalLoginEnd <= qishuiLocalLoginStart || qishuiLocalLoginText.indexOf('readQishuiOfficialClientCookieHeader()') > qishuiLocalLoginText.indexOf('readSavedQishuiCookieHeader()') || /openQishuiOfficialWebLoginWindow\s*\(/.test(qishuiLocalLoginText) || /createQishuiPcQrLogin\s*\(/.test(qishuiLocalLoginText)) {
     fail('Qishui normal login route must be strict local-first and must never fall through to QR/OAuth');
   }
-  if (!/本机汽水会话已导入/.test(accountLogoutText) || !/可同步我的喜欢、歌单并直接播放/.test(accountLogoutText) || /授权: '\s*\+/.test(accountLogoutText) || /OpenAPI token/.test(accountLogoutText)) {
+  if (!/本机小汽会话已导入/.test(accountLogoutText) || !/可同步我的喜欢、歌单并直接播放/.test(accountLogoutText) || /授权: '\s*\+/.test(accountLogoutText) || /OpenAPI token/.test(accountLogoutText)) {
     fail('Qishui account status must describe the imported local PC session without exposing internal ids');
   }
-  if (!/canOpenQishuiOfficialWindow/.test(qishuiLoginText) || !/openQishuiWebLogin/.test(qishuiLoginText) || !/读取本机汽水/.test(qishuiLoginText) || !/本机汽水登录态导入失败/.test(qishuiLoginText) || /扫码连接汽水|汽水扫码连接/.test(qishuiLoginText)) {
+  if (!/canOpenQishuiOfficialWindow/.test(qishuiLoginText) || !/openQishuiWebLogin/.test(qishuiLoginText) || !/读取本机小汽/.test(qishuiLoginText) || !/本机小汽登录态导入失败/.test(qishuiLoginText) || /扫码连接小汽|小汽扫码连接/.test(qishuiLoginText)) {
     fail('Qishui login UI must expose only the local SodaMusic session import path');
   }
   if (!/\/luna\/pc\/me/.test(qishuiText) || !/\/luna\/pc\/user\/playlist/.test(qishuiText) || !/\/luna\/pc\/playlist\/detail/.test(qishuiText) || !/function qishuiPcAppParams/.test(qishuiText) || !/pcApp: true/.test(qishuiText) || !/count: Math\.min\(100/.test(qishuiText) || /\/luna\/pc\/playlist\/detail[\s\S]{0,260}cnt:/.test(qishuiText)) {
@@ -1492,7 +1492,7 @@ function checkQishuiProviderGuard() {
   if (!/qishuiPlaylists/.test(coreStoreText) || !/if \(provider === 'qishui'\) return '\/api\/qishui\/user\/playlists'/.test(playlistShellText) || !/neteasePlaylists\.concat\(qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists\)/.test(playlistShellText)) {
     fail('playlist panel refresh must merge Qishui playlists with the other providers');
   }
-  if (!/normalizePlaylistProvider/.test(playlistDetailText) || !/\/api\/qishui\/playlist\/tracks/.test(playlistDetailText) || !/qishui:' \+ id/.test(playlistDetailText) || !/汽水音乐歌单/.test(playlistDetailText)) {
+  if (!/normalizePlaylistProvider/.test(playlistDetailText) || !/\/api\/qishui\/playlist\/tracks/.test(playlistDetailText) || !/qishui:' \+ id/.test(playlistDetailText) || !/小汽歌单/.test(playlistDetailText)) {
     fail('playlist panel detail must open and play Qishui playlists via the Qishui endpoint');
   }
   if (!/function playlistQueueSource/.test(playlistLoadText) || !/raw\.indexOf\('qishui:'\)/.test(playlistLoadText) || !/playlistTracksEndpoint\(source\.provider/.test(playlistLoadText)) {
@@ -1501,7 +1501,7 @@ function checkQishuiProviderGuard() {
   if (!/provider === 'qishui'/.test(shelfCoreText) || !/qishui:'/.test(shelfCoreText) || !/\/api\/qishui\/playlist\/tracks/.test(shelfContentText)) {
     fail('3D shelf must display and drill into Qishui playlists through the Qishui endpoint');
   }
-  if (!/网易云 \/ QQ \/ 酷狗 \/ 汽水/.test(homeText) || !/hasAnyPlatformLogin\(\)/.test(homeText) || /网易云 \/ QQ 音乐/.test(homeText)) {
+  if (!/小云 \/ 小Q \/ 小狗 \/ 小汽/.test(homeText) || !/hasAnyPlatformLogin\(\)/.test(homeText)) {
     fail('Home discover must acknowledge Qishui/Kugou login playlists instead of only Netease/QQ');
   }
   if (!/lyric-glow-enable-btn/.test(indexText) || !/lyric-glow-beat-btn/.test(indexText)) {
@@ -1796,17 +1796,17 @@ async function checkProviderFallbackTerminalStateGuard() {
   if (!/function sourceFallbackProviderReady/.test(fallbackText) || !/status\.playbackKeyReady === true/.test(fallbackText) || !/function alternatePlaybackProviders/.test(fallbackText) || /if \(provider === 'netease'\) return 'qq'/.test(fallbackText)) {
     fail('automatic fallback must only select logged-in direct providers with complete playback authorization');
   }
-  if (!/SOURCE_FALLBACK_SEARCH_TIMEOUT_MS\s*=\s*6500/.test(fallbackText) || !/apiJson\(url, \{ timeoutMs: SOURCE_FALLBACK_SEARCH_TIMEOUT_MS \}\)/.test(fallbackText) || !/SOURCE_FALLBACK_RECOVERY_TIMEOUT_MS\s*=\s*20000/.test(fallbackText) || !/function awaitSourceFallbackBudget/.test(fallbackText) || (playbackText.match(/timeoutMs:\s*9000/g) || []).length < 6 || (playbackText.match(/timeoutMs:\s*14000/g) || []).length < 2 || (playbackText.match(/timeoutMs:\s*15000/g) || []).length < 2) {
-    fail('fallback search, normal source resolution, and gapless source resolution must all be time-bounded');
+  if (!/SOURCE_FALLBACK_SEARCH_TIMEOUT_MS\s*=\s*6500/.test(fallbackText) || !/apiJson\(url, \{ timeoutMs: SOURCE_FALLBACK_SEARCH_TIMEOUT_MS \}\)/.test(fallbackText) || !/SOURCE_FALLBACK_RECOVERY_TIMEOUT_MS\s*=\s*20000/.test(fallbackText) || !/function awaitSourceFallbackBudget/.test(fallbackText) || !/timeoutMs:\s*9000/.test(playbackText) || !/timeoutMs:\s*14000/.test(playbackText) || !/timeoutMs:\s*15000/.test(playbackText) || !/timeoutMs:\s*9000/.test(beatPrefetchText) || !/timeoutMs:\s*14000/.test(beatPrefetchText) || !/timeoutMs:\s*15000/.test(beatPrefetchText)) {
+    fail('fallback search, normal source resolution, and beat prefetch source resolution must all be time-bounded');
   }
-  if (!/alternateData[\s\S]{0,220}!alternateData\.url[\s\S]{0,320}playQueue\[idx\] = committedCandidate/.test(fallbackText) || !/fallbackStarted === true[\s\S]{0,180}已自动切换音源/.test(fallbackText) || !/function restoreSourceFallbackQueueItem/.test(fallbackText)) {
-    fail('fallback candidates must be URL-probed before provisional commit and only announce success after audible playback');
+  if (!/playQueue\[idx\] = committedCandidate/.test(fallbackText) || !/playQueueAt\(idx, fallbackPlaybackOpts\)/.test(fallbackText) || !/fallbackStarted === true[\s\S]{0,180}已自动切换音源/.test(fallbackText) || !/restoreSourceFallbackQueueItem\(idx, originalSong, committedCandidate, fallbackToken\)/.test(fallbackText) || !/function restoreSourceFallbackQueueItem/.test(fallbackText) || /preResolvedPlaybackData:\s*alternateData/.test(fallbackText)) {
+    fail('fallback candidates must use normal playback resolution, roll back on failure, and only announce success after audible playback');
   }
   if (!/async function skipFailedQueueItem/.test(fallbackText) || !/skipShuffleOrder:\s*true/.test(fallbackText) || !/return nextStarted === true/.test(fallbackText) || !/function settleSourceFallbackTerminal/.test(fallbackText) || !/audio\.removeAttribute\('src'\)/.test(fallbackText) || !/audio\.__mineradioQueueItemKey = ''/.test(fallbackText)) {
     fail('failed fallback must await the next track or settle one terminal state with no stale audio owner');
   }
-  if (!/opts\.preResolvedPlaybackData/.test(playbackText) || !/fallbackResult !== null/.test(playbackText) || /if \(isQQPlayback && await retryQQPlaybackWithCompatibleQuality\(song, idx, token, retryPlaybackOpts, data, requestedQuality\)\)/.test(playbackText)) {
-    fail('normal playback must consume a preflighted fallback URL and must not recursively retry QQ qualities after an empty URL response');
+  if (!/fallbackResult !== null/.test(playbackText) || /if \(isQQPlayback && await retryQQPlaybackWithCompatibleQuality\(song, idx, token, retryPlaybackOpts, data, requestedQuality\)\)/.test(playbackText)) {
+    fail('normal playback must resolve fallback candidates itself and must not recursively retry QQ qualities after an empty URL response');
   }
   if (!/AUDIO_PLAY_REQUEST_TIMEOUT_MS\s*=\s*9000/.test(controlsText) || !/function awaitMediaPlayWithTimeout/.test(controlsText) || (controlsText.match(/awaitMediaPlayWithTimeout\(/g) || []).length < 5 || !/function playbackMediaMatchesCurrentQueueItem/.test(controlsText)) {
     fail('media.play promises must be time-bounded and manual resume must reject stale audio ownership');
@@ -1827,7 +1827,7 @@ async function checkProviderFallbackTerminalStateGuard() {
   const playbackBudget = 14000;
   if (
     !/function neteasePlaybackMatchQuery/.test(playbackText)
-    || (playbackText.match(/neteasePlaybackMatchQuery\(song\)/g) || []).length < 2
+    || (playbackText.match(/neteasePlaybackMatchQuery\(song\)/g) || []).length < 1
     || !/song\.resolvedNeteaseId\s*=/.test(playbackText)
     || !/data && data\.sourceMatch/.test(playbackText)
     || neteaseMatchNoticePos < 0
@@ -1960,7 +1960,7 @@ async function checkProviderFallbackTerminalStateGuard() {
     fail('Netease source-match metadata must annotate playback without replacing original queue identity, cover, lyrics context, or album');
   }
   const retryStart = playbackText.indexOf('function neteaseSourceMatchTriedIds');
-  const retryEnd = playbackText.indexOf('async function resolveAlbumGaplessPlaybackData', retryStart);
+  const retryEnd = playbackText.indexOf('async function playLocalQueueSong', retryStart);
   const retrySandbox = {
     Array,
     Object,
@@ -2301,7 +2301,7 @@ function checkProviderEntitlementBoundaryGuard() {
   if (/removeDeprecatedKugouVipEvidenceFiles|migrateLegacyAuthStorage|APP_OWNED_MIGRATION_FILES/.test(mainText)) {
     fail('Startup must preserve the authoritative portable profile and must not delete or migrate persisted provider files');
   }
-  if (!/kgVipLevel === 'svip'/.test(userModalText) || !/酷狗 SVIP 会员/.test(userModalText)) {
+  if (!/kgVipLevel === 'svip'/.test(userModalText) || !/小狗 SVIP 会员/.test(userModalText)) {
     fail('Kugou account modal must distinguish SVIP from normal VIP');
   }
   console.log('[OK] Provider account membership and per-track playback entitlement remain separated.');
@@ -2318,6 +2318,7 @@ function checkQQVipStatusSyncGuard() {
   const accountUtilsText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '08-account', '01-login-modal-utils.js'), 'utf8');
   const userModalText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '08-account', '04-user-modal-logout.js'), 'utf8');
   const playbackText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '13-playback-start-audio.js'), 'utf8');
+  const beatPrefetchText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '03-beat', '00-tempo-worker-cache-prefetch.js'), 'utf8');
   const startupText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '10-shell', '05-startup-bindings.js'), 'utf8');
   const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
 
@@ -2357,7 +2358,8 @@ function checkQQVipStatusSyncGuard() {
   if (!/cookieIsExpired/.test(mainText) || !/qqLoginCookieCandidateScore/.test(mainText) ||
       !/QQ_VKEY_REQUEST_TIMEOUT_MS = 6000/.test(serverText) ||
       !/QQ_AUDIO_PROBE_TOTAL_MS = 6200/.test(serverText) ||
-      (playbackText.match(/timeoutMs: 15000/g) || []).length < 2) {
+      (playbackText.match(/timeoutMs: 15000/g) || []).length !== 1 ||
+      (beatPrefetchText.match(/timeoutMs: 15000/g) || []).length !== 1) {
     fail('QQ cookie selection and end-to-end playback timeout budgets must be deterministic and aligned');
   }
   if (!/providerVipAuditSameUser/.test(loginStatusText) || !/已同步/.test(loginStatusText)) {
@@ -2372,7 +2374,7 @@ function checkQQVipStatusSyncGuard() {
   if (!/refreshQQLoginStatus\(\{ forceVip: true, reason: 'startup' \}\)/.test(startupText)) {
     fail('startup must force a QQ VIP status recheck so renewed memberships sync immediately');
   }
-  if (!/QQ SVIP 会员/.test(userModalText) || !/QQ 会员待同步/.test(userModalText) || !/refreshQQVipStatusNow\('account-modal'\)/.test(userModalText)) {
+  if (!/小Q SVIP 会员/.test(userModalText) || !/小Q会员待同步/.test(userModalText) || !/refreshQQVipStatusNow\('account-modal'\)/.test(userModalText)) {
     fail('account modal must distinguish QQ SVIP and refresh QQ membership when opened');
   }
   console.log('[OK] QQ membership status can be force-refreshed after renewals.');
@@ -2839,8 +2841,8 @@ function checkInternalBetaPackagingGuard() {
   const meta = beta.extraMetadata || {};
   const mineradio = meta.mineradio || {};
   const update = mineradio.update || {};
-  if (meta.version !== '1.1.2' || beta.productName !== 'Mineradio_Beat' || meta.productName !== 'Mineradio_Beat') {
-    fail('internal beta package metadata must identify v1.1.2 Mineradio_Beat');
+  if (meta.version !== pkg.version || beta.productName !== 'Mineradio_Beat' || meta.productName !== 'Mineradio_Beat') {
+    fail('internal beta package metadata must use the current Mineradio version');
   }
   if (!/dist-internal-beta/.test(beta.directories && beta.directories.output || '') || beta.publish !== null) {
     fail('internal beta output must stay in dist-internal-beta and not configure GitHub publishing');
@@ -2885,6 +2887,43 @@ function checkInternalBetaPackagingGuard() {
     fail('server update config must support disabled internal beta update metadata');
   }
   console.log('[OK] Internal beta packaging stays isolated, closed-channel, and non-publishing.');
+}
+
+function checkReleaseVersionConsistency() {
+  logStep('Release version consistency guard');
+  const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
+  const beta = JSON.parse(fs.readFileSync(path.join(appRoot, 'electron-builder.internal-beta.json'), 'utf8'));
+  const version = String(pkg.version || '').trim();
+  if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`package.json has an invalid release version: ${version || '(empty)'}`);
+  if (lock.version !== version || !lock.packages || !lock.packages[''] || lock.packages[''].version !== version) {
+    fail('package-lock.json root versions must match package.json');
+  }
+  if (!beta.extraMetadata || beta.extraMetadata.version !== version) {
+    fail('internal beta metadata version must match package.json');
+  }
+
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  const qishuiText = fs.readFileSync(path.join(appRoot, 'qishui-api.js'), 'utf8');
+  const spotifyText = fs.readFileSync(path.join(appRoot, 'spotify-api.js'), 'utf8');
+  const htmlText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
+  const stateText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '01-perf-render-state.js'), 'utf8');
+  const readmeText = fs.readFileSync(path.join(appRoot, 'README.md'), 'utf8');
+  const changelogText = fs.readFileSync(path.join(appRoot, 'CHANGELOG.md'), 'utf8');
+  const releaseText = fs.readFileSync(path.join(appRoot, 'RELEASE.md'), 'utf8');
+  const checks = [
+    [serverText.includes(`APP_PACKAGE.version || '${version}'`), 'server.js fallback'],
+    [qishuiText.includes(`Mineradio/${version} (Qishui official OpenAPI bridge)`) && qishuiText.includes(`Mineradio/${version} (Qishui public catalog bridge)`), 'Qishui user agents'],
+    [spotifyText.includes(`Mineradio/${version} (Spotify Web API bridge)`), 'Spotify user agent'],
+    [htmlText.includes(`id=\"update-modal-version\" class=\"update-version\">v${version}<`), 'update modal default'],
+    [stateText.includes(`currentVersion: '${version}'`) && stateText.includes(`version: '${version}'`), 'frontend update state'],
+    [readmeText.includes(`本次更新内容（v${version}）`) && readmeText.includes(`Mineradio-${version}-Setup.exe`), 'README release identity'],
+    [changelogText.split(/\r?\n/).includes(`## v${version}`), 'CHANGELOG release heading'],
+    [releaseText.startsWith(`# Mineradio v${version} 发布说明`) && releaseText.includes(`Mineradio-${version}-Setup.exe`), 'RELEASE guide'],
+  ];
+  const drift = checks.filter(([ok]) => !ok).map(([, label]) => label);
+  if (drift.length) fail(`release version ${version} is inconsistent in: ${drift.join(', ')}`);
+  console.log(`[OK] Release version ${version} matches package metadata, runtime defaults, provider user agents, UI, and release docs.`);
 }
 
 function checkSonicTopographyPresetGuard() {
@@ -5280,6 +5319,7 @@ async function main() {
   checkCuefieldAutoMixGuard();
   checkAlbumDetailGuard();
   checkInternalBetaPackagingGuard();
+  checkReleaseVersionConsistency();
   checkSonicTopographyPresetGuard();
   checkLongPressReorderGuard();
   checkPlaylistPanelTriggerGuard();

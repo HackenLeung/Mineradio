@@ -11,6 +11,15 @@
 - Never remove `customRemoveFiles` or restore electron-builder's default recursive `$INSTDIR` deletion path. Keep deletion limited to known Mineradio/Electron top-level files and non-recursive empty-directory cleanup.
 - Keep safe overwrite behavior: existing dedicated `...\Mineradio` folders containing Mineradio files can be overwritten; mixed folders, parent folders, drive roots, and user data folders must stay blocked or quarantined.
 
+# 2026-07-30 v1.3.0 Portable Profile Baseline
+
+- 新安装和覆盖升级都使用 `<安装目录>\user-data` 作为完整 Electron `userData` 与 `sessionData`，不得迁移或回退到 AppData。
+- `<安装目录>\MineradioCache` 与 `user-data` 同级，只保存可重新生成的缓存；不得使用 `D:\MineradioCache` 或将 `sessionData` 放入缓存目录。
+- 覆盖安装优先使用注册表记录的旧安装目录。旧程序目录存在时必须同时找到可写的 `user-data`，否则明确报错并停止，不能创建空白 profile。
+- 安装目录仅剩 `user-data` 和可选 `MineradioCache` 时仍应允许覆盖安装；安装过程不得复制、合并、移动或删除这两个目录。
+- 默认卸载必须保留 `user-data` 与 `MineradioCache`；只有用户明确勾选“删除用户数据（设置、缓存和登录状态）”时才递归删除。
+- 发布前必须使用旧 main 正式版 `user-data` 副本执行覆盖升级，核对文件数量、关键文件、平台登录、本地库和播放队列，并确认 `%APPDATA%\Mineradio` 没有生成新的正式用户数据。
+
 # Mineradio Installer Style
 
 2026-06-22 用户确认保留当前安装包格式。以后发布安装包，默认沿用这套样式和流程，除非用户明确要求重做。

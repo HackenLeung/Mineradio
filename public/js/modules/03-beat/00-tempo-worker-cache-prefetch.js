@@ -361,21 +361,38 @@ function normalizeBeatPrefetchState(state) {
 
 async function fetchBeatPrefetchAudioUrl(song) {
   if (!song) return null;
-  if (typeof resolveAlbumGaplessPlaybackData === 'function') {
-    var resolved = await resolveAlbumGaplessPlaybackData(song);
-    if (!resolved || !resolved.url || resolved.trial) return null;
-    return '/api/audio?url=' + encodeURIComponent(resolved.url);
-  }
-  var isQQ = songProviderKey(song) === 'qq';
-  var requestedQuality = normalizePlaybackQualityForProvider(getPlaybackQualityForSong(song), isQQ ? 'qq' : 'netease');
-  if (!isQQ && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
-  var runtimeQualityCap = playbackQualityCapValue(song, isQQ ? 'qq' : 'netease');
-  if (playbackQualityAboveCap(requestedQuality, isQQ ? 'qq' : 'netease', runtimeQualityCap)) requestedQuality = runtimeQualityCap;
+  var playbackProvider = normalizePlaybackProvider(songProviderKey(song));
+  var requestedQuality = normalizePlaybackQualityForProvider(getPlaybackQualityForSong(song), playbackProvider);
+  if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
+  var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
+  if (playbackQualityAboveCap(requestedQuality, playbackProvider, runtimeQualityCap)) requestedQuality = runtimeQualityCap;
   var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
   var neteaseMatchQuery = typeof neteasePlaybackMatchQuery === 'function' ? neteasePlaybackMatchQuery(song) : '';
-  var data = isQQ
-    ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam, { timeoutMs: 15000 })
-    : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + neteaseMatchQuery + qualityParam, { timeoutMs: 14000 });
+  var data;
+  if (playbackProvider === 'qq') {
+    data = await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam, { timeoutMs: 15000 });
+  } else if (playbackProvider === 'kugou') {
+    data = await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.fileHash || song.audioHash || song.id || '') +
+      '&albumId=' + encodeURIComponent(song.albumId || song.album_id || '') +
+      '&albumAudioId=' + encodeURIComponent(song.albumAudioId || song.album_audio_id || song.mixSongId || '') +
+      '&mixSongId=' + encodeURIComponent(song.mixSongId || '') +
+      '&hqHash=' + encodeURIComponent(song.hqHash || song.hq_hash || '') +
+      '&sqHash=' + encodeURIComponent(song.sqHash || song.sq_hash || '') +
+      '&resHash=' + encodeURIComponent(song.resHash || song.res_hash || '') +
+      '&vipRequired=' + encodeURIComponent(song.vipRequired || song.needVip || song.onlyVipPlayable || song.only_vip_playable ? '1' : '') +
+      '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
+      '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
+      qualityParam, { timeoutMs: 9000 });
+  } else if (playbackProvider === 'qishui') {
+    data = await apiJson('/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qualityParam, { timeoutMs: 9000 });
+  } else if (playbackProvider === 'spotify') {
+    data = await apiJson('/api/spotify/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '') +
+      '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +
+      '&uri=' + encodeURIComponent(song.spotifyUri || song.uri || '') +
+      qualityParam, { timeoutMs: 9000 });
+  } else {
+    data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteaseMatchQuery + qualityParam, { timeoutMs: 14000 });
+  }
   if (!data || !data.url || data.trial) return null;
   return '/api/audio?url=' + encodeURIComponent(data.url);
 }

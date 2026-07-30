@@ -68,7 +68,7 @@ function playbackQualityLabel(value, provider) {
   provider = normalizePlaybackProvider(provider || currentPlaybackQualityProvider());
   value = normalizePlaybackQualityForProvider(value, provider);
   if (provider === 'spotify') return 'Spotify 匹配源';
-  if (provider === 'qishui') return '汽水音质';
+  if (provider === 'qishui') return '小汽音质';
   if (provider === 'qq') {
     if (value === 'hires') return 'Hi-Res FLAC';
     if (value === 'lossless') return '无损 FLAC';
@@ -77,11 +77,11 @@ function playbackQualityLabel(value, provider) {
     return '无损 FLAC';
   }
   if (provider === 'kugou') {
-    if (value === 'hires') return '酷狗 Hi-Res';
-    if (value === 'lossless') return '酷狗无损';
-    if (value === 'exhigh') return '酷狗 320k';
-    if (value === 'standard') return '酷狗 128k';
-    return '酷狗无损';
+    if (value === 'hires') return '小狗 Hi-Res';
+    if (value === 'lossless') return '小狗无损';
+    if (value === 'exhigh') return '小狗 320k';
+    if (value === 'standard') return '小狗 128k';
+    return '小狗无损';
   }
   if (value === 'jymaster') return '超清母带';
   if (value === 'hires') return '高清臻音';
@@ -96,11 +96,11 @@ function playbackQualityShortLabel(value, provider) {
   if (provider === 'spotify') return 'SP';
   if (provider === 'qishui') return 'QS';
   if (provider === 'qq') {
-    if (value === 'hires') return 'QQ Hires';
-    if (value === 'lossless') return 'QQ SQ';
-    if (value === 'exhigh') return 'QQ 320';
-    if (value === 'standard') return 'QQ 128';
-    return 'QQ SQ';
+    if (value === 'hires') return '小Q Hires';
+    if (value === 'lossless') return '小Q SQ';
+    if (value === 'exhigh') return '小Q 320';
+    if (value === 'standard') return '小Q 128';
+    return '小Q SQ';
   }
   if (provider === 'kugou') {
     if (value === 'hires') return 'KG Hires';
@@ -238,9 +238,9 @@ function updatePlaybackQualityUi() {
   var canUseSvip = provider === 'netease' && hasProviderSvip('netease', loginStatus);
   var displayQuality = provider === 'netease' && effectiveQuality === 'jymaster' && !canUseSvip ? 'hires' : effectiveQuality;
   if (label) label.textContent = playbackQualityShortLabel(displayQuality, provider);
-  var qualityProviderTitle = provider === 'spotify' ? 'Spotify 匹配源: ' : (provider === 'qishui' ? '汽水音质: ' : (provider === 'qq' ? 'QQ 音质: ' : (provider === 'kugou' ? '酷狗音质: ' : '网易云音质: ')));
+  var qualityProviderTitle = provider === 'spotify' ? 'Spotify 匹配源: ' : (provider === 'qishui' ? '小汽音质: ' : (provider === 'qq' ? '小Q音质: ' : (provider === 'kugou' ? '小狗音质: ' : '小云音质: ')));
   if (btn) btn.title = qualityProviderTitle + playbackQualityLabel(displayQuality, provider) +
-    (provider === 'netease' && currentQuality === 'jymaster' && !canUseSvip ? ' · 超清母带需网易云 SVIP' : '');
+    (provider === 'netease' && currentQuality === 'jymaster' && !canUseSvip ? ' · 超清母带需小云 SVIP' : '');
   if (btn && runtimeCapQuality) btn.title += ' | 当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
   if (list) {
     list.innerHTML = playbackQualityOptions(provider).map(function (item) {
@@ -258,7 +258,7 @@ function updatePlaybackQualityUi() {
     option.classList.toggle('cap-locked', capLocked);
     option.disabled = locked;
     if (capLocked) option.title = '当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
-    option.title = locked ? '需要网易云 SVIP 账号' : playbackQualityLabel(q, provider);
+    option.title = locked ? '需要小云 SVIP 账号' : playbackQualityLabel(q, provider);
   });
   if (runtimeCapQuality) {
     document.querySelectorAll('.quality-option.cap-locked').forEach(function (option) {
@@ -277,7 +277,7 @@ function setPlaybackQuality(value) {
     return;
   }
   if (provider === 'netease' && next === 'jymaster' && !hasProviderSvip('netease', loginStatus)) {
-    showToast(hasPlatformLogin('netease') ? '超清母带需要网易云 SVIP' : '登录网易云 SVIP 后可用超清母带');
+    showToast(hasPlatformLogin('netease') ? '超清母带需要小云 SVIP' : '登录小云 SVIP 后可用超清母带');
     if (!hasPlatformLogin('netease')) openProviderLogin('netease');
     return;
   }

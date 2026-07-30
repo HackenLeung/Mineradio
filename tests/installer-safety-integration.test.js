@@ -54,7 +54,10 @@ assert.match(normalize, /ExpandEnvStrings \$0 "\$0"/);
 const adopt = functionBody('MineradioExistingInstallPathCanBeAdopted');
 assert.match(adopt, /Call MineradioInstallDirContainsOnlyUserData/,
   'a dedicated install folder containing only portable user data must remain migratable');
-assert.match(functionBody('MineradioInstallDirContainsOnlyUserData'), /StrCmp \$2 "user-data" userData reject/);
+assert.match(functionBody('MineradioInstallDirContainsOnlyUserData'), /StrCmp \$2 "user-data" userData 0/);
+assert.match(functionBody('MineradioInstallDirContainsOnlyUserData'), /StrCmp \$2 "MineradioCache" cacheData reject/,
+  'a normally uninstalled directory may retain the adjacent disposable cache');
+assert.match(functionBody('MineradioInstallDirContainsOnlyUserData'), /cacheData:[\s\S]*IfFileExists "\$0\\MineradioCache\\\." 0 reject[\s\S]*Goto next/);
 
 const quarantine = functionBody('MineradioDisableUnsafeOldUninstallers');
 assert.equal((quarantine.match(/Call MineradioDeleteLegacyUninstallerFileIfMissingMarker/g) || []).length, 4);

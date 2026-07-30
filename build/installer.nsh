@@ -596,11 +596,16 @@ Function MineradioInstallDirContainsOnlyUserData
     StrCmp $2 "" close
     StrCmp $2 "." next
     StrCmp $2 ".." next
-    StrCmp $2 "user-data" userData reject
+    StrCmp $2 "user-data" userData 0
+    StrCmp $2 "MineradioCache" cacheData reject
 
   userData:
     IfFileExists "$0\user-data\." 0 reject
     StrCpy $3 "1"
+    Goto next
+
+  cacheData:
+    IfFileExists "$0\MineradioCache\." 0 reject
     Goto next
 
   reject:

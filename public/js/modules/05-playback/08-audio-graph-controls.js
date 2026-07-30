@@ -487,12 +487,6 @@ function ensureAudiblePlaybackGain(reason) {
   if (targetVolume <= 0.001) return false;
   if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) return false;
   if (
-    typeof albumGaplessState !== 'undefined'
-    && albumGaplessState
-    && albumGaplessState.preload
-    && (albumGaplessState.preload.mixPending || albumGaplessState.preload.mixStarted)
-  ) return false;
-  if (
     typeof progressDragState !== 'undefined'
     && progressDragState
     && (progressDragState.active || progressDragState.previewHoldUntil > performance.now())

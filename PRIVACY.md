@@ -6,14 +6,19 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 
 应用可能在本机保存以下数据：
 
-- 网易云音乐登录 Cookie
-- QQ 音乐登录 Cookie
+- 小云登录 Cookie
+- 小Q登录 Cookie
+- 小狗登录 Cookie
+- 小汽本地登录状态
+- Spotify OAuth 配置与本地令牌
 - 搜索历史
 - 自定义专辑封面
 - 自定义歌词
 - 歌词布局与视觉控制设置
 - 本地节奏分析缓存
 - 更新安装包下载缓存
+
+正式版的完整 Electron profile 保存在 `<安装目录>\user-data`，可重新生成的缓存保存在同级 `<安装目录>\MineradioCache`。应用不会把正式 profile 迁移或逐文件合并到 `%APPDATA%\Mineradio`。
 
 这些数据用于本地体验，不属于开源仓库内容。
 
@@ -23,6 +28,12 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 
 - `.cookie`
 - `.qq-cookie`
+- `.kugou-cookie`
+- `.qishui-cookie`
+- `.spotify-token.json`
+- `.spotify-credentials.json`
+- `user-data/`
+- `MineradioCache/`
 - `updates/`
 - `node_modules/`
 - Electron 打包产物
@@ -31,4 +42,4 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 
 ## 第三方平台
 
-用户通过网易云音乐、QQ 音乐等第三方平台登录时，应遵守对应平台的用户协议。Mineradio 不提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。
+用户通过小云、小Q、小狗、小汽或 Spotify 等第三方平台登录时，应遵守对应平台的用户协议。Mineradio 不提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。
