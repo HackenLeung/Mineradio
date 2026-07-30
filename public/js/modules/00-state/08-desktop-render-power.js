@@ -434,7 +434,10 @@ function updateDesktopRuntimeState(state) {
     flushLyricLayoutSave();
   }
   if (fx && (fx.desktopLyrics || fx.wallpaperMode)) setTimeout(syncDesktopOverlayState, 0);
-  if (wasDeep && !isDeepBackgroundMode()) recoverVisualsAfterBackground('desktop-runtime-state');
+  if (wasDeep && !isDeepBackgroundMode()) {
+    if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
+    recoverVisualsAfterBackground('desktop-runtime-state');
+  }
   if (desktopRuntimeState.fullscreen !== wasFullscreen) scheduleMainRendererViewportRefresh('desktop-runtime-state');
 }
 function installRenderPowerHooks() {

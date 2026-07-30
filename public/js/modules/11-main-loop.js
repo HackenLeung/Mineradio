@@ -181,8 +181,6 @@ function mainLoopDeepBackgroundSleeping() {
 }
 function mainLoopBackgroundDelayMs() {
   if (!mainLoopDeepBackgroundSleeping()) return 0;
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
-  if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
   return 1000;
 }
 function requestMainLoopAnimationFrame() {
