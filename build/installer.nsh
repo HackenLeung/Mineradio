@@ -82,12 +82,54 @@
 !macro customInstall
   Delete "$INSTDIR\app-update.yml"
   Delete "$INSTDIR\resources\app-update.yml"
+  ; 首装到空目录时创建空的用户数据目录：运行时要求该目录已存在
+  ; (requireExisting)，否则打包版会拒绝启动。升级/重装时目录已存在且
+  ; 含旧数据，CreateDirectory 不会清空其内容，旧数据照常保留。
+  ClearErrors
+  CreateDirectory "$INSTDIR\user-data"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP|MB_OK "无法创建或访问用户数据目录：$INSTDIR\user-data。$\r$\n$\r$\n安装已停止，请确认当前用户具有该目录的读写权限。"
+    Abort
+  ${EndIf}
   FileOpen $0 "$INSTDIR\${MINERADIO_INSTALL_MARKER}" w
   ${IfNot} ${Errors}
     FileWrite $0 "Mineradio install root$\r$\n"
     FileWrite $0 "appId=${MINERADIO_MARKER_APP_ID}$\r$\n"
     FileClose $0
   ${EndIf}
+!macroend
+
+!macro MineradioReplacePackagedProgramDirectories
+  ; electron-builder stages the complete app in $PLUGINSDIR\7z-out before its
+  ; atomic CopyFiles step. A main-era uninstaller leaves non-empty program
+  ; directories behind, so replace only those directories from the staged app.
+  RMDir /r "$INSTDIR\resources"
+  ClearErrors
+  CopyFiles /SILENT "$PLUGINSDIR\7z-out\resources" "$INSTDIR"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP|MB_OK "无法更新 Mineradio 程序文件：$INSTDIR\resources。请关闭正在运行的 Mineradio 后重试。"
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+
+  IfFileExists "$PLUGINSDIR\7z-out\locales\*.*" 0 +3
+    RMDir /r "$INSTDIR\locales"
+    CopyFiles /SILENT "$PLUGINSDIR\7z-out\locales" "$INSTDIR"
+  IfFileExists "$PLUGINSDIR\7z-out\swiftshader\*.*" 0 +3
+    RMDir /r "$INSTDIR\swiftshader"
+    CopyFiles /SILENT "$PLUGINSDIR\7z-out\swiftshader" "$INSTDIR"
+!macroend
+
+!macro customFiles_x64
+  !insertmacro MineradioReplacePackagedProgramDirectories
+!macroend
+
+!macro customFiles_ia32
+  !insertmacro MineradioReplacePackagedProgramDirectories
+!macroend
+
+!macro customFiles_arm64
+  !insertmacro MineradioReplacePackagedProgramDirectories
 !macroend
 
 !macro customRemoveFiles
@@ -98,6 +140,7 @@
 !macro customUnInstallSection
   Section /o "un.删除用户数据（设置、缓存和登录状态）" un.MineradioDeleteUserData
     RMDir /r "$INSTDIR\user-data"
+    RMDir /r "$INSTDIR\MineradioCache"
     RMDir /r "$APPDATA\Mineradio"
     RMDir /r "$APPDATA\mineradio"
     RMDir /r "$LOCALAPPDATA\Mineradio"
@@ -256,22 +299,25 @@ Function MineradioUsePreferredInstallDir
   Push $R0
   Push $R1
   Push $R2
-  ${GetParameters} $R0
-  ClearErrors
-  ${GetOptions} $R0 "/D=" $R1
-  ${IfNot} ${Errors}
-  ${AndIf} $R1 != ""
-    StrCpy $INSTDIR "$R1"
-  ${Else}
-    Call MineradioUseRegisteredInstallDir
-    Pop $R2
-    ${If} $R2 != "1"
+  Call MineradioUseRegisteredInstallDir
+  Pop $R2
+  ${If} $R2 == "2"
+    MessageBox MB_ICONSTOP|MB_OK "检测到注册表中的旧 Mineradio 安装目录，但没有找到原 user-data：$INSTDIR\user-data。$\r$\n$\r$\n为避免创建空白数据，安装已停止。请恢复旧 user-data 后重试，或先完整卸载旧版本再进行全新安装。"
+    Abort
+  ${ElseIf} $R2 != "1"
+    ${GetParameters} $R0
+    ClearErrors
+    ${GetOptions} $R0 "/D=" $R1
+    ${IfNot} ${Errors}
+    ${AndIf} $R1 != ""
+      StrCpy $INSTDIR "$R1"
+    ${Else}
       Call MineradioUseFirstAvailableInstallDir
     ${EndIf}
+    Push "$INSTDIR"
+    Call MineradioNormalizeInstallDir
+    Pop $INSTDIR
   ${EndIf}
-  Push "$INSTDIR"
-  Call MineradioNormalizeInstallDir
-  Pop $INSTDIR
   Pop $R2
   Pop $R1
   Pop $R0
@@ -576,6 +622,24 @@ Function MineradioInstallDirContainsOnlyUserData
     Exch $0
 FunctionEnd
 
+Function MineradioUserDataPathIsWritable
+  Exch $0
+  Push $1
+  Push $2
+  StrCpy $1 "0"
+  ClearErrors
+  FileOpen $2 "$0\.mineradio-installer-write-probe.tmp" w
+  ${IfNot} ${Errors}
+    FileClose $2
+    Delete "$0\.mineradio-installer-write-probe.tmp"
+    StrCpy $1 "1"
+  ${EndIf}
+  StrCpy $0 "$1"
+  Pop $2
+  Pop $1
+  Exch $0
+FunctionEnd
+
 Function MineradioUseRegisteredInstallDir
   Push $0
   Push $1
@@ -583,55 +647,120 @@ Function MineradioUseRegisteredInstallDir
 
   ReadRegStr $0 HKCU "Software\${APP_GUID}" InstallLocation
   Push "$0"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $1
   ${If} $1 == "1"
     Push "$0"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $INSTDIR
     StrCpy $0 "1"
+    Goto done
+  ${EndIf}
+  ${If} $1 == "2"
+    Push "$0"
+    Call MineradioTrimInstallDir
+    Pop $INSTDIR
+    StrCpy $0 "2"
     Goto done
   ${EndIf}
 
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$0"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $1
   ${If} $1 == "1"
     Push "$0"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $INSTDIR
     StrCpy $0 "1"
+    Goto done
+  ${EndIf}
+  ${If} $1 == "2"
+    Push "$0"
+    Call MineradioTrimInstallDir
+    Pop $INSTDIR
+    StrCpy $0 "2"
     Goto done
   ${EndIf}
 
   ReadRegStr $0 HKLM "Software\${APP_GUID}" InstallLocation
   Push "$0"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $1
   ${If} $1 == "1"
     Push "$0"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $INSTDIR
     StrCpy $0 "1"
+    Goto done
+  ${EndIf}
+  ${If} $1 == "2"
+    Push "$0"
+    Call MineradioTrimInstallDir
+    Pop $INSTDIR
+    StrCpy $0 "2"
     Goto done
   ${EndIf}
 
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$0"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $1
   ${If} $1 == "1"
     Push "$0"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $INSTDIR
     StrCpy $0 "1"
+    Goto done
+  ${EndIf}
+  ${If} $1 == "2"
+    Push "$0"
+    Call MineradioTrimInstallDir
+    Pop $INSTDIR
+    StrCpy $0 "2"
     Goto done
   ${EndIf}
 
   done:
   Pop $1
   Exch $0
+FunctionEnd
+
+Function MineradioRegisteredInstallPathCanBeUsed
+  Exch $0
+  Push $1
+  Push $2
+  ExpandEnvStrings $0 "$0"
+  StrCpy $1 "0"
+
+  ${If} $0 == ""
+    Goto done
+  ${EndIf}
+
+  Push "$0"
+  Call MineradioTrimInstallDir
+  Pop $2
+  IfFileExists "$2\*.*" 0 done
+  IfFileExists "$2\user-data\." usable 0
+  IfFileExists "$2\${MINERADIO_INSTALL_MARKER}" broken 0
+  IfFileExists "$2\${PRODUCT_FILENAME}.exe" broken 0
+  IfFileExists "$2\resources\app.asar" broken 0
+  IfFileExists "$2\resources\app\package.json" broken 0
+  IfFileExists "$2\resources\app\server.js" broken 0
+  Goto done
+
+  usable:
+    StrCpy $1 "1"
+    Goto done
+
+  broken:
+    StrCpy $1 "2"
+
+  done:
+    StrCpy $0 "$1"
+    Pop $2
+    Pop $1
+    Exch $0
 FunctionEnd
 
 Function MineradioRegisteredInstallDirCanBeAdopted
@@ -648,16 +777,16 @@ Function MineradioRegisteredInstallDirCanBeAdopted
   ${EndIf}
 
   Push "$0"
-  Call MineradioNormalizeInstallDir
+  Call MineradioTrimInstallDir
   Pop $2
 
   ReadRegStr $3 HKCU "Software\${APP_GUID}" InstallLocation
   Push "$3"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $4
   ${If} $4 == "1"
     Push "$3"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $5
     ${If} $5 == $2
       StrCpy $1 "1"
@@ -667,11 +796,11 @@ Function MineradioRegisteredInstallDirCanBeAdopted
 
   ReadRegStr $3 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$3"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $4
   ${If} $4 == "1"
     Push "$3"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $5
     ${If} $5 == $2
       StrCpy $1 "1"
@@ -681,11 +810,11 @@ Function MineradioRegisteredInstallDirCanBeAdopted
 
   ReadRegStr $3 HKLM "Software\${APP_GUID}" InstallLocation
   Push "$3"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $4
   ${If} $4 == "1"
     Push "$3"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $5
     ${If} $5 == $2
       StrCpy $1 "1"
@@ -695,11 +824,11 @@ Function MineradioRegisteredInstallDirCanBeAdopted
 
   ReadRegStr $3 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" InstallLocation
   Push "$3"
-  Call MineradioExistingInstallPathCanBeAdopted
+  Call MineradioRegisteredInstallPathCanBeUsed
   Pop $4
   ${If} $4 == "1"
     Push "$3"
-    Call MineradioNormalizeInstallDir
+    Call MineradioTrimInstallDir
     Pop $5
     ${If} $5 == $2
       StrCpy $1 "1"
@@ -888,16 +1017,54 @@ Function MineradioValidateInstallDir
   Push $4
   Push $5
   Push "$INSTDIR"
-  Call MineradioNormalizeInstallDir
-  Pop $INSTDIR
-
-  Push "$INSTDIR"
   Call MineradioRegisteredInstallDirCanBeAdopted
   Pop $3
 
   Push "$INSTDIR"
+  ${If} $3 == "1"
+    Call MineradioTrimInstallDir
+  ${Else}
+    Call MineradioNormalizeInstallDir
+  ${EndIf}
+  Pop $INSTDIR
+
+  Push "$INSTDIR"
   Call MineradioExistingInstallPathCanBeAdopted
   Pop $4
+
+  ${If} $3 == "1"
+  ${OrIf} $4 == "1"
+    IfFileExists "$INSTDIR\user-data\." legacyProfileCheckWritable legacyProfileMissing
+  ${EndIf}
+  Goto legacyProfileReady
+
+  legacyProfileCheckWritable:
+    Push "$INSTDIR\user-data"
+    Call MineradioUserDataPathIsWritable
+    Pop $0
+    ${If} $0 == "1"
+      Goto legacyProfileReady
+    ${EndIf}
+    MessageBox MB_ICONSTOP|MB_OK "旧版用户数据目录不可写：$INSTDIR\user-data。$\r$\n$\r$\n为避免覆盖后无法保存数据，安装已停止。请确认当前用户具有该目录的读写权限。"
+    Pop $5
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
+    Pop $0
+    Abort
+
+  legacyProfileMissing:
+    MessageBox MB_ICONSTOP|MB_OK "检测到已有 Mineradio 程序文件，但没有找到原 user-data：$INSTDIR\user-data。$\r$\n$\r$\n为避免覆盖安装后出现空白数据，安装已停止。请恢复旧 user-data，或选择一个真正的空目录进行全新安装。"
+    Pop $5
+    Pop $4
+    Pop $3
+    Pop $2
+    Pop $1
+    Pop $0
+    Abort
+
+  legacyProfileReady:
 
   StrCpy $0 "$INSTDIR" 1 0
   StrCpy $1 "$INSTDIR" 1 1
@@ -921,21 +1088,23 @@ Function MineradioValidateInstallDir
     ${EndIf}
   ${EndIf}
 
-  StrLen $0 "$INSTDIR"
-  StrLen $2 "${MINERADIO_INSTALL_DIR_NAME}"
-  IntOp $2 $2 + 1
-  StrCpy $1 "$INSTDIR" $2 -$2
-  ${If} $0 < $2
-  ${OrIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME}"
-  ${AndIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
-    MessageBox MB_ICONSTOP|MB_OK "安装目录必须是独立的 Mineradio 文件夹。请选择一个上级目录，安装器会自动创建 Mineradio 子文件夹。"
-    Pop $5
-    Pop $4
-    Pop $3
-    Pop $2
-    Pop $1
-    Pop $0
-    Abort
+  ${If} $3 != "1"
+    StrLen $0 "$INSTDIR"
+    StrLen $2 "${MINERADIO_INSTALL_DIR_NAME}"
+    IntOp $2 $2 + 1
+    StrCpy $1 "$INSTDIR" $2 -$2
+    ${If} $0 < $2
+    ${OrIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME}"
+    ${AndIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
+      MessageBox MB_ICONSTOP|MB_OK "安装目录必须是独立的 Mineradio 文件夹。请选择一个上级目录，安装器会自动创建 Mineradio 子文件夹。"
+      Pop $5
+      Pop $4
+      Pop $3
+      Pop $2
+      Pop $1
+      Pop $0
+      Abort
+    ${EndIf}
   ${EndIf}
 
   IfFileExists "$INSTDIR\*.*" 0 valid
@@ -1256,9 +1425,11 @@ Function un.MineradioRemoveInstalledFiles
   Delete "$INSTDIR\vk_swiftshader_icd.json"
   Delete "$INSTDIR\vulkan-1.dll"
 
-  RMDir "$INSTDIR\locales"
-  RMDir "$INSTDIR\resources"
-  RMDir "$INSTDIR\swiftshader"
+  ; These directories contain packaged program files only. Remove them before
+  ; reinstalling so an update cannot leave stale JavaScript or locale assets.
+  RMDir /r "$INSTDIR\locales"
+  RMDir /r "$INSTDIR\resources"
+  RMDir /r "$INSTDIR\swiftshader"
 
   RMDir "$INSTDIR"
 FunctionEnd

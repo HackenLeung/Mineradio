@@ -165,6 +165,22 @@ function normalizeSavedLyricDisplayMode(mode) {
   mode = String(mode || 'single');
   return /^(single|dual|triple|cinema|custom)$/.test(mode) ? mode : 'single';
 }
+function savedLyricDisplayMode(raw, fallback) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  if (raw.lyricDisplayMode) return normalizeSavedLyricDisplayMode(raw.lyricDisplayMode);
+  var legacyLines = Math.round(Number(raw.stageLyricLines));
+  if (legacyLines === 1) return 'single';
+  if (legacyLines === 2) return 'dual';
+  if (legacyLines === 3) return 'triple';
+  if (legacyLines >= 4) return 'custom';
+  return normalizeSavedLyricDisplayMode(fallback);
+}
+function savedLyricCustomLineCount(raw, fallback) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  var value = raw.lyricCustomLineCount;
+  if (value == null && Number(raw.stageLyricLines) >= 4) value = raw.stageLyricLines;
+  return layoutInteger(value, fallback, 1, 10);
+}
 function normalizeSavedLyricTranslationMode(mode) {
   mode = String(mode || 'off');
   return /^(off|current|dual|multi)$/.test(mode) ? mode : 'off';
@@ -188,11 +204,11 @@ function readSavedLyricLayoutCriticalFallback(raw, err) {
     lyricHighlightColor: normalizeHexColor(raw.lyricHighlightColor || fxDefaults.lyricHighlightColor || '#fac900', fxDefaults.lyricHighlightColor || '#fac900'),
     lyricGlowLinked: raw.lyricGlowLinked !== false,
     lyricGlowColor: normalizeHexColor(raw.lyricGlowColor || fxDefaults.lyricGlowColor || '#008aff', fxDefaults.lyricGlowColor || '#008aff'),
-    lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
+    lyricDisplayMode: savedLyricDisplayMode(raw, fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
     lyricVerticalFloat: raw.lyricVerticalFloat !== false,
-    lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
+    lyricCustomLineCount: savedLyricCustomLineCount(raw, fxDefaults.lyricCustomLineCount),
     controlGlassChromaticOffset: layoutNumber(raw.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 30, 140)
   };
 }
@@ -259,11 +275,11 @@ function readSavedLyricLayout() {
       lyricHighlightColor: normalizeHexColor(raw.lyricHighlightColor || '#fff0b8'),
       lyricGlowLinked: raw.lyricGlowLinked !== false,
       lyricGlowColor: normalizeHexColor(raw.lyricGlowColor || '#9db8cf'),
-      lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
+      lyricDisplayMode: savedLyricDisplayMode(raw, fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
       lyricVerticalFloat: raw.lyricVerticalFloat !== false,
-      lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
+      lyricCustomLineCount: savedLyricCustomLineCount(raw, fxDefaults.lyricCustomLineCount),
       lyricGlitchCameraBind: !!raw.lyricGlitchCameraBind,
       lyricGlitchIntensity: layoutNumber(raw.lyricGlitchIntensity, fxDefaults.lyricGlitchIntensity, 0, 1.5),
       lyricGlitchSlice: layoutNumber(raw.lyricGlitchSlice, fxDefaults.lyricGlitchSlice, 0, 1.4),
@@ -312,7 +328,6 @@ function readSavedLyricLayout() {
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
       backgroundOpacity: savedBgOpacity,
-      wallpaperEngineLink: raw.wallpaperEngineLink === true,
       wallpaperEngineDim: savedWallpaperEngineDim,
       windowBackgroundOpacity: savedWindowBgOpacity,
       backgroundGlassOpacity: savedBgGlassOpacity,
@@ -529,7 +544,6 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     backgroundColor: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundColorCover: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundOpacity: ['backgroundOpacity', 'backgroundColorMode', 'backgroundColorCustom'],
-    wallpaperEngineLink: ['wallpaperEngineLink'],
     wallpaperEngineDim: ['wallpaperEngineDim'],
     windowBackgroundOpacity: ['windowBackgroundOpacity'],
     backgroundGlassOpacity: ['backgroundGlassOpacity'],
@@ -803,7 +817,6 @@ function saveLyricLayout(opts) {
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),
       backgroundOpacity: clampRange(fx.backgroundOpacity == null ? fxDefaults.backgroundOpacity : Number(fx.backgroundOpacity), 0, 1),
-      wallpaperEngineLink: fx.wallpaperEngineLink === true,
       wallpaperEngineDim: clampRange(fx.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : Number(fx.wallpaperEngineDim), 0, 0.85),
       windowBackgroundOpacity: clampRange(fx.windowBackgroundOpacity == null ? fxDefaults.windowBackgroundOpacity : Number(fx.windowBackgroundOpacity), 0, 1),
       backgroundGlassOpacity: clampRange(fx.backgroundGlassOpacity == null ? fxDefaults.backgroundGlassOpacity : Number(fx.backgroundGlassOpacity), 0, 1),

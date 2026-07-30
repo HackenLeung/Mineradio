@@ -4,7 +4,6 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const vm = require('vm');
 const {
   discoverQishuiClientDataRoots,
   discoverQishuiCookieStores,
@@ -20,35 +19,6 @@ function touch(filePath, value = '') {
 
 function normalized(value) {
   return path.resolve(value).toLowerCase();
-}
-
-function namedFunctionSource(source, name) {
-  const marker = `function ${name}(`;
-  const start = source.indexOf(marker);
-  if (start < 0) return '';
-  const bodyStart = source.indexOf('{', start + marker.length);
-  let depth = 0;
-  let quote = '';
-  let escaped = false;
-  for (let index = bodyStart; index < source.length; index += 1) {
-    const character = source[index];
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === quote) quote = '';
-      continue;
-    }
-    if (character === '"' || character === "'" || character === '`') {
-      quote = character;
-      continue;
-    }
-    if (character === '{') depth += 1;
-    if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, index + 1);
-    }
-  }
-  return '';
 }
 
 function run() {
@@ -121,41 +91,12 @@ function run() {
     assert(main.includes("mode: 'sodamusic-local-session'"));
     assert(main.includes("console.log('[QishuiLocalSession]', JSON.stringify(diagnostics))"));
 
-    const migrationListStart = main.indexOf('const APP_OWNED_MIGRATION_FILES');
-    const migrationListEnd = main.indexOf('];', migrationListStart);
-    const migrationList = main.slice(migrationListStart, migrationListEnd);
-    assert(migrationList.includes("'.kugou-cookie'"), 'the real Kugou login cookie must still migrate');
-    assert(!migrationList.includes("'.kugou-vip-evidence.json'"), 'deprecated playback evidence must never migrate');
-    assert(main.includes('function removeDeprecatedKugouVipEvidenceFiles()'));
-    assert(main.includes("{ label: 'stable-user-data', file: path.join(STABLE_USER_DATA_PATH, fileName) }"));
-    assert(main.includes("{ label: 'legacy-resource-dir', file: path.join(__dirname, '..', fileName) }"));
-    assert(main.indexOf('removeDeprecatedKugouVipEvidenceFiles();') < main.indexOf('migrateMisplacedAppOwnedFiles();'));
+    assert(!main.includes('APP_OWNED_MIGRATION_FILES'), 'portable profile files must not be merged individually');
+    assert(!main.includes('migrateMisplacedAppOwnedFiles'), 'credentials must stay in the complete portable profile');
+    assert(!main.includes('removeDeprecatedKugouVipEvidenceFiles'), 'startup must not delete files from the authoritative profile');
     assert(!main.includes('process.env.KUGOU_VIP_EVIDENCE_FILE ='));
 
-    const stableUserData = path.join(root, 'Mineradio-userData');
-    const legacyDesktopDir = path.join(root, 'legacy-app', 'desktop');
-    const legacyResourceDir = path.dirname(legacyDesktopDir);
-    [stableUserData, legacyResourceDir].forEach(dir => {
-      touch(path.join(dir, '.kugou-vip-evidence.json'), '{"legacy":true}');
-      touch(path.join(dir, '.kugou-cookie'), 'keep-real-login-cookie');
-    });
-    const cleanupSource = namedFunctionSource(main, 'removeDeprecatedKugouVipEvidenceFiles');
-    assert(cleanupSource, 'deprecated evidence cleanup function must be extractable');
-    const cleanupSandbox = {
-      fs,
-      path,
-      STABLE_USER_DATA_PATH: stableUserData,
-      __dirname: legacyDesktopDir,
-      console: { log() {}, warn() {} },
-    };
-    vm.runInNewContext(`${cleanupSource}\nthis.cleanup = removeDeprecatedKugouVipEvidenceFiles;`, cleanupSandbox);
-    cleanupSandbox.cleanup();
-    [stableUserData, legacyResourceDir].forEach(dir => {
-      assert.strictEqual(fs.existsSync(path.join(dir, '.kugou-vip-evidence.json')), false);
-      assert.strictEqual(fs.readFileSync(path.join(dir, '.kugou-cookie'), 'utf8'), 'keep-real-login-cookie');
-    });
-
-    console.log('[OK] Packaged SodaMusic session discovery and deprecated Kugou evidence cleanup verified.');
+    console.log('[OK] Packaged SodaMusic session discovery and portable-profile isolation verified.');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

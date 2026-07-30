@@ -13,15 +13,46 @@ function readCustomCoverMap() {
     return {};
   }
 }
+var customCoverHydrationPromise = null;
+function hydrateCustomCoverMapFromDisk() {
+  if (customCoverHydrationPromise) return customCoverHydrationPromise;
+  if (!window.desktopWindow || typeof window.desktopWindow.getCustomCovers !== 'function') return Promise.resolve(customCoverMap || {});
+  customCoverHydrationPromise = window.desktopWindow.getCustomCovers().then(function (result) {
+    if (!result || !result.ok || !result.payload || typeof result.payload !== 'object') return customCoverMap || {};
+    customCoverMap = Object.assign({}, result.payload, customCoverMap || {});
+    try { localStorage.setItem(CUSTOM_COVER_STORE_KEY, JSON.stringify(customCoverMap)); } catch (e) { }
+    (Array.isArray(playQueue) ? playQueue : []).forEach(hydrateCustomCover);
+    (Array.isArray(localLibrarySongs) ? localLibrarySongs : []).forEach(hydrateCustomCover);
+    if (currentLocalSong) hydrateCustomCover(currentLocalSong);
+    if (typeof safeRenderQueuePanel === 'function') safeRenderQueuePanel('custom-cover-restore');
+    if (typeof renderLocalLibraryDetailState === 'function') renderLocalLibraryDetailState();
+    if (typeof window.desktopWindow.setCustomCovers === 'function') {
+      window.desktopWindow.setCustomCovers(customCoverMap).catch(function () { });
+    }
+    return customCoverMap;
+  }).catch(function (error) {
+    console.warn('custom cover restore failed:', error);
+    return customCoverMap || {};
+  });
+  return customCoverHydrationPromise;
+}
 function saveCustomCoverMap() {
+  var saved = false;
   try {
     localStorage.setItem(CUSTOM_COVER_STORE_KEY, JSON.stringify(customCoverMap || {}));
-    return true;
+    saved = true;
   } catch (e) {
     console.warn('custom cover save failed:', e);
-    return false;
   }
+  if (window.desktopWindow && typeof window.desktopWindow.setCustomCovers === 'function') {
+    window.desktopWindow.setCustomCovers(customCoverMap || {}).catch(function (error) {
+      console.warn('custom cover disk save failed:', error);
+    });
+    saved = true;
+  }
+  return saved;
 }
+hydrateCustomCoverMapFromDisk();
 function isInlineCoverSrc(src) {
   return typeof src === 'string' && (/^data:image\//i.test(src) || /^blob:/i.test(src));
 }

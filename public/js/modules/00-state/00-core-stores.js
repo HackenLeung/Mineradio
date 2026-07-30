@@ -199,7 +199,7 @@ var audioOutputMirrorSyncTimer = 0;
 var playbackQualityRuntimeCaps = {};
 var coverCropState = null, coverCropBound = false;
 var currentLocalSong = null;
-var localFolderLyricMatchState = { active: false, folderIndex: -1, total: 0, done: 0, matched: 0, failed: 0 };
+var localFolderLyricMatchState = { active: false, folderIndex: -1, total: 0, done: 0, matched: 0, skipped: 0, failed: 0 };
 var localLibrarySearchQuery = '';
 var localLibraryDetailState = { folderIndex: -1, renderLimit: 80 };
 var lyricSourceMode = 'original';

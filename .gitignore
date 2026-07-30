@@ -28,10 +28,9 @@ spotify-credentials.json
 .spotify-token.json
 spotify-token.json
 listen-sync-journal.json
-login-easter-egg.json
-login-easter-egg-state.json
 current-fx-autosave.json
 cache-settings.json
+MineradioCache/
 desktop-behavior.json
 cuefield-feedback.jsonl
 startup-state.json

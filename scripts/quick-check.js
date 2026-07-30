@@ -120,9 +120,9 @@ function runQQVipEntitlementRegressionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
-function runLoginEasterEggGateRegressionCheck() {
-  logStep('Login easter egg one-time gate regression');
-  const testFile = path.join(appRoot, 'tests', 'login-easter-egg-gate.test.js');
+function runDirectLoginFlowRegressionCheck() {
+  logStep('Direct login flow regression');
+  const testFile = path.join(appRoot, 'tests', 'direct-login-flow.test.js');
   const result = spawnSync(process.execPath, [testFile], {
     cwd: appRoot,
     encoding: 'utf8'
@@ -130,7 +130,7 @@ function runLoginEasterEggGateRegressionCheck() {
   if (result.status !== 0) {
     process.stdout.write(result.stdout || '');
     process.stderr.write(result.stderr || '');
-    fail(`login easter egg gate regression failed: ${rel(testFile)}`);
+    fail(`direct login flow regression failed: ${rel(testFile)}`);
   }
   process.stdout.write(result.stdout || '');
 }
@@ -571,7 +571,7 @@ function checkDesktopWallpaperModeGuard() {
   const packageJson = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
   const htmlText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
   const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
-  const wallpaperToggleTag = htmlText.match(/<[^>]*\bid=["']t-wallpaperMode["'][^>]*>/i);
+  const desktopLockToggleTag = htmlText.match(/<[^>]*\bid=["']t-desktopLock["'][^>]*>/i);
   const defaultsText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '04-fx-defaults.js'), 'utf8');
   const layoutText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '06-fx-runtime-layout.js'), 'utf8');
   const persistenceText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '02-visual', '04-visual-settings-persistence.js'), 'utf8');
@@ -727,7 +727,7 @@ function checkDesktopWallpaperModeGuard() {
     || !/desktop-wallpaper-hud-prime/.test(shellText)
     || !/desktop-wallpaper-hud-prime\.desktop-wallpaper-mode\.desktop-wallpaper-interactive #bottom-bar,[\s\S]{0,220}desktop-wallpaper-hud-prime\.desktop-wallpaper-mode\.desktop-wallpaper-interactive #empty-home[\s\S]{0,100}transition:\s*none\s*!important/.test(cssText)
     || !/desktop-wallpaper-mode\.desktop-wallpaper-interactive\.empty-home-active #empty-home[\s\S]{0,220}opacity:\s*1\s*!important/.test(cssText)
-    || !/desktop-wallpaper-mode\.desktop-wallpaper-interactive:not\(\.empty-home-active\):not\(\.home-controls-locked\) #bottom-bar\.visible:not\(\.soft-hidden\)[\s\S]{0,240}opacity:\s*\.91\s*!important/.test(cssText)
+    || !/desktop-wallpaper-mode\.desktop-wallpaper-interactive(?::not\(\.desktop-locked\))?:not\(\.empty-home-active\):not\(\.home-controls-locked\) #bottom-bar\.visible:not\(\.soft-hidden\)[\s\S]{0,240}opacity:\s*\.91\s*!important/.test(cssText)
     || !/desktop-wallpaper-mode #bottom-handle/.test(cssText)
     || !/--desktop-safe-bottom/.test(cssText)
     || /desktop-explorer-overlay/.test(shellText + cssText)
@@ -739,7 +739,7 @@ function checkDesktopWallpaperModeGuard() {
     || !/requestFullDesktopEscapeExit\('escape-key'\)/.test(mainText)) {
     fail('full desktop mode must keep a recoverable software lock, click-outside closing, an auto-hidden desktop controller, and a direct Escape exit path');
   }
-  if (!/wallpaperFps:\s*60/.test(defaultsText)
+  if (!/wallpaperFps:\s*30/.test(defaultsText)
     || !/var DEVELOPMENT_LOCKED_FX = \{\}/.test(layoutText)
     || !/normalizeWallpaperFps/.test(persistenceText + panelText + bindingText + shellText)
     || (persistenceText.match(/wallpaperMode:\s*false/g) || []).length < 2
@@ -747,8 +747,8 @@ function checkDesktopWallpaperModeGuard() {
     || !/wallpaperFps:\s*normalizeWallpaperFps\(fx\.wallpaperFps\)/.test(persistenceText)
     || !/id="wallpaper-fps-seg"/.test(htmlText)
     || !['24', '30', '60'].every((value) => htmlText.includes(`data-wallpaper-fps="${value}"`))
-    || !wallpaperToggleTag
-    || /\bdev-locked\b/i.test(wallpaperToggleTag[0])
+    || !desktopLockToggleTag
+    || /\bdev-locked\b/i.test(desktopLockToggleTag[0])
     || /id="fx-wallpaperopacity"[^>]*disabled/.test(htmlText)
     || !/toggleWallpaperModeFromUi/.test(bindingText)
     || !/onWallpaperModeState/.test(preloadText + shellText)
@@ -1304,6 +1304,7 @@ function checkLyricScrollPerformanceGuard() {
 function checkPersistentCacheStorageGuard() {
   logStep('Persistent cache storage guard');
   const mainText = fs.readFileSync(path.join(appRoot, 'desktop', 'main.js'), 'utf8');
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
   const preloadText = fs.readFileSync(path.join(appRoot, 'desktop', 'preload.js'), 'utf8');
   const lyricText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '06-lyrics', '00-lyrics-fetch-parse.js'), 'utf8');
   const loaderText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'index-loader.js'), 'utf8');
@@ -1311,12 +1312,14 @@ function checkPersistentCacheStorageGuard() {
   const htmlText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
   const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
   const setNameAt = mainText.indexOf('app.setName(APP_NAME)');
-  const firstUserDataLookupAt = mainText.indexOf("app.getPath('appData')");
-  if (!/const CACHE_SETTINGS_FILE/.test(mainText) || !/const LYRIC_CACHE_MAX_BYTES = 96 \* 1024 \* 1024/.test(mainText) || !/function defaultCacheRootPath\(\)/.test(mainText) || !/path\.join\(dDrive, 'MineradioCache'\)/.test(mainText) || setNameAt < 0 || firstUserDataLookupAt < 0 || setNameAt > firstUserDataLookupAt || !/const STABLE_USER_DATA_PATH = path\.join\(app\.getPath\('appData'\), APP_NAME\)/.test(mainText) || !/app\.setPath\('userData', STABLE_USER_DATA_PATH\)/.test(mainText) || !/app\.setPath\('sessionData', chromiumSessionDataPath\(cacheSettings\)\)/.test(mainText) || !/const currentChromiumPath = app\.getPath\('sessionData'\)/.test(mainText) || !/MINERADIO_BEAT_CACHE_DIR = cacheSettings\.beatmapsPath/.test(mainText) || !/nativePath:\s*path\.join\(rootPath, 'native-helper-temp'\)/.test(mainText) || !/const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS\.nativePath/.test(mainText) || !/activeWallpaperEnginePath/.test(mainText) || !/wallpaperEngineBytes/.test(mainText)) {
-    fail('desktop cache settings must keep app-owned userData stable and route Chromium sessionData plus beatmaps to the configurable cache root');
+  const userDataSetAt = mainText.indexOf("app.setPath('userData', STABLE_USER_DATA_PATH)");
+  const sessionDataSetAt = mainText.indexOf("app.setPath('sessionData', STABLE_USER_DATA_PATH)");
+  const cacheSettingsAt = mainText.indexOf('ensureCacheDirectories(readCacheSettings())');
+  if (!/const CACHE_SETTINGS_FILE/.test(mainText) || !/const LYRIC_CACHE_MAX_BYTES = 96 \* 1024 \* 1024/.test(mainText) || !/function defaultCacheRootPath\(\)/.test(mainText) || !/path\.join\(INSTALL_ROOT, 'MineradioCache'\)/.test(mainText) || !/function isLegacyDriveRootCachePath\(value\)/.test(mainText) || /path\.join\(dDrive, 'MineradioCache'\)/.test(mainText) || setNameAt < 0 || userDataSetAt < 0 || sessionDataSetAt < 0 || cacheSettingsAt < 0 || setNameAt > userDataSetAt || userDataSetAt > cacheSettingsAt || sessionDataSetAt > cacheSettingsAt || !/const USE_PORTABLE_PROFILE = PORTABLE_PROFILE_PATHS\.usesPortableUserData === true/.test(mainText) || !/const STABLE_USER_DATA_PATH = USE_PORTABLE_PROFILE[\s\S]{0,160}app\.getPath\('userData'\)/.test(mainText) || !/app\.setPath\('cache', cacheSettings\.chromiumPath\)/.test(mainText) || !/const currentChromiumPath = app\.getPath\('cache'\)/.test(mainText) || (mainText.match(/setPath\('sessionData'/g) || []).length !== 1 || !/MINERADIO_BEAT_CACHE_DIR = cacheSettings\.beatmapsPath/.test(mainText) || !/nativePath:\s*path\.join\(rootPath, 'native-helper-temp'\)/.test(mainText) || !/const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS\.nativePath/.test(mainText) || !/activeWallpaperEnginePath/.test(mainText) || !/wallpaperEngineBytes/.test(mainText) || !/path\.join\(path\.dirname\(process\.resourcesPath\), 'MineradioCache'\)/.test(serverText) || /D:\\\\MineradioCache\\\\beatmaps/.test(serverText)) {
+    fail('desktop cache settings must keep userData/sessionData on the complete portable profile and route only disposable cache plus beatmaps to the configurable cache root');
   }
-  if (!/function migrateMisplacedAppOwnedFiles\(\)/.test(mainText) || !/APP_OWNED_MIGRATION_FILES/.test(mainText) || !/process\.env\.QISHUI_COOKIE_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.qishui-cookie'\)/.test(mainText) || !/process\.env\.SPOTIFY_TOKEN_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.spotify-token\.json'\)/.test(mainText)) {
-    fail('provider credentials must migrate out of the old Chromium cache path and remain under stable userData');
+  if (/function migrateMisplacedAppOwnedFiles\(\)/.test(mainText) || /APP_OWNED_MIGRATION_FILES/.test(mainText) || /migrateLegacyPortableUserData/.test(mainText) || /chromiumSessionDataPath/.test(mainText) || !/process\.env\.QISHUI_COOKIE_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.qishui-cookie'\)/.test(mainText) || !/process\.env\.SPOTIFY_TOKEN_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.spotify-token\.json'\)/.test(mainText)) {
+    fail('provider credentials must remain inside the complete portable profile without copy, merge, or migration');
   }
   if (!/mineradio-cache-get-settings/.test(mainText) || !/mineradio-cache-set-settings/.test(mainText) || !/mineradio-cache-read-lyric/.test(mainText) || !/mineradio-cache-write-lyric/.test(mainText) || !/crypto\.createHash\('sha256'\)/.test(mainText) || !/pruneLyricCache/.test(mainText)) {
     fail('desktop cache storage must expose configurable paths and bounded hashed lyric persistence');
@@ -2295,8 +2298,8 @@ function checkProviderEntitlementBoundaryGuard() {
       !/applyKugouPlaybackStatusEvidence\(data\)/.test(playbackText)) {
     fail('Kugou playback responses may update badges only when they carry verified membership API state');
   }
-  if (!/\.kugou-vip-evidence\.json/.test(mainText) || !/unlink/.test(mainText)) {
-    fail('Startup migration must delete deprecated persisted Kugou playback evidence for existing users');
+  if (/removeDeprecatedKugouVipEvidenceFiles|migrateLegacyAuthStorage|APP_OWNED_MIGRATION_FILES/.test(mainText)) {
+    fail('Startup must preserve the authoritative portable profile and must not delete or migrate persisted provider files');
   }
   if (!/kgVipLevel === 'svip'/.test(userModalText) || !/酷狗 SVIP 会员/.test(userModalText)) {
     fail('Kugou account modal must distinguish SVIP from normal VIP');
@@ -2660,6 +2663,32 @@ function checkNonCurrentAudioPrefetchGuard() {
 
 function checkCuefieldAutoMixGuard() {
   logStep('Cuefield AutoMix integration guard');
+  const runtimeModulePaths = [
+    path.join(appRoot, 'public', 'js', 'modules', '05-playback', '16-cuefield-automix-core.js'),
+    path.join(appRoot, 'public', 'js', 'modules', '05-playback', '17-cuefield-timeline-executor.js'),
+    path.join(appRoot, 'public', 'js', 'modules', '05-playback', '18-cuefield-automix-integration.js')
+  ];
+  const existingRuntimeModules = runtimeModulePaths.filter(file => fs.existsSync(file));
+
+  if (existingRuntimeModules.length === 0) {
+    const runtimeTargets = [
+      ...walk(path.join(appRoot, 'public')).filter(file => /\.(?:js|html|css)$/i.test(file)),
+      ...walk(path.join(appRoot, 'desktop')).filter(file => /\.js$/i.test(file)),
+      path.join(appRoot, 'server.js'),
+      path.join(appRoot, 'package.json'),
+      path.join(appRoot, 'electron-builder.internal-beta.json')
+    ];
+    const residue = runtimeTargets.find(file => /cuefield|automix/i.test(fs.readFileSync(file, 'utf8')));
+    if (residue) {
+      fail(`Removed Cuefield AutoMix runtime still has a reference in ${rel(residue)}`);
+    }
+    console.log('[OK] Cuefield AutoMix runtime remains removed with no loader, UI, server, or package residue.');
+    return;
+  }
+
+  if (existingRuntimeModules.length !== runtimeModulePaths.length) {
+    fail('Cuefield AutoMix runtime is only partially present');
+  }
   const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
   const desktopText = fs.readFileSync(path.join(appRoot, 'desktop', 'main.js'), 'utf8');
   const loaderText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'index-loader.js'), 'utf8');
@@ -2758,12 +2787,11 @@ function checkCuefieldAutoMixGuard() {
   console.log('[OK] Cuefield AutoMix is opt-in, packages with the app, uses local feedback, and reuses safe handoff controls.');
 }
 
-function checkAlbumDetailGaplessGuard() {
-  logStep('Album detail and explicit gapless guard');
+function checkAlbumDetailGuard() {
+  logStep('Album detail guard');
   const htmlText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
   const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
   const detailText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '06-track-detail-lyrics-actions.js'), 'utf8');
-  const coreStoreText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '00-core-stores.js'), 'utf8');
   const playbackText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '13-playback-start-audio.js'), 'utf8');
   const controlsText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '14-player-controls.js'), 'utf8');
   const snapshotText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '09-queue-snapshot-autoplay.js'), 'utf8');
@@ -2773,13 +2801,16 @@ function checkAlbumDetailGaplessGuard() {
     fail('album detail must be reachable from both current cover entry points');
   }
   if (!/\.detail-action-toggle/.test(cssText) || !/\.control-cover:focus-visible/.test(cssText)) {
-    fail('album detail entry and gapless toggle must have visible UI affordances');
+    fail('album detail entry and collection action must have visible UI affordances');
   }
-  if (!/function albumDetailUrlForSong/.test(detailText) || !/function renderAlbumSongList/.test(detailText) || !/function toggleAlbumGaplessPlayback/.test(detailText) || !/function playAlbumDetailSong/.test(detailText)) {
-    fail('track detail module must render album songs, play album queues, and expose the gapless toggle');
+  if (!/function albumDetailUrlForSong/.test(detailText) || !/function renderAlbumSongList/.test(detailText) || !/function playAlbumDetailSong/.test(detailText)) {
+    fail('track detail module must render album songs and play album queues');
   }
-  if (!/setAlbumGaplessPlaybackContext\(detailAlbumGaplessEnabled, detailAlbumContext/.test(detailText) || !/__albumGaplessKey/.test(detailText) || !/detailAlbumGaplessEnabled\s*=\s*true/.test(detailText)) {
-    fail('album detail playback must tag album queues and pass the gapless context into playback');
+  if (/album-gapless-toggle|renderAlbumGaplessButton|toggleAlbumGaplessPlayback|detailAlbumGapless|setAlbumGaplessPlaybackContext|__albumGaplessKey/.test(detailText)) {
+    fail('album detail must not expose or activate the removed gapless mode');
+  }
+  if (!/playQueue\s*=\s*detailAlbumSongs\.map\(cloneSong\)/.test(detailText)) {
+    fail('album detail playback must keep a plain ordered queue after removing gapless tagging');
   }
   if (!/handleNeteaseAlbumDetail/.test(serverText) || !/pn === '\/api\/album\/detail'/.test(serverText) || !/handleQQAlbumDetail/.test(serverText) || !/pn === '\/api\/qq\/album\/detail'/.test(serverText) || !/pn === '\/api\/spotify\/album\/detail'/.test(serverText)) {
     fail('server.js must expose Netease, QQ, and Spotify album detail endpoints');
@@ -2787,41 +2818,13 @@ function checkAlbumDetailGaplessGuard() {
   if (!/async function handleSpotifyAlbumDetail/.test(spotifyText) || !/\/albums\/' \+ encodeURIComponent\(id\)/.test(spotifyText)) {
     fail('Spotify bridge must expose album detail tracks as metadata source');
   }
-  if (!/albumGaplessState/.test(coreStoreText) || !/defaultEnabled:\s*true/.test(coreStoreText) || !/function albumGaplessDefaultEnabledForContext/.test(playbackText) || !/function setAlbumGaplessPlaybackContext/.test(playbackText) || !/function scheduleAlbumGaplessPreloadForCurrent/.test(playbackText) || !/function resolveAlbumGaplessPlaybackData/.test(playbackText) || !/albumGaplessHandoff/.test(playbackText) || !/playAlbumGaplessNextOnEnded/.test(playbackText)) {
-    fail('album gapless playback must keep explicit state, preheat next audio, and use a sequential on-ended fallback');
-  }
-  if (!/ALBUM_GAPLESS_PREROLL_SECONDS\s*=\s*8\.5/.test(playbackText) || !/ALBUM_GAPLESS_MUTED_PREROLL_SECONDS\s*=\s*1\.05/.test(playbackText) || !/ALBUM_GAPLESS_MIX_SECONDS\s*=\s*0\.72/.test(playbackText) || !/ALBUM_GAPLESS_NEXT_ENTRY_FLOOR\s*=\s*0\.90/.test(playbackText) || !/ALBUM_GAPLESS_NEXT_ATTACK_MS\s*=\s*56/.test(playbackText) || !/ALBUM_GAPLESS_ADOPT_SLEW_MS\s*=\s*180/.test(playbackText) || !/ALBUM_GAPLESS_GAIN_STEP_MS\s*=\s*8/.test(playbackText) || !/ALBUM_GAPLESS_BOUNDARY_RELEASE_SECONDS\s*=\s*ALBUM_GAPLESS_MIX_SECONDS/.test(playbackText) || !/ALBUM_GAPLESS_FAST_SILENCE_HOLD_MS/.test(playbackText) || !/ALBUM_GAPLESS_DIRECT_SILENCE_RMS/.test(playbackText) || !/ALBUM_GAPLESS_RESIDUAL_FREQ_AVG/.test(playbackText) || !/albumGaplessTailFreqData/.test(playbackText) || !/function albumGaplessDirectTailSample/.test(playbackText) || !/function startAlbumGaplessPreroll/.test(playbackText) || !/function startAlbumGaplessMix/.test(playbackText) || !/runAlbumGaplessBalancedCrossfade/.test(playbackText) || !/albumGaplessTailSilenceProbe/.test(playbackText) || !/residualTail/.test(playbackText) || !/!tailProbe\.residualTail/.test(playbackText) || !/tail-direct-silence-crossmix/.test(playbackText) || !/boundary-crossmix-reset/.test(playbackText)) {
-    fail('album gapless playback must scan tail waveform energy, skip long silent tails, and use balanced crossmix at the cue point');
-  }
-  if (!/function albumGaplessEqualPowerGains\(progress, outgoingStart, incomingTarget\)/.test(playbackText) || !/outgoing:\s*clampRange\(\(Number\(outgoingStart\) \|\| 0\) \* Math\.cos\(theta\)/.test(playbackText) || !/incoming:\s*clampRange\(\(Number\(incomingTarget\) \|\| 0\) \* Math\.sin\(theta\)/.test(playbackText) || !/function albumGaplessEqualPowerEntryProgress\(elapsedMs, durationMs\)/.test(playbackText) || !/Math\.asin\(ALBUM_GAPLESS_NEXT_ENTRY_FLOOR\)/.test(playbackText) || !/albumGaplessEqualPowerEntryProgress\(elapsedMs, durationMs\)/.test(playbackText) || !/media\.volume = 0;[\s\S]{0,260}preload\.fadeCompleted = false/.test(playbackText) || /media\.volume\s*=\s*ALBUM_GAPLESS_NEXT_ENTRY_FLOOR/.test(playbackText)) {
-    fail('album gapless must keep the 0.90/56ms entry strength inside one paired equal-power curve instead of stacking it over a full-volume outgoing deck');
-  }
-  if (!/Promise\.resolve\(playResult\)\.then\(function \(\)/.test(playbackText) || !/return runAlbumGaplessBalancedCrossfade\(preload, mixMs\)/.test(playbackText) || !/\.then\(function \(completed\)/.test(playbackText) || !/if \(!completed\)/.test(playbackText) || !/preload\.fadeCompleted[\s\S]{0,900}startAlbumGaplessHandoff/.test(playbackText) || !/preload\.fadeResolve[\s\S]{0,180}resolveFade\(false\)/.test(playbackText)) {
-    fail('album gapless must await media play and the completed fade state before ownership handoff, and cancellation must resolve false');
-  }
-  if (!/function disposeAlbumGaplessPreload\(preload\)/.test(playbackText) || !/await applyAudioOutputDevice\(media\);[\s\S]{0,420}serial !== albumGaplessState\.serial[\s\S]{0,320}disposeAlbumGaplessPreload\(\{ media: media \}\)/.test(playbackText) || !/if \(albumGaplessState\.preload === preload\) clearAlbumGaplessPreload\('album-gapless-mix-stale'\);[\s\S]{0,80}else disposeAlbumGaplessPreload\(preload\)/.test(playbackText)) {
-    fail('stale album preload promises must revalidate after await and may only dispose the media object they own');
-  }
-  if (!/fadeWatchdogTimer = setInterval\(function \(\) \{[\s\S]{0,100}applyStep\(performance\.now\(\)\)/.test(playbackText) || !/function scheduleAlbumGaplessNormalFallback\(\)/.test(playbackText) || !/audio !== preload\.media && audio !== handoffPreviousAudio/.test(playbackText) || !/albumGaplessState\.preload\.mixStarted[\s\S]{0,160}restoreAlbumGaplessOutgoingIfCurrent/.test(playbackText)) {
-    fail('album gapless must keep its gain curve alive off-RAF, restore on disable, and fall back whether B was adopted or not');
-  }
   if (!/function playbackAttemptStillCurrent\(media, token\)/.test(controlsText) || !/expectedMedia: opts\.expectedMedia \|\| audio/.test(controlsText) || !/expectedToken: opts\.expectedToken == null \? trackSwitchToken/.test(controlsText) || !/expectedMedia: playbackMedia, expectedToken: token/.test(playbackText)) {
     fail('stale play promises must be scoped to the media element and track token that started them');
-  }
-  if (!/var albumGaplessAdoptedGain = 0/.test(playbackText) || !/albumGaplessAdoptedGain = albumGaplessMixed[\s\S]{0,100}Number\(audio\.volume\)/.test(playbackText) || !/setAudioOutputGainImmediate\(albumGaplessMixed \? albumGaplessAdoptedGain : audioSilentFloor\(\)\)/.test(playbackText) || !/preserveGain:\s*albumGaplessMixed/.test(playbackText) || !/rampAudioOutputGain\(targetVolume, ALBUM_GAPLESS_ADOPT_SLEW_MS\)/.test(playbackText) || !/preserveGain:\s*!!opts\.preserveGain/.test(controlsText) || !/else if \(!opts\.preserveGain\) restorePlaybackGain\(\)/.test(controlsText)) {
-    fail('mixed album handoff must adopt, preserve, and gently settle the incoming gain without a restorePlaybackGain jump');
-  }
-  if (!/preloadedAudio/.test(playbackText) || !/preloadedProxyAudioUrl/.test(playbackText) || !/albumGaplessMixed/.test(playbackText) || !/skipShuffleOrder: true/.test(playbackText) || !/searchAlternatePlatformSong\(nextSong\)/.test(playbackText) || !/playQueue\[preload\.index\] = hydrateCustomCover\(preload\.song\)/.test(playbackText)) {
-    fail('album gapless handoff must reuse preheated audio, pre-resolve metadata-source fallback, and force album order instead of shuffle order');
-  }
-  const coverText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '02-visual', '15-ripples-cover-depth.js'), 'utf8');
-  if (!/albumGaplessSameAlbumCover/.test(playbackText) || !/noCoverTransition:\s*sameAlbumCoverSwitch/.test(playbackText) || !/opts\.noCoverTransition/.test(coverText)) {
-    fail('same-album same-cover transitions must suppress cover particle/color transition effects');
   }
   if (!/albumMid/.test(snapshotText) || !/albumUri/.test(snapshotText)) {
     fail('playback snapshots must preserve album identifiers for album detail entry after restore');
   }
-  console.log('[OK] Album detail opens from covers, loads provider album tracks, and gapless playback is explicit/preheated/sequential.');
+  console.log('[OK] Album detail opens from covers, loads provider tracks, and no longer exposes or activates gapless playback.');
 }
 
 function checkInternalBetaPackagingGuard() {
@@ -3316,11 +3319,9 @@ app.whenReady().then(async () => {
       if (runtime && runtime.viewport && !(runtime.viewport.adaptiveLoad.avgMs > 0)) failures.push('adaptiveLoad avgMs was not sampled');
       if (!perf || !perf.render) failures.push('perf render snapshot missing');
       const cuefieldButton = document.getElementById('cuefield-automix-btn');
-      if (!cuefieldButton) failures.push('Cuefield AutoMix button missing');
-      if (cuefieldButton && cuefieldButton.getAttribute('aria-pressed') !== 'false') failures.push('Cuefield AutoMix must default off in a fresh profile');
-      if (!window.CuefieldAutoMix || typeof window.CuefieldAutoMix.createCuefieldAutoMix !== 'function') failures.push('Cuefield AutoMix core missing');
-      if (!window.CuefieldTimelineExecutor || typeof window.CuefieldTimelineExecutor.buildCuefieldTimelineExecution !== 'function') failures.push('Cuefield timeline executor missing');
-      if (typeof toggleCuefieldAutoMix !== 'function' || typeof tickCuefieldAutoMix !== 'function') failures.push('Cuefield renderer integration missing');
+      if (cuefieldButton || window.CuefieldAutoMix || window.CuefieldTimelineExecutor || typeof toggleCuefieldAutoMix === 'function' || typeof tickCuefieldAutoMix === 'function') {
+        failures.push('removed Cuefield AutoMix runtime is still exposed');
+      }
       function inspectLyricTextureQualityTiers() {
         if (typeof makeLyricMask !== 'function' || typeof compactLyricLineMaskTexture !== 'function' || typeof makeLyricQualityTexture !== 'function') {
           return { ok: false, reason: 'lyric quality texture builders missing' };
@@ -4811,7 +4812,6 @@ function runElectronRuntimeCheck() {
   fs.writeFileSync(qaPreload, `
 try {
   window.localStorage.setItem('mineradio-startup-fast-skip-v1', 'true');
-  window.localStorage.removeItem('mineradio-cuefield-automix-v1');
 } catch (error) {}
 `, 'utf8');
 
@@ -4879,8 +4879,16 @@ function runMainStartupRecoveryCheck() {
   const runtimeName = `MineradioStartupQA-${process.pid}-${Date.now()}`;
   const qaUserData = path.join(appData, runtimeName);
   const stateFile = path.join(qaUserData, 'startup-state.json');
-  const qaSessionData = path.join('D:\\MineradioCache\\chromium', runtimeName);
+  const qaCacheLeaf = `${runtimeName}-cache`;
+  const qaCacheParent = os.tmpdir();
+  const qaCacheRoot = path.join(qaCacheParent, qaCacheLeaf);
   try {
+    fs.mkdirSync(qaUserData, { recursive: true });
+    fs.writeFileSync(
+      path.join(qaUserData, 'cache-settings.json'),
+      JSON.stringify({ version: 1, rootPath: qaCacheRoot }, null, 2),
+      'utf8'
+    );
     const result = spawnSync(electron, [appRoot], {
       cwd: appRoot,
       env: {
@@ -4928,8 +4936,7 @@ function runMainStartupRecoveryCheck() {
     console.log(`[OK] Startup shell visible in ${windowVisibleAt - state.startedAt}ms, before delayed server at ${serverReadyAt - state.startedAt}ms; injected first navigation failure recovered and reached ready in ${readyAt - state.startedAt}ms.`);
   } finally {
     if (fs.existsSync(qaUserData)) removeOwnedStartupQaDirectory(qaUserData, appData, runtimeName);
-    const qaSessionParent = path.dirname(qaSessionData);
-    if (fs.existsSync(qaSessionData)) removeOwnedStartupQaDirectory(qaSessionData, qaSessionParent, runtimeName);
+    if (fs.existsSync(qaCacheRoot)) removeOwnedStartupQaDirectory(qaCacheRoot, qaCacheParent, qaCacheLeaf);
   }
 }
 
@@ -4957,21 +4964,22 @@ async function checkLargePlaylistVirtualizationGuard() {
   }
   const detailScrollerStart = detailText.indexOf('function bindPlaylistPanelDetailScroller');
   const detailScrollerEnd = detailText.indexOf('async function loadMorePlaylistPanelDetailTracks', detailScrollerStart);
-  if (detailScrollerStart < 0 || detailScrollerEnd < 0 || /addEventListener\(['"]scroll/.test(detailText.slice(detailScrollerStart, detailScrollerEnd))) {
-    fail('expanded playlist detail must share the outer playlist-panel scroll axis');
+  const detailScrollerText = detailText.slice(detailScrollerStart, detailScrollerEnd);
+  if (detailScrollerStart < 0 || detailScrollerEnd < 0 || !/getElementById\(['"]playlist-detail-panel['"]\)/.test(detailScrollerText) || !/addEventListener\(['"]scroll/.test(detailScrollerText)) {
+    fail('expanded playlist detail must bind its dedicated detail-panel scroll axis');
   }
-  if (!/#playlist-panel \.pl-inline-detail[\s\S]*?overflow:\s*visible/.test(cssText) || !/#playlist-panel \.pl-card\.expanded::before/.test(cssText)) {
-    fail('continuous expanded playlist detail and its highlighted group styling are missing');
+  if (!/#playlist-detail-panel\s*\{[\s\S]*?position:\s*fixed[\s\S]*?overflow:\s*auto/.test(cssText) || !/#playlist-detail-panel \.pl-inline-detail[\s\S]*?overflow:\s*visible/.test(cssText) || !/\.pl-card\.expanded\s*\{/.test(cssText)) {
+    fail('dedicated expanded playlist detail panel or selected-card styling is missing');
   }
-  const detailStickyRules = Array.from(cssText.matchAll(/#playlist-panel\s+\.pl-detail-sticky\s*\{([^}]*)\}/g));
-  const detailStickyCss = detailStickyRules.length ? detailStickyRules[detailStickyRules.length - 1][1] : '';
+  const detailStickyRules = Array.from(cssText.matchAll(/#playlist-detail-panel\s+\.pl-detail-sticky\s*\{([^}]*)\}/g));
+  const detailStickyCss = detailStickyRules.map(match => match[1]).join('\n');
   if (!/\bposition:\s*sticky\b/.test(detailStickyCss) || !/\btop:\s*(?!auto\b)[^;}]+/.test(detailStickyCss) || /\bposition:\s*(?:relative|static)\b|\btop:\s*auto\b/.test(detailStickyCss)) {
-    fail('expanded playlist summary must stay sticky on the outer playlist-panel scroll axis');
+    fail('expanded playlist summary must stay sticky on the detail-panel scroll axis');
   }
-  const detailListRules = Array.from(cssText.matchAll(/#playlist-panel\s+\.pl-detail-list\s*\{([^}]*)\}/g));
-  const detailListCss = detailListRules.length ? detailListRules[detailListRules.length - 1][1] : '';
+  const detailListRules = Array.from(cssText.matchAll(/#playlist-detail-panel\s+\.pl-detail-list\s*\{([^}]*)\}/g));
+  const detailListCss = detailListRules.map(match => match[1]).join('\n');
   if (!/\boverflow:\s*visible\b/.test(detailListCss) || /\boverflow-y:\s*(?:auto|scroll)\b/.test(detailListCss)) {
-    fail('expanded playlist tracks must keep the single outer scroll axis');
+    fail('expanded playlist tracks must keep the single detail-panel scroll axis');
   }
   const shelfSync = shelfText.slice(shelfText.indexOf('function syncRenderedWindow'), shelfText.indexOf('function rebuild'));
   const contentSync = shelfContentText.slice(shelfContentText.indexOf('function syncRenderedRows'), shelfContentText.indexOf('return {', shelfContentText.indexOf('function syncRenderedRows')));
@@ -5119,7 +5127,7 @@ async function checkLargePlaylistVirtualizationGuard() {
   if (ids.length !== 10000 || new Set(ids).size !== 10000 || ids[0] !== 0 || ids[9999] !== 9999 || pages > 63) {
     fail(`10k progressive queue did not complete in order: ${JSON.stringify({ length: ids.length, unique: new Set(ids).size, first: ids[0], last: ids[9999], pages })}`);
   }
-  console.log(`[OK] 5k catalog=${catalogMs.toFixed(2)}ms/window ${catalogWindowEnd - catalogWindowStart}; 10k queue=1 warm + ${pages - 1} on-demand pages/window ${queueWindow.end - queueWindow.start}; one outer detail scroll; 3D pools retained.`);
+  console.log(`[OK] 5k catalog=${catalogMs.toFixed(2)}ms/window ${catalogWindowEnd - catalogWindowStart}; 10k queue=1 warm + ${pages - 1} on-demand pages/window ${queueWindow.end - queueWindow.start}; one detail-panel scroll; 3D pools retained.`);
 }
 
 function checkFxConsoleWorkspaceGuard() {
@@ -5177,7 +5185,6 @@ function checkFirstLaunchDefaultsAndSplashGuard() {
   logStep('First-launch defaults and splash timing guard');
   const defaultsText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '04-fx-defaults.js'), 'utf8');
   const packagedText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '05-packaged-fx-archive.js'), 'utf8');
-  const archive = JSON.parse(fs.readFileSync(path.join(appRoot, 'public', 'default-user-fx-archive.json'), 'utf8'));
   const splashText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '10-shell', '03-splash.js'), 'utf8');
   const css = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
   const marker = 'var fxDefaults = ';
@@ -5185,19 +5192,15 @@ function checkFirstLaunchDefaultsAndSplashGuard() {
   const end = defaultsText.indexOf('\n};', start);
   if (start < 0 || end < 0) fail('fxDefaults object cannot be inspected');
   const defaults = vm.runInNewContext(`(${defaultsText.slice(start + marker.length, end + 2)})`, Object.create(null));
-  const snapshot = archive && archive.snapshot;
   const keys = Object.keys(defaults);
-  const snapshotKeys = snapshot ? Object.keys(snapshot).filter(key => key !== 'visualPresetSchema') : [];
-  const drift = keys.filter(key => !snapshot || JSON.stringify(snapshot[key]) !== JSON.stringify(defaults[key]));
-  if (!snapshot || snapshotKeys.length !== keys.length || drift.length) {
-    fail(`first-launch runtime and packaged archive defaults drifted: ${drift.join(', ') || 'key-count mismatch'}`);
-  }
-  const expectedCapturedDefaults = {
+  const expectedRuntimeDefaults = {
     depth: 0.2,
-    lyricDisplayMode: 'cinema',
-    lyricTranslationMode: 'multi',
-    lyricFont: 'sans',
+    lyricDisplayMode: 'single',
+    lyricTranslationMode: 'current',
+    lyricFont: 'song',
     lyricWeight: 750,
+    wallpaperEngineDim: 0.18,
+    desktopLock: false,
     controlGlassChromaticOffset: 50,
     playlistPanelGlassBlur: 14,
     playlistPanelGlassDensity: 0.55,
@@ -5205,13 +5208,13 @@ function checkFirstLaunchDefaultsAndSplashGuard() {
     performanceQuality: 'eco',
     memoryAutoSystemTrim: true,
     memorySystemAutoElevate: true,
-    wallpaperFps: 60,
+    wallpaperFps: 30,
     shelfCameraMode: 'dynamic',
     shelfPresence: 'auto'
   };
-  const capturedDrift = Object.keys(expectedCapturedDefaults).filter(key => JSON.stringify(defaults[key]) !== JSON.stringify(expectedCapturedDefaults[key]));
-  if (capturedDrift.length || archive.exportedAt !== 1784607916226 || archive.savedAt !== 1784607916226) {
-    fail(`captured first-launch settings identity drifted: ${capturedDrift.join(', ') || 'timestamp'}`);
+  const runtimeDrift = Object.keys(expectedRuntimeDefaults).filter(key => JSON.stringify(defaults[key]) !== JSON.stringify(expectedRuntimeDefaults[key]));
+  if (runtimeDrift.length) {
+    fail(`first-launch runtime defaults drifted: ${runtimeDrift.join(', ')}`);
   }
   if (!/PACKAGED_DEFAULT_FX_SNAPSHOT\s*=\s*Object\.freeze\(Object\.assign\(\{[\s\S]{0,180}visualPresetSchema:\s*VISUAL_PRESET_SCHEMA[\s\S]{0,120}\},\s*fxDefaults\)\)/.test(packagedText)) {
     fail('packaged first-launch snapshot must inherit the synchronized runtime defaults');
@@ -5233,7 +5236,7 @@ function checkFirstLaunchDefaultsAndSplashGuard() {
     || !/\.user-archive-tools \.fx-mini-btn\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,160}white-space:\s*nowrap/.test(css)) {
     fail('user archive actions must stay in one balanced three-column row');
   }
-  console.log(`[OK] ${keys.length} captured defaults match; splash motion is 5.2s/4.2s while entry stays ready at 1.5s/0.65s; archive actions stay in one row.`);
+  console.log(`[OK] ${keys.length} runtime defaults feed the packaged snapshot; splash motion is 5.2s/4.2s while entry stays ready at 1.5s/0.65s; archive actions stay in one row.`);
 }
 
 async function main() {
@@ -5242,7 +5245,7 @@ async function main() {
   runPlaybackAudioGraphRegressionCheck();
   runPlaybackSourceFallbackTransactionCheck();
   runQQVipEntitlementRegressionCheck();
-  runLoginEasterEggGateRegressionCheck();
+  runDirectLoginFlowRegressionCheck();
   runQishuiProviderDistributionRegressionCheck();
   runSpotifyApiResilienceRegressionCheck();
   runPlatformAccountSyncGuardCheck();
@@ -5275,7 +5278,7 @@ async function main() {
   checkVolumeWheelStepGuard();
   checkNonCurrentAudioPrefetchGuard();
   checkCuefieldAutoMixGuard();
-  checkAlbumDetailGaplessGuard();
+  checkAlbumDetailGuard();
   checkInternalBetaPackagingGuard();
   checkSonicTopographyPresetGuard();
   checkLongPressReorderGuard();

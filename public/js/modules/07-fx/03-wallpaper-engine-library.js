@@ -1603,11 +1603,6 @@ function activateWallpaperEngineItem(id) {
     showToast('该项目没有可安全导入的媒体');
     return;
   }
-  if (fx && fx.wallpaperEngineLink === true) {
-    fx.wallpaperEngineLink = false;
-    saveLyricLayout({ user: true, reason: 'wallpaperEngineLink' });
-    if (typeof updateCustomBackgroundControls === 'function') updateCustomBackgroundControls();
-  }
   wallpaperEngineSelection = normalizeWallpaperEngineSelection({
     active: true,
     id: item.id,
@@ -1631,27 +1626,12 @@ function activateWallpaperEngineItem(id) {
 }
 
 function updateLocalDesktopIntegrationControls() {
-  var link = document.getElementById('t-wallpaperEngineLink');
   var lock = document.getElementById('t-desktopLock');
-  if (link) link.classList.toggle('on', !!(fx && fx.wallpaperEngineLink));
   if (lock) {
     lock.classList.toggle('on', !!(fx && fx.desktopLock));
     lock.classList.toggle('runtime-pending', desktopLockPending === true);
     lock.setAttribute('aria-busy', desktopLockPending === true ? 'true' : 'false');
   }
-}
-
-function setWallpaperEngineLink(enabled, silent) {
-  fx.wallpaperEngineLink = enabled === true;
-  if (typeof updateCustomBackgroundControls === 'function') updateCustomBackgroundControls();
-  updateLocalDesktopIntegrationControls();
-  saveLyricLayout({ user: silent !== true, reason: 'wallpaperEngineLink' });
-  if (!silent) showToast(fx.wallpaperEngineLink ? 'Wallpaper Engine 联动已开启' : '已恢复 Mineradio 背景');
-  return fx.wallpaperEngineLink;
-}
-
-function toggleWallpaperEngineLink() {
-  return setWallpaperEngineLink(!(fx && fx.wallpaperEngineLink === true), false);
 }
 
 var desktopLockPending = false;

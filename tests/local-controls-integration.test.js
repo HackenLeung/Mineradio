@@ -23,22 +23,7 @@ const startup = read('public/js/modules/10-shell/05-startup-bindings.js');
 const desktopShell = read('public/js/modules/10-shell/04-desktop-overlay-fullscreen.js');
 const styles = read('public/css/index.css');
 const consoleWorkspace = read('public/js/modules/07-fx/09-console-workspace.js');
-
-function createWallpaperLinkHarness() {
-  const start = wallpaper.indexOf('function setWallpaperEngineLink');
-  const end = wallpaper.indexOf('\nvar desktopLockPending = false;', start);
-  assert.ok(start >= 0 && end > start, 'Wallpaper Engine link implementation block must be extractable');
-  const calls = { backgrounds: 0, controls: 0, saves: [], toasts: [] };
-  const context = {
-    fx: { wallpaperEngineLink: false },
-    updateCustomBackgroundControls: () => { calls.backgrounds += 1; },
-    updateLocalDesktopIntegrationControls: () => { calls.controls += 1; },
-    saveLyricLayout: (options) => calls.saves.push(options),
-    showToast: (message) => calls.toasts.push(message),
-  };
-  const factory = new Function('context', `with (context) {\n${wallpaper.slice(start, end)}\nreturn { setWallpaperEngineLink, toggleWallpaperEngineLink };\n}`);
-  return { controls: factory(context), context, calls };
-}
+const peekPanels = read('public/js/modules/10-shell/02-peek-panels-upload.js');
 
 function createDesktopLockHarness(apiResult) {
   const start = wallpaper.indexOf('var desktopLockPending = false;');
@@ -81,7 +66,7 @@ test('playback tuning and six-band EQ are loaded and connected to the main audio
   assert.match(loader, /08a-playback-tuning-eq\.js/);
   assert.match(html, /id="playback-tuning-control"[\s\S]*id="playback-speed-slider"[\s\S]*id="playback-pitch-slider"/);
   assert.match(html, /id="fx-audio-fold"[\s\S]*id="audio-eq-grid"/);
-  assert.match(consoleWorkspace, /key: 'extra', title: '额外', hint: '智能过渡 \/ 声音均衡器'[\s\S]*smart-transition-style-seg[\s\S]*t-audioEq[\s\S]*audio-preset-seg[\s\S]*audio-preamp[\s\S]*audio-eq-grid/);
+  assert.match(consoleWorkspace, /key: 'extra', title: '其他', hint: '智能过渡 \/ 声音均衡器'[\s\S]*smart-transition-lead-seg[\s\S]*smart-transition-style-seg[\s\S]*t-audioEq[\s\S]*audio-preset-seg[\s\S]*audio-preamp[\s\S]*audio-eq-grid/);
   assert.match(styles, /#fx-panel #fx-console-motion-extra/);
   assert.equal((effects.match(/\{ label: '[^']+', freq:/g) || []).length, 6);
   assert.match(graph, /createPlaybackEffectGraph\(\)/);
@@ -98,16 +83,21 @@ test('local matching keeps the restored neutral layout and refreshes local playb
   assert.match(styles, /\.local-match-results::\-webkit-scrollbar-button\s*\{\s*display: none/);
 });
 
-test('Wallpaper Engine transparency link stays separate from the upstream wallpaper runtime', () => {
-  assert.match(html, /id="t-wallpaperEngineLink"[\s\S]*toggleWallpaperEngineLink\(\)/);
+test('playlist detail hover keeps existing song action buttons stable', () => {
+  const start = peekPanels.indexOf('function setPeek(el, on, key)');
+  const end = peekPanels.indexOf('function uploadTipWasSeen', start);
+  const setPeek = start >= 0 && end > start ? peekPanels.slice(start, end) : '';
+  assert.match(setPeek, /key === 'pl' && !wasPeek && typeof renderPlaylistPanelDetailPanel === 'function'/);
+  assert.doesNotMatch(setPeek, /key === 'pl' && typeof renderPlaylistPanelDetailPanel === 'function'/);
+});
+
+test('desktop lock stays available without the removed Wallpaper Engine transparency link', () => {
+  assert.doesNotMatch(html, /t-wallpaperEngineLink|toggleWallpaperEngineLink|Wallpaper Engine 联动/);
+  assert.doesNotMatch(wallpaper, /wallpaperEngineLink|setWallpaperEngineLink|toggleWallpaperEngineLink/);
+  assert.doesNotMatch(defaults, /wallpaperEngineLink/);
+  assert.doesNotMatch(persistence, /wallpaperEngineLink/);
+  assert.doesNotMatch(styles, /wallpaper-engine-linked/);
   assert.match(html, /id="t-desktopLock"[\s\S]*toggleDesktopLock\(\)/);
-  assert.match(wallpaper, /function setWallpaperEngineLink\([\s\S]*fx\.wallpaperEngineLink = enabled === true[\s\S]*saveLyricLayout\(\{ user: silent !== true, reason: 'wallpaperEngineLink' \}\)/);
-  assert.doesNotMatch(wallpaper.match(/function toggleWallpaperEngineLink\([\s\S]*?\n\}/)?.[0] || '', /openWallpaperEngineLibrary|applyWallpaperEngineBackground/);
-  assert.match(defaults, /wallpaperEngineLink: false/);
-  assert.match(persistence, /wallpaperEngineLink: raw\.wallpaperEngineLink === true/);
-  assert.match(persistence, /wallpaperEngineLink: fx\.wallpaperEngineLink === true/);
-  assert.match(styles, /body\.wallpaper-engine-linked #custom-bg\s*\{[\s\S]*background: transparent !important/);
-  assert.match(styles, /body\.wallpaper-engine-linked #custom-bg::after\s*\{[\s\S]*opacity: var\(--wallpaper-engine-dim, \.18\) !important/);
   assert.match(wallpaper, /function setDesktopLock\([\s\S]*api\.setDesktopLocked\(desired\)/);
   assert.match(wallpaper, /result\.ok !== true \|\| actual !== desired/);
   assert.match(wallpaper, /fx\.desktopLock = desired/);
@@ -120,16 +110,6 @@ test('Wallpaper Engine transparency link stays separate from the upstream wallpa
   assert.match(persistence, /desktopLock: fx\.desktopLock === true/);
   assert.match(startup, /setDesktopLock\(fx\.desktopLock === true, true\)/);
   assert.match(hotkeys, /toggleDesktopInteraction'[\s\S]*setDesktopLock\(!\(fx && fx\.desktopLock === true\), false\)/);
-});
-
-test('Wallpaper Engine transparency link toggles, applies, and persists independently', () => {
-  const harness = createWallpaperLinkHarness();
-  assert.equal(harness.controls.toggleWallpaperEngineLink(), true);
-  assert.equal(harness.context.fx.wallpaperEngineLink, true);
-  assert.equal(harness.calls.backgrounds, 1);
-  assert.equal(harness.calls.controls, 1);
-  assert.deepEqual(harness.calls.saves, [{ user: true, reason: 'wallpaperEngineLink' }]);
-  assert.match(harness.calls.toasts.at(-1), /联动已开启/);
 });
 
 test('desktop lock is reported as fullscreen and drives the renderer-only lock layout', () => {

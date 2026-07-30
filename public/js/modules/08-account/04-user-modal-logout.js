@@ -111,6 +111,17 @@ function openProviderLogin(provider) {
 
 var logoutAllAccountsResetBusy = false;
 
+function logoutOperationFailure(result) {
+  if (!result || result.status === 'rejected') {
+    return String(result && result.reason && (result.reason.message || result.reason) || 'LOGOUT_OPERATION_REJECTED');
+  }
+  var value = result.value;
+  if (value && (value.ok === false || value.success === false || value.error)) {
+    return String(value.error || value.message || 'LOGOUT_OPERATION_FAILED');
+  }
+  return '';
+}
+
 function resetAllProviderRendererLoginState() {
   loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
   qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false };
@@ -143,9 +154,9 @@ function resetAllProviderRendererLoginState() {
   }
 }
 
-async function logoutAllAccountsAndResetEasterEgg() {
+async function logoutAllAccounts() {
   if (logoutAllAccountsResetBusy) return;
-  if (!window.confirm('退出全部平台并清除登录 Cookie？\n完成后登录彩蛋会重新锁定，可以再次体验。')) return;
+  if (!window.confirm('退出全部平台并清除登录 Cookie？')) return;
   logoutAllAccountsResetBusy = true;
   var button = document.getElementById('login-reset-all-btn');
   if (button) {
@@ -153,19 +164,27 @@ async function logoutAllAccountsAndResetEasterEgg() {
     button.textContent = '正在清除…';
   }
   try {
-    await Promise.allSettled([
+    var operations = [
       apiJson('/api/logout'),
       apiJson('/api/qq/logout'),
       apiJson('/api/kugou/logout'),
       apiJson('/api/qishui/logout'),
       apiJson('/api/spotify/logout')
-    ]);
-    var result = await requestLoginEasterEggReplayReset();
-    if (!result || !result.ok || result.unlocked || result.resetComplete === false) {
-      throw new Error(result && (result.error || result.message) || 'LOGIN_EASTER_EGG_REPLAY_RESET_FAILED');
+    ];
+    var desktop = window.desktopWindow;
+    if (desktop) {
+      if (typeof desktop.clearNeteaseMusicLogin === 'function') operations.push(desktop.clearNeteaseMusicLogin());
+      if (typeof desktop.clearQQMusicLogin === 'function') operations.push(desktop.clearQQMusicLogin());
+      if (typeof desktop.clearKugouMusicLogin === 'function') operations.push(desktop.clearKugouMusicLogin());
+      if (typeof desktop.clearQishuiMusicLogin === 'function') operations.push(desktop.clearQishuiMusicLogin());
+      if (typeof desktop.clearSpotifyMusicLogin === 'function') operations.push(desktop.clearSpotifyMusicLogin());
+    }
+    var results = await Promise.allSettled(operations);
+    var failures = results.map(logoutOperationFailure).filter(Boolean);
+    if (failures.length) {
+      throw new Error('LOGOUT_ALL_INCOMPLETE:' + failures.join('|'));
     }
     resetAllProviderRendererLoginState();
-    resetLoginEasterEggUiForReplay();
     closeCollectModal();
     closeUserModal();
     closeLoginModal();
@@ -178,9 +197,17 @@ async function logoutAllAccountsAndResetEasterEgg() {
     if (typeof setHomeControlsLocked === 'function') setHomeControlsLocked(true);
     if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: false });
     if (typeof renderHomeDashboard === 'function') renderHomeDashboard();
-    showToast('已退出全部账号，登录彩蛋已重新开启');
+    showToast('已退出全部账号');
   } catch (error) {
-    console.warn('Logout all accounts and reset easter egg failed:', error);
+    console.warn('Logout all accounts failed:', error);
+    await Promise.allSettled([
+      refreshLoginStatus(true),
+      refreshQQLoginStatus({ force: true }),
+      refreshKugouLoginStatus(),
+      refreshQishuiLoginStatus(),
+      refreshSpotifyLoginStatus()
+    ]);
+    renderUserBtn();
     showToast('清理未完成，请重启后重试');
   } finally {
     logoutAllAccountsResetBusy = false;

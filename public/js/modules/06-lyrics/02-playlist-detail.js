@@ -746,6 +746,13 @@ if (playlistDetailPanelEl) playlistDetailPanelEl.addEventListener('click', funct
     scrollPlaylistPanelToTop();
     return;
   }
+  var locateLocalCurrent = e.target && e.target.closest ? e.target.closest('[data-local-detail-current]') : null;
+  if (locateLocalCurrent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof locateCurrentLocalLibraryTrack === 'function') locateCurrentLocalLibraryTrack();
+    return;
+  }
   var playLocalDetail = e.target && e.target.closest ? e.target.closest('[data-local-detail-play]') : null;
   if (playLocalDetail) {
     e.preventDefault();

@@ -129,22 +129,6 @@ const {
 } = require('./spotify-api');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const LOGIN_EASTER_EGG_GATE_FILE = String(process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_FILE || '');
-const LOGIN_EASTER_EGG_GATE_VERSION = String(
-  process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_VERSION ||
-  String.fromCharCode(119, 111, 114, 108, 100, 45, 112, 101, 97, 99, 101, 45, 118, 49),
-);
-const LOGIN_EASTER_EGG_PROTECTED_ROUTES = new Set([
-  '/api/login/cookie',
-  '/api/login/qr/key',
-  '/api/login/qr/create',
-  '/api/login/qr/check',
-  '/api/qq/login/cookie',
-  '/api/kugou/login/cookie',
-  '/api/qishui/login/token',
-  '/api/qishui/login/cookie',
-  '/api/spotify/config',
-]);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
 const DEFAULT_QQ_COOKIE_FILE = path.join(__dirname, '.qq-cookie');
@@ -154,7 +138,10 @@ const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname,
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const MUSIC_DOWNLOAD_DIR = process.env.MINERADIO_DOWNLOAD_DIR || path.join(__dirname, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const DEFAULT_CACHE_ROOT = process.resourcesPath
+  ? path.join(path.dirname(process.resourcesPath), 'MineradioCache')
+  : path.join(__dirname, 'MineradioCache');
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || path.join(DEFAULT_CACHE_ROOT, 'beatmaps');
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
@@ -5567,19 +5554,6 @@ async function handlePlatformListenReport(body) {
 // ====================================================================
 //  HTTP Server
 // ====================================================================
-function loginEasterEggGateUnlocked() {
-  if (!LOGIN_EASTER_EGG_GATE_FILE) return true;
-  try {
-    const state = JSON.parse(fs.readFileSync(LOGIN_EASTER_EGG_GATE_FILE, 'utf8')) || {};
-    return state.gateVersion === LOGIN_EASTER_EGG_GATE_VERSION &&
-      state.cookieResetVersion === LOGIN_EASTER_EGG_GATE_VERSION &&
-      state.resetComplete === true &&
-      state.unlocked === true;
-  } catch (_) {
-    return false;
-  }
-}
-
 const server = http.createServer(async (req, res) => {
   refreshConfiguredCookieStores(false);
   const url = new URL(req.url, 'http://localhost:' + PORT);
@@ -5594,16 +5568,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     streamRegisteredLocalMedia(req, res, target);
-    return;
-  }
-
-  if (LOGIN_EASTER_EGG_PROTECTED_ROUTES.has(pn) && !loginEasterEggGateUnlocked()) {
-    sendJSON(res, {
-      ok: false,
-      unlocked: false,
-      error: 'LOGIN_EASTER_EGG_LOCKED',
-      message: '请先完成登录彩蛋解锁。',
-    }, 423);
     return;
   }
 

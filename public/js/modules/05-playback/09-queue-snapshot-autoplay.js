@@ -12,7 +12,6 @@ function queueItemKey(song) {
 // 快照只保存可寻址的轻量字段。内嵌封面是 base64 data URL、内嵌歌词最多 512 KB，
 // 一旦写进队列快照，每次 tick 都要同步序列化几十上百 MB，会直接卡死主线程。
 // 这些内容在文件夹重扫时会由 syncResolvedLocalSongReferences 重新挂回来。
-var PLAYBACK_SNAPSHOT_QUEUE_LIMIT = 600;
 var PLAYBACK_SNAPSHOT_URL_MAX = 2048;
 var PLAYBACK_SNAPSHOT_IDENTITY_KEYS = [
   'provider', 'source', 'type', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
@@ -71,10 +70,33 @@ function playbackRestoreSongSnapshot(song, minimal) {
 function readLastPlaybackSnapshot() {
   try {
     var raw = localStorage.getItem(LAST_PLAYBACK_STORE_KEY);
-    if (!raw) return null;
-    var data = JSON.parse(raw);
-    if (!data || data.version !== 1 || !data.current) return null;
-    return data;
+    if (raw) {
+      var data = JSON.parse(raw);
+      if (data && data.version === 1 && data.current) return data;
+    }
+
+    // main 旧版把完整队列保存在 playback-session-v1。直接从同一个
+    // localStorage profile 读取它，不复制、合并或移动任何 Electron 数据。
+    var legacyRaw = localStorage.getItem('mineradio-playback-session-v1');
+    if (!legacyRaw) return null;
+    var legacy = JSON.parse(legacyRaw);
+    var legacyQueue = legacy && Array.isArray(legacy.queue) ? legacy.queue : [];
+    if (!legacyQueue.length) return null;
+    var legacyIndex = Math.max(0, Math.min(legacyQueue.length - 1, Number(legacy.currentIdx) || 0));
+    var legacyCurrent = legacyQueue[legacyIndex];
+    if (!legacyCurrent) return null;
+    return {
+      version: 1,
+      savedAt: Number(legacy.savedAt) || Date.now(),
+      reason: 'main-playback-session-v1',
+      currentIdx: legacyIndex,
+      currentTime: Math.max(0, Number(legacy.currentTime) || 0),
+      duration: playbackDurationFromSong(legacyCurrent),
+      playing: false,
+      playMode: legacy.playMode || 'loop',
+      current: legacyCurrent,
+      queue: legacyQueue,
+    };
   } catch (e) {
     return null;
   }
@@ -104,22 +126,18 @@ function saveLastPlaybackSnapshot(force, reason) {
     current: playbackRestoreSongSnapshot(song),
     queue: queue
   }; }
-  // 先缩短队列，再降级为精简字段；单曲字段本身臃肿时，只缩短长度是压不进配额的。
+  // 任何成功写入的快照都必须保留完整队列。普通字段超出配额时只缩减
+  // 单曲字段，不缩短队列；两次都失败则保留上一次完整快照。
   var attempts = [
-    { limit: PLAYBACK_SNAPSHOT_QUEUE_LIMIT, minimal: false },
-    { limit: 200, minimal: false },
-    { limit: 200, minimal: true },
-    { limit: 80, minimal: true }
+    { minimal: false },
+    { minimal: true }
   ];
   for (var i = 0; i < attempts.length; i++) {
-    var limit = Math.min(attempts[i].limit, sourceQueue.length);
-    var start = limit >= sourceQueue.length ? 0 : Math.max(0, Math.min(currentIdx - Math.floor(limit / 2), sourceQueue.length - limit));
     try {
-      var packed = sourceQueue.slice(start, start + limit).map(function (item) {
+      var packed = sourceQueue.map(function (item) {
         return playbackRestoreSongSnapshot(item, attempts[i].minimal);
       }).filter(function (item) { return item && (item.id || item.mid || item.localKey || item.name); });
       var payload = payloadForQueue(packed, attempts[i].minimal);
-      payload.currentIdx = Math.max(0, currentIdx - start);
       localStorage.setItem(LAST_PLAYBACK_STORE_KEY, JSON.stringify(payload));
       return;
     } catch (error) {

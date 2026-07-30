@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, '..');
 const integrationPath = path.join(root, 'public/js/modules/05-playback/18-smart-transition-integration.js');
 const integration = fs.readFileSync(integrationPath, 'utf8');
 const playback = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/13-playback-start-audio.js'), 'utf8');
+const trackDetail = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), 'utf8');
 const loader = fs.readFileSync(path.join(root, 'public/js/index-loader.js'), 'utf8');
 const particles = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/00-pointer-cover-particles.js'), 'utf8');
 const mainLoop = fs.readFileSync(path.join(root, 'public/js/modules/11-main-loop.js'), 'utf8');
@@ -76,24 +77,10 @@ test('smart transition owns the crossfade path without the removed upstream Auto
   assert.match(playback, /claimSmartTransitionPreparedAudioForPlayback\(audio\)/);
 });
 
-test('smart transition has exclusive ownership while album gapless resumes when it is disabled', () => {
-  const canAdvanceSource = namedFunctionSource(playback, 'albumGaplessQueueCanAdvance');
-  const setStyleSource = namedFunctionSource(integration, 'setSmartTransitionStyle');
-  assert.match(canAdvanceSource, /isSmartTransitionEnabled\(\)\) return false/);
-  assert.match(setStyleSource, /restoreAlbumGaplessOutgoingIfCurrent/);
-  assert.match(setStyleSource, /clearAlbumGaplessPreload\('smart-transition-enabled'\)/);
-
-  const sandbox = {
-    isSmartTransitionEnabled: () => true,
-    albumGaplessState: { enabled: true, albumKey: 'album:1' },
-    playMode: 'order',
-    playQueue: [{}, {}],
-    albumGaplessSongKey: () => 'album:1',
-  };
-  const canAdvance = vm.runInNewContext(`(${canAdvanceSource})`, sandbox);
-  assert.equal(canAdvance(0), false);
-  sandbox.isSmartTransitionEnabled = () => false;
-  assert.equal(canAdvance(0), true);
+test('album detail no longer exposes or activates a separate gapless mode', () => {
+  assert.doesNotMatch(trackDetail, /album-gapless-toggle|renderAlbumGaplessButton|toggleAlbumGaplessPlayback/);
+  assert.doesNotMatch(trackDetail, /detailAlbumGapless|setAlbumGaplessPlaybackContext|__albumGaplessKey/);
+  assert.match(trackDetail, /playQueue\s*=\s*detailAlbumSongs\.map\(cloneSong\)/);
 });
 
 test('smart transition drives the real cover-particle shader and commits the decoded cover at handoff', () => {

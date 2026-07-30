@@ -106,3 +106,26 @@ test('saving settings during the startup preview preserves the saved playback pr
   assert.doesNotMatch(presetExpression[1], /currentIdx/);
   assert.match(presetExpression[1], /\? playbackVisualPreset/);
 });
+
+test('legacy lyric line counts migrate to the current display mode without losing custom counts', () => {
+  const migration = vm.runInNewContext(`(() => {
+    ${namedFunctionSource(persistenceScript, 'clampRange')}
+    ${namedFunctionSource(persistenceScript, 'layoutNumber')}
+    ${namedFunctionSource(persistenceScript, 'layoutInteger')}
+    ${namedFunctionSource(persistenceScript, 'normalizeSavedLyricDisplayMode')}
+    ${namedFunctionSource(persistenceScript, 'savedLyricDisplayMode')}
+    ${namedFunctionSource(persistenceScript, 'savedLyricCustomLineCount')}
+    return {
+      mode: savedLyricDisplayMode,
+      count: savedLyricCustomLineCount
+    };
+  })()`);
+
+  assert.equal(migration.mode({ stageLyricLines: 1 }, 'triple'), 'single');
+  assert.equal(migration.mode({ stageLyricLines: 2 }, 'single'), 'dual');
+  assert.equal(migration.mode({ stageLyricLines: 3 }, 'single'), 'triple');
+  assert.equal(migration.mode({ stageLyricLines: 7 }, 'single'), 'custom');
+  assert.equal(migration.count({ stageLyricLines: 7 }, 4), 7);
+  assert.equal(migration.mode({ lyricDisplayMode: 'cinema', stageLyricLines: 2 }, 'single'), 'cinema');
+  assert.equal(migration.count({ lyricCustomLineCount: 6, stageLyricLines: 8 }, 4), 6);
+});

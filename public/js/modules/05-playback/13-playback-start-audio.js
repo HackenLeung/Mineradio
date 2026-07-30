@@ -820,7 +820,8 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   opts = opts || {};
   var transitionHandoff = !!(opts.smartTransitionHandoff && opts.preloadedAudio);
   var transitionPreviousAudio = transitionHandoff ? audio : null;
-  if (song && !song.localUrl && typeof ensureFreshLocalPlaybackUrl === 'function') {
+  if (song && typeof ensureFreshLocalPlaybackUrl === 'function'
+    && (!song.localUrl || (!song.customCover && !song.sidecarCover && !song.embeddedCover && !song.embeddedMediaParsed))) {
     await ensureFreshLocalPlaybackUrl(song);
   }
   if (!song || !song.localUrl) {
@@ -883,6 +884,15 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
         fetchLyric(currentLocalSong, token);
       }).catch(function () { });
     }
+    // 瘦身后的本地歌封面字段为空，需等本地库扫完按 localKey/localPath 现取。
+    // 启动快照自动恢复常在扫库完成前播放，这里延迟补一次，避免封面永远空白。
+    [900, 2600].forEach(function (delayMs) {
+      setTimeout(function () {
+        if (token !== trackSwitchToken || !currentLocalSong || currentLocalSong.localKey !== song.localKey) return;
+        var retryCover = typeof localLibraryCover === 'function' ? localLibraryCover(currentLocalSong) : '';
+        if (retryCover) loadCoverFromUrl(retryCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: true });
+      }, delayMs);
+    });
     safeRenderQueuePanel('local-metadata', { scrollCurrent: miniQueueOpen });
   };
   scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);

@@ -39,7 +39,6 @@ var FX_CONSOLE_LAYOUT = [
       { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频与 Wallpaper Engine', open: true, items: [
         fxConsoleItem('bg-color-picker', '背景颜色', '纯色 封面取色'),
         fxConsoleItem('bg-media-preview', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
-        fxConsoleItem('t-wallpaperEngineLink', 'Wallpaper Engine 联动', '壁纸 联动 启用 暂停'),
         fxConsoleItem('t-desktopLock', '锁定到桌面', '桌面 WorkerW 锁定 恢复窗口'),
         fxConsoleItem('wallpaper-engine-value', 'Wallpaper Engine', '壁纸库 识别 导入 恢复原背景', false),
         fxConsoleItem('fx-bgopacity', '背景透明度', '背景强度'),

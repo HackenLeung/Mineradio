@@ -55,9 +55,11 @@ test('download center and hover actions are loaded through upstream modular entr
 
 test('motion fold owns smart transition and visible desktop integrations without full desktop UI', () => {
   assert.match(html, /id="fx-overlay-fold"[\s\S]*<strong>动效<\/strong>/);
-  assert.match(html, /id="t-wallpaperEngineLink"[\s\S]*id="t-desktopLock"[\s\S]*id="smart-transition-style-seg"/);
+  assert.match(html, /id="t-desktopLock"[\s\S]*id="smart-transition-style-seg"/);
+  assert.doesNotMatch(html, /t-wallpaperEngineLink|Wallpaper Engine 联动/);
   assert.doesNotMatch(html, /id="t-wallpaperMode"|完整桌面模式/);
   assert.doesNotMatch(consoleWorkspace, /t-wallpaperMode|完整桌面模式/);
+  assert.match(css, /\.desktop-link-grid\{grid-template-columns:minmax\(0,1fr\)/);
   assert.match(css, /\.desktop-link-toggle/);
 });
 

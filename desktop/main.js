@@ -1,8 +1,54 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, protocol, desktopCapturer } = require('electron');
-const net = require('net');
-const http = require('http');
+const electron = require('electron');
+const { app, dialog } = electron;
 const path = require('path');
 const fs = require('fs');
+const APP_PACKAGE_INFO = (() => {
+  try {
+    return require('../package.json');
+  } catch (_) {
+    return {};
+  }
+})();
+const APP_METADATA = APP_PACKAGE_INFO.mineradio || {};
+const APP_NAME = process.env.MINERADIO_RUNTIME_NAME || APP_METADATA.runtimeName || APP_PACKAGE_INFO.productName || 'Mineradio';
+const APP_USER_MODEL_ID = process.env.MINERADIO_APP_USER_MODEL_ID || APP_METADATA.appUserModelId || (APP_PACKAGE_INFO.build && APP_PACKAGE_INFO.build.appId) || 'com.mineradio.desktop';
+const {
+  resolvePortableProfilePaths,
+  ensurePortableUserDataDirectory,
+} = require('./portable-profile');
+
+app.setName(APP_NAME);
+const PORTABLE_PROFILE_PATHS = resolvePortableProfilePaths({
+  packaged: app.isPackaged,
+  execPath: process.execPath,
+  developmentRoot: path.join(__dirname, '..'),
+  developmentUserData: process.env.MINERADIO_USER_DATA,
+});
+const INSTALL_ROOT = PORTABLE_PROFILE_PATHS.installRoot;
+const USE_PORTABLE_PROFILE = PORTABLE_PROFILE_PATHS.usesPortableUserData === true;
+const STABLE_USER_DATA_PATH = USE_PORTABLE_PROFILE
+  ? PORTABLE_PROFILE_PATHS.userDataPath
+  : app.getPath('userData');
+
+if (USE_PORTABLE_PROFILE) {
+  try {
+    ensurePortableUserDataDirectory(fs, STABLE_USER_DATA_PATH, { requireExisting: app.isPackaged });
+    app.setPath('userData', STABLE_USER_DATA_PATH);
+    app.setPath('sessionData', STABLE_USER_DATA_PATH);
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    dialog.showErrorBox(
+      'Mineradio 无法读取旧版数据',
+      `${detail}\n\n为避免创建一套空白数据，Mineradio 已停止启动。请恢复该目录并确认当前用户具有读写权限。`
+    );
+    app.exit(1);
+    throw error;
+  }
+}
+
+const { BrowserWindow, ipcMain, shell, screen, session, globalShortcut, Tray, Menu, protocol, desktopCapturer } = electron;
+const net = require('net');
+const http = require('http');
 const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const systemMemory = require('./system-memory');
@@ -14,11 +60,6 @@ const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
 const { CubeRemoteRuntime } = require('./cube-remote-runtime');
 const { DesktopLyricsWindowState } = require('./desktop-lyrics-window-state');
-const {
-  LoginEasterEggGate,
-  LOGIN_EASTER_EGG_GATE_VERSION,
-  LOGIN_EASTER_EGG_STATE_FILE,
-} = require('./login-easter-egg-gate');
 const {
   discoverQishuiClientDataRoots,
   discoverQishuiCookieStores,
@@ -87,7 +128,14 @@ let startupCompleted = false;
 let startupErrorReported = false;
 let localServerStartPromise = null;
 let mainWindowCreatePromise = null;
-let startupState = { pid: process.pid, startedAt: Date.now(), phase: 'module-loaded', events: [] };
+let startupState = {
+  pid: process.pid,
+  startedAt: Date.now(),
+  phase: 'module-loaded',
+  userData: STABLE_USER_DATA_PATH,
+  sessionData: (() => { try { return app.getPath('sessionData'); } catch (_) { return ''; } })(),
+  events: [],
+};
 const registeredGlobalHotkeys = new Map();
 let fullDesktopEscapeRegistered = false;
 let fullDesktopEscapeExitPending = false;
@@ -100,16 +148,6 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
-const APP_PACKAGE_INFO = (() => {
-  try {
-    return require('../package.json');
-  } catch (_) {
-    return {};
-  }
-})();
-const APP_METADATA = APP_PACKAGE_INFO.mineradio || {};
-const APP_NAME = process.env.MINERADIO_RUNTIME_NAME || APP_METADATA.runtimeName || APP_PACKAGE_INFO.productName || 'Mineradio';
-const APP_USER_MODEL_ID = process.env.MINERADIO_APP_USER_MODEL_ID || APP_METADATA.appUserModelId || (APP_PACKAGE_INFO.build && APP_PACKAGE_INFO.build.appId) || 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const CURRENT_FX_AUTOSAVE_FILE = 'current-fx-autosave.json';
 const CURRENT_FX_AUTOSAVE_MAX_BYTES = 12 * 1024 * 1024;
@@ -155,11 +193,6 @@ const QISHUI_OFFICIAL_CLIENT_DATA_DIRS = (process.env.QISHUI_OFFICIAL_CLIENT_DAT
   .map((value) => String(value || '').trim())
   .filter(Boolean);
 
-// Keep app-owned settings and provider credentials independent from the
-// user-selectable Chromium cache. app.setName() must run before the first
-// derived path lookup or Electron can recompute userData below the cache root.
-app.setName(APP_NAME);
-const STABLE_USER_DATA_PATH = path.join(app.getPath('appData'), APP_NAME);
 const desktopLyricsWindowState = new DesktopLyricsWindowState({
   fs,
   path,
@@ -168,46 +201,7 @@ const desktopLyricsWindowState = new DesktopLyricsWindowState({
 });
 desktopLyricsUserBounds = desktopLyricsWindowState.getBounds();
 
-function migrateLegacyPortableUserData() {
-  const sources = [];
-  const addSource = (value) => {
-    if (!value) return;
-    const resolved = path.resolve(String(value));
-    if (resolved === path.resolve(STABLE_USER_DATA_PATH) || sources.includes(resolved)) return;
-    sources.push(resolved);
-  };
-  addSource(process.env.MINERADIO_USER_DATA);
-  if (app.isPackaged) addSource(path.join(path.dirname(process.execPath), 'user-data'));
-  for (const source of sources) {
-    try {
-      if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) continue;
-      fs.mkdirSync(STABLE_USER_DATA_PATH, { recursive: true });
-      fs.cpSync(source, STABLE_USER_DATA_PATH, {
-        recursive: true,
-        force: false,
-        errorOnExist: false,
-        preserveTimestamps: true,
-        filter: (entry) => !/(^|[\\/])(Cache|Code Cache|GPUCache|DawnCache|Crashpad)([\\/]|$)/i.test(entry),
-      });
-      console.log('[UserDataMigration] imported legacy portable data from', source);
-    } catch (error) {
-      console.warn('[UserDataMigration] portable import skipped:', error.message);
-    }
-  }
-}
-
-migrateLegacyPortableUserData();
-fs.mkdirSync(STABLE_USER_DATA_PATH, { recursive: true });
-app.setPath('userData', STABLE_USER_DATA_PATH);
 const INITIAL_CACHE_SETTINGS = ensureCacheDirectories(readCacheSettings());
-const loginEasterEggGate = new LoginEasterEggGate({
-  userDataPath: STABLE_USER_DATA_PATH,
-  credentialRoots: () => [
-    chromiumSessionDataPath(cacheSettings || INITIAL_CACHE_SETTINGS),
-    (() => { try { return app.getPath('sessionData'); } catch (_) { return ''; } })(),
-    path.join(__dirname, '..'),
-  ],
-});
 const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS.nativePath;
 fs.mkdirSync(NATIVE_HELPER_TEMP_PATH, { recursive: true });
 process.env.MINERADIO_NATIVE_TEMP_DIR = NATIVE_HELPER_TEMP_PATH;
@@ -344,10 +338,11 @@ function cacheSettingsConfigPath() {
 }
 
 function defaultCacheRootPath() {
-  const dDrive = 'D:\\';
-  return fs.existsSync(dDrive)
-    ? path.join(dDrive, 'MineradioCache')
-    : path.join(app.getPath('userData'), 'cache');
+  return path.join(INSTALL_ROOT, 'MineradioCache');
+}
+
+function isLegacyDriveRootCachePath(value) {
+  return /^[a-z]:\\MineradioCache(?:\\)?$/i.test(String(value || ''));
 }
 
 function normalizeCacheRootPath(value) {
@@ -355,7 +350,8 @@ function normalizeCacheRootPath(value) {
   const candidate = String(value || '').trim();
   if (!candidate) return fallback;
   try {
-    return path.resolve(candidate);
+    const resolved = path.resolve(candidate);
+    return isLegacyDriveRootCachePath(resolved) ? fallback : resolved;
   } catch (_) {
     return fallback;
   }
@@ -372,13 +368,6 @@ function normalizeCacheSettings(value) {
     updatesPath: path.join(rootPath, 'updates'),
     nativePath: path.join(rootPath, 'native-helper-temp'),
   };
-}
-
-function chromiumSessionDataPath(settings) {
-  const chromiumRoot = settings && settings.chromiumPath
-    ? settings.chromiumPath
-    : normalizeCacheSettings(null).chromiumPath;
-  return path.join(chromiumRoot, APP_NAME);
 }
 
 function readCacheSettings() {
@@ -407,20 +396,15 @@ function ensureCacheDirectories(settings) {
   try {
     fs.mkdirSync(normalized.lyricsPath, { recursive: true });
     fs.mkdirSync(normalized.chromiumPath, { recursive: true });
-    fs.mkdirSync(chromiumSessionDataPath(normalized), { recursive: true });
     fs.mkdirSync(normalized.beatmapsPath, { recursive: true });
     fs.mkdirSync(normalized.updatesPath, { recursive: true });
     fs.mkdirSync(normalized.nativePath, { recursive: true });
     return normalized;
   } catch (error) {
-    // A removed, sleeping, or temporarily inaccessible custom drive must not
-    // prevent Electron from reaching app.ready and showing a window. Keep the
-    // saved preference intact and use a stable per-run fallback under userData.
-    const fallback = normalizeCacheSettings({ rootPath: path.join(STABLE_USER_DATA_PATH, 'cache-fallback') });
+    const fallback = normalizeCacheSettings({ rootPath: defaultCacheRootPath() });
     console.warn('[CacheSettings] cache root unavailable, using startup fallback:', error.message);
     fs.mkdirSync(fallback.lyricsPath, { recursive: true });
     fs.mkdirSync(fallback.chromiumPath, { recursive: true });
-    fs.mkdirSync(chromiumSessionDataPath(fallback), { recursive: true });
     fs.mkdirSync(fallback.beatmapsPath, { recursive: true });
     fs.mkdirSync(fallback.updatesPath, { recursive: true });
     fs.mkdirSync(fallback.nativePath, { recursive: true });
@@ -454,8 +438,8 @@ async function directoryUsageBytes(directory) {
 
 async function cacheSettingsSnapshot() {
   const settings = normalizeCacheSettings(cacheSettings);
-  const currentChromiumPath = app.getPath('sessionData');
-  const desiredChromiumPath = chromiumSessionDataPath(settings);
+  const currentChromiumPath = app.getPath('cache');
+  const desiredChromiumPath = settings.chromiumPath;
   const activeBeatmapsPath = process.env.MINERADIO_BEAT_CACHE_DIR || settings.beatmapsPath;
   const activeUpdatesPath = process.env.MINERADIO_UPDATE_DIR || settings.updatesPath;
   const activeNativePath = NATIVE_HELPER_TEMP_PATH;
@@ -537,11 +521,9 @@ async function pruneLyricCache() {
 
 let cacheSettings = INITIAL_CACHE_SETTINGS;
 try {
-  // `sessionData` owns Chromium cookies/storage/cache. `userData` stays on the
-  // stable roaming path so changing the cache directory never logs accounts out.
+  // Only disposable Chromium cache follows the cache setting. The complete
+  // Electron profile remains in the adjacent portable user-data directory.
   app.setPath('cache', cacheSettings.chromiumPath);
-  app.setPath('sessionData', chromiumSessionDataPath(cacheSettings));
-  app.setPath('userData', STABLE_USER_DATA_PATH);
 } catch (error) {
   console.warn('[CacheSettings] Chromium cache path fallback:', error.message);
 }
@@ -2547,6 +2529,7 @@ async function attachEmbeddedMediaToItem(item, metadata) {
       if (buffer.length) item.embeddedCover = `data:${String(picture.format || 'image/jpeg')};base64,${buffer.toString('base64')}`;
     }
     if (!item.embeddedLyrics) item.embeddedLyrics = extractEmbeddedLyricsText(common);
+    item.embeddedMediaParsed = true;
   } catch (error) {
     console.warn('Local embedded media read failed:', path.basename(item.filePath), error.message);
   }
@@ -4378,46 +4361,6 @@ async function clearSpotifyMusicLoginSession() {
   return { ok: true, provider: 'spotify' };
 }
 
-function loginEasterEggLockedResult() {
-  return {
-    ok: false,
-    unlocked: false,
-    error: 'LOGIN_EASTER_EGG_LOCKED',
-    message: '请先完成登录彩蛋解锁。',
-  };
-}
-
-async function initializeLoginEasterEggGate() {
-  const status = await loginEasterEggGate.initialize(() => clearAllProviderLoginState('startup-gate'));
-  if (status.resetPerformed) {
-    console.log('[LoginEasterEgg] first-run login credentials reset', {
-      gateVersion: LOGIN_EASTER_EGG_GATE_VERSION,
-      ok: status.resetComplete,
-      error: status.error || '',
-    });
-  }
-  return status;
-}
-
-async function clearAllProviderLoginState(reason) {
-  if (localServer && typeof localServer.clearAllLoginCredentials === 'function') {
-    const result = localServer.clearAllLoginCredentials(reason || 'login-reset');
-    if (!result || result.ok !== true) {
-      throw new Error(result && result.error || 'LOCAL_SERVER_LOGIN_STATE_CLEAR_FAILED');
-    }
-  }
-  const results = await Promise.allSettled([
-    clearNeteaseMusicLoginSession(),
-    clearQQMusicLoginSession(),
-    clearKugouMusicLoginSession(),
-    clearQishuiMusicLoginSession(),
-    clearSpotifyMusicLoginSession(),
-  ]);
-  const failed = results.find((result) => result.status === 'rejected');
-  if (failed) throw failed.reason;
-  return { ok: true };
-}
-
 function getWindowDisplay(win) {
   if (win && !win.isDestroyed()) {
     try {
@@ -5772,7 +5715,108 @@ function localOnlineMetadataCacheFile() {
   return path.join(STABLE_USER_DATA_PATH, 'local-online-metadata-cache-v1.json');
 }
 
+function localLibraryFoldersFile() {
+  return path.join(STABLE_USER_DATA_PATH, 'local-library-folders-v1.json');
+}
+
+function customCoversFile() {
+  return path.join(STABLE_USER_DATA_PATH, 'custom-covers-v1.json');
+}
+
+function sanitizeLocalLibraryFolders(payload) {
+  const source = Array.isArray(payload) ? payload : [];
+  const seen = new Set();
+  const folders = [];
+  source.forEach((value) => {
+    if (folders.length >= 256) return;
+    const folderPath = String(value || '').trim().slice(0, 4096);
+    if (!folderPath) return;
+    const key = process.platform === 'win32' ? folderPath.toLowerCase() : folderPath;
+    if (seen.has(key)) return;
+    seen.add(key);
+    folders.push(folderPath);
+  });
+  return folders;
+}
+
+function sanitizeCustomCovers(payload) {
+  const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+  const safePayload = {};
+  let totalLength = 0;
+  Object.keys(source).slice(-1000).forEach((rawKey) => {
+    const key = String(rawKey || '').slice(0, 2048);
+    const value = typeof source[rawKey] === 'string' ? source[rawKey] : '';
+    if (!key || value.length > 8 * 1024 * 1024) return;
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(value) && !/^https?:\/\//i.test(value)) return;
+    if (totalLength + key.length + value.length > 64 * 1024 * 1024) return;
+    safePayload[key] = value;
+    totalLength += key.length + value.length;
+  });
+  return safePayload;
+}
+
+async function readUserDataJson(filePath, fallback) {
+  try {
+    const payload = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
+    return payload == null ? fallback : payload;
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') console.warn('User data JSON read failed:', path.basename(filePath), error.message);
+    return fallback;
+  }
+}
+
+async function writeUserDataJsonAtomic(filePath, payload) {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.tmp-${process.pid}`;
+  await fs.promises.writeFile(tempPath, JSON.stringify(payload), 'utf8');
+  try {
+    await fs.promises.rename(tempPath, filePath);
+  } catch (error) {
+    if (!error || !['EEXIST', 'EPERM'].includes(error.code)) throw error;
+    await fs.promises.rm(filePath, { force: true });
+    await fs.promises.rename(tempPath, filePath);
+  }
+}
+
 let localOnlineMetadataCacheWritePromise = Promise.resolve();
+let localLibraryFoldersWritePromise = Promise.resolve();
+let customCoversWritePromise = Promise.resolve();
+
+ipcMain.handle('mineradio-local-library-folders-get', async () => {
+  const payload = sanitizeLocalLibraryFolders(await readUserDataJson(localLibraryFoldersFile(), []));
+  return { ok: true, payload };
+});
+
+ipcMain.handle('mineradio-local-library-folders-set', async (_event, payload) => {
+  const safePayload = sanitizeLocalLibraryFolders(payload);
+  localLibraryFoldersWritePromise = localLibraryFoldersWritePromise
+    .catch(() => {})
+    .then(() => writeUserDataJsonAtomic(localLibraryFoldersFile(), safePayload));
+  try {
+    await localLibraryFoldersWritePromise;
+    return { ok: true, count: safePayload.length };
+  } catch (error) {
+    return { ok: false, error: error.message || 'LOCAL_LIBRARY_FOLDERS_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-custom-covers-get', async () => {
+  const payload = sanitizeCustomCovers(await readUserDataJson(customCoversFile(), {}));
+  return { ok: true, payload };
+});
+
+ipcMain.handle('mineradio-custom-covers-set', async (_event, payload) => {
+  const safePayload = sanitizeCustomCovers(payload);
+  customCoversWritePromise = customCoversWritePromise
+    .catch(() => {})
+    .then(() => writeUserDataJsonAtomic(customCoversFile(), safePayload));
+  try {
+    await customCoversWritePromise;
+    return { ok: true, count: Object.keys(safePayload).length };
+  } catch (error) {
+    return { ok: false, error: error.message || 'CUSTOM_COVERS_WRITE_FAILED' };
+  }
+});
 
 ipcMain.handle('mineradio-local-online-metadata-cache-get', async () => {
   try {
@@ -5862,23 +5906,7 @@ ipcMain.handle('mineradio-current-fx-autosave-save', async (_event, payload = {}
   return writeCurrentFxAutosaveFile(payload || {});
 });
 
-ipcMain.handle('mineradio-login-easter-egg-status', async (event) => {
-  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER', unlocked: false };
-  return loginEasterEggGate.publicStatus();
-});
-
-ipcMain.handle('mineradio-login-easter-egg-unlock', async (event, value) => {
-  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER', unlocked: false };
-  return loginEasterEggGate.unlock(value);
-});
-
-ipcMain.handle('mineradio-login-easter-egg-reset', async (event) => {
-  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER', unlocked: false };
-  return loginEasterEggGate.resetForReplay(() => clearAllProviderLoginState('renderer-replay-reset'));
-});
-
 ipcMain.handle('netease-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
   return openNeteaseMusicLoginWindow(getSenderWindow(event));
 });
 
@@ -5887,7 +5915,6 @@ ipcMain.handle('netease-music-clear-login', async () => {
 });
 
 ipcMain.handle('qq-music-open-login', async (event, options) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
   return openQQMusicLoginWindow(getSenderWindow(event), options || {});
 });
 
@@ -5896,7 +5923,6 @@ ipcMain.handle('qq-music-clear-login', async () => {
 });
 
 ipcMain.handle('kugou-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
   return openKugouMusicLoginWindow(getSenderWindow(event));
 });
 
@@ -5905,7 +5931,6 @@ ipcMain.handle('kugou-music-clear-login', async () => {
 });
 
 ipcMain.handle('qishui-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
   return openQishuiMusicLoginWindow(getSenderWindow(event));
 });
 
@@ -5914,7 +5939,6 @@ ipcMain.handle('qishui-music-clear-login', async () => {
 });
 
 ipcMain.handle('spotify-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
   return openSpotifyMusicLoginWindow(getSenderWindow(event));
 });
 
@@ -6106,8 +6130,6 @@ function configureLocalServerEnvironment(port) {
   process.env.QISHUI_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-cookie');
   process.env.QISHUI_TOKEN_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-token');
   process.env.MINERADIO_LISTEN_SYNC_FILE = path.join(STABLE_USER_DATA_PATH, 'listen-sync-journal.json');
-  process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_FILE = path.join(STABLE_USER_DATA_PATH, LOGIN_EASTER_EGG_STATE_FILE);
-  process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_VERSION = LOGIN_EASTER_EGG_GATE_VERSION;
   if (!process.env.QISHUI_OAUTH_CONFIG_FILE) {
     process.env.QISHUI_OAUTH_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-oauth.json');
   }
@@ -6117,194 +6139,6 @@ function configureLocalServerEnvironment(port) {
   }
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   process.env.MINERADIO_DOWNLOAD_DIR = readSavedDownloadDir() || defaultDownloadDir();
-}
-
-const APP_OWNED_MIGRATION_FILES = [
-  '.cookie',
-  '.qq-cookie',
-  '.kugou-cookie',
-  '.qishui-cookie',
-  '.qishui-token',
-  '.qishui-oauth.json',
-  '.spotify-token.json',
-  '.spotify-credentials.json',
-  'current-fx-autosave.json',
-  'desktop-behavior.json',
-];
-
-function appOwnedMigrationFileValid(name, file) {
-  try {
-    if (!file || !fs.existsSync(file)) return false;
-    const stat = fs.statSync(file);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > 16 * 1024 * 1024) return false;
-    const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').trim();
-    if (!text) return false;
-    if (name === '.cookie') return neteaseCookieHasLogin(text);
-    if (name === '.qq-cookie') return qqCookieHasLogin(text);
-    if (name === '.kugou-cookie') return kugouCookieHasLogin(text);
-    if (name === '.qishui-cookie') return qishuiCookieHasLogin(text);
-    if (name === '.qishui-token') return text.length >= 10;
-    if (/\.json$/i.test(name)) return !!JSON.parse(text);
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function migrateMisplacedAppOwnedFiles() {
-  const sources = [];
-  const addSource = (value) => {
-    if (!value) return;
-    const resolved = path.resolve(value);
-    if (resolved === path.resolve(STABLE_USER_DATA_PATH) || sources.includes(resolved)) return;
-    sources.push(resolved);
-  };
-  try { addSource(app.getPath('sessionData')); } catch (_) {}
-  addSource(chromiumSessionDataPath(cacheSettings));
-
-  fs.mkdirSync(STABLE_USER_DATA_PATH, { recursive: true });
-  APP_OWNED_MIGRATION_FILES.forEach((name) => {
-    const target = path.join(STABLE_USER_DATA_PATH, name);
-    let best = appOwnedMigrationFileValid(name, target)
-      ? { file: target, mtimeMs: fs.statSync(target).mtimeMs }
-      : null;
-    sources.forEach((sourceDir) => {
-      const candidate = path.join(sourceDir, name);
-      if (!appOwnedMigrationFileValid(name, candidate)) return;
-      const mtimeMs = fs.statSync(candidate).mtimeMs;
-      if (!best || mtimeMs > best.mtimeMs) best = { file: candidate, mtimeMs };
-    });
-    if (!best || path.resolve(best.file) === path.resolve(target)) return;
-    try {
-      fs.copyFileSync(best.file, target);
-      fs.utimesSync(target, new Date(), new Date(best.mtimeMs));
-      console.log('[UserDataMigration] restored', name);
-    } catch (error) {
-      console.warn('[UserDataMigration] skipped', name, error.message);
-    }
-  });
-}
-
-function removeDeprecatedKugouVipEvidenceFiles() {
-  const fileName = '.kugou-vip-evidence.json';
-  const candidates = [
-    { label: 'stable-user-data', file: path.join(STABLE_USER_DATA_PATH, fileName) },
-    { label: 'legacy-resource-dir', file: path.join(__dirname, '..', fileName) },
-  ];
-  const removed = [];
-  for (const candidate of candidates) {
-    try {
-      if (!fs.existsSync(candidate.file)) continue;
-      fs.unlinkSync(candidate.file);
-      removed.push(candidate.label);
-    } catch (error) {
-      console.warn('[UserDataMigration] deprecated Kugou VIP evidence cleanup skipped', candidate.label, error.message);
-    }
-  }
-  if (removed.length) {
-    console.log('[UserDataMigration] removed deprecated Kugou VIP evidence', removed.join(','));
-  }
-}
-
-function migrateLegacyAuthStorage() {
-  removeDeprecatedKugouVipEvidenceFiles();
-  migrateMisplacedAppOwnedFiles();
-  try {
-    const legacyNeteaseCookie = path.join(__dirname, '..', '.cookie');
-    if (fs.existsSync(legacyNeteaseCookie)) {
-      if (!fs.existsSync(process.env.COOKIE_FILE)) {
-        fs.copyFileSync(legacyNeteaseCookie, process.env.COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyNeteaseCookie);
-    }
-  } catch (e) {
-    console.warn('Netease cookie migration skipped:', e.message);
-  }
-  try {
-    const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
-    if (fs.existsSync(legacyQQCookie)) {
-      if (!fs.existsSync(process.env.QQ_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQQCookie, process.env.QQ_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQQCookie);
-    }
-  } catch (e) {
-    console.warn('QQ cookie migration skipped:', e.message);
-  }
-  try {
-    const legacyKugouCookie = path.join(__dirname, '..', '.kugou-cookie');
-    if (fs.existsSync(legacyKugouCookie)) {
-      if (!fs.existsSync(process.env.KUGOU_COOKIE_FILE)) {
-        fs.copyFileSync(legacyKugouCookie, process.env.KUGOU_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyKugouCookie);
-    }
-  } catch (e) {
-    console.warn('Kugou cookie migration skipped:', e.message);
-  }
-  try {
-    const legacyQishuiCookie = path.join(__dirname, '..', '.qishui-cookie');
-    if (fs.existsSync(legacyQishuiCookie)) {
-      if (!fs.existsSync(process.env.QISHUI_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQishuiCookie, process.env.QISHUI_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQishuiCookie);
-    }
-  } catch (e) {
-    console.warn('Qishui cookie migration skipped:', e.message);
-  }
-  try {
-    const legacyQishuiToken = path.join(__dirname, '..', '.qishui-token');
-    if (fs.existsSync(legacyQishuiToken)) {
-      if (!fs.existsSync(process.env.QISHUI_TOKEN_FILE)) {
-        fs.copyFileSync(legacyQishuiToken, process.env.QISHUI_TOKEN_FILE);
-      }
-      fs.unlinkSync(legacyQishuiToken);
-    }
-  } catch (e) {
-    console.warn('Qishui token migration skipped:', e.message);
-  }
-  try {
-    const qishuiOAuthTarget = process.env.QISHUI_OAUTH_CONFIG_FILE;
-    const legacyQishuiOAuthFiles = [
-      path.join(__dirname, '..', '.qishui-oauth.json'),
-      path.join(__dirname, '..', 'qishui-oauth.json'),
-    ];
-    for (const legacyQishuiOAuth of legacyQishuiOAuthFiles) {
-      if (qishuiOAuthTarget && fs.existsSync(legacyQishuiOAuth) && !fs.existsSync(qishuiOAuthTarget)) {
-        fs.copyFileSync(legacyQishuiOAuth, qishuiOAuthTarget);
-        break;
-      }
-    }
-  } catch (e) {
-    console.warn('Qishui OAuth config migration skipped:', e.message);
-  }
-  try {
-    const legacySpotifyToken = path.join(__dirname, '..', '.spotify-token.json');
-    if (fs.existsSync(legacySpotifyToken)) {
-      if (!fs.existsSync(process.env.SPOTIFY_TOKEN_FILE)) {
-        fs.copyFileSync(legacySpotifyToken, process.env.SPOTIFY_TOKEN_FILE);
-      }
-      fs.unlinkSync(legacySpotifyToken);
-    }
-  } catch (e) {
-    console.warn('Spotify token migration skipped:', e.message);
-  }
-  try {
-    const spotifyConfigTarget = process.env.SPOTIFY_CONFIG_FILE;
-    const legacySpotifyConfigFiles = [
-      path.join(__dirname, '..', '.spotify-credentials.json'),
-      path.join(__dirname, '..', 'spotify-credentials.json'),
-    ];
-    for (const legacySpotifyConfig of legacySpotifyConfigFiles) {
-      if (spotifyConfigTarget && fs.existsSync(legacySpotifyConfig) && !fs.existsSync(spotifyConfigTarget)) {
-        fs.copyFileSync(legacySpotifyConfig, spotifyConfigTarget);
-        break;
-      }
-    }
-  } catch (e) {
-    console.warn('Spotify config migration skipped:', e.message);
-  }
 }
 
 async function ensureLocalServerStarted() {
@@ -6317,9 +6151,6 @@ async function ensureLocalServerStarted() {
     mainServerPort = port;
     configureLocalAppPermissions();
     configureLocalServerEnvironment(port);
-    migrateLegacyAuthStorage();
-    await initializeLoginEasterEggGate();
-
     const serverModulePath = path.join(__dirname, '..', 'server.js');
     try { delete require.cache[require.resolve(serverModulePath)]; } catch (_) {}
     localServer = require(serverModulePath);
@@ -6401,6 +6232,8 @@ async function createWindowOnce() {
     runtimeName: APP_NAME,
     startedAt: Date.now(),
     phase: 'window-create-start',
+    userData: STABLE_USER_DATA_PATH,
+    sessionData: (() => { try { return app.getPath('sessionData'); } catch (_) { return ''; } })(),
     events: [],
   };
 

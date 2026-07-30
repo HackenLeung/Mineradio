@@ -115,6 +115,7 @@ public static class MineradioDesktopWallpaperNative {
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT point);
   [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW", SetLastError=true)] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int index);
@@ -166,8 +167,9 @@ $origin = New-Object MineradioDesktopWallpaperNative+POINT
 $origin.X = ${x}
 $origin.Y = ${y}
 if (-not [MineradioDesktopWallpaperNative]::ScreenToClient($script:workerw, [ref]$origin)) { throw "WALLPAPER_WORKERW_BOUNDS_FAILED" }
-$positioned = [MineradioDesktopWallpaperNative]::SetWindowPos($target, [IntPtr]::new([Int64]1), $origin.X, $origin.Y, ${width}, ${height}, 0x0030)
+$positioned = [MineradioDesktopWallpaperNative]::SetWindowPos($target, [IntPtr]::Zero, $origin.X, $origin.Y, ${width}, ${height}, 0x0070)
 if (-not $positioned) { throw "WALLPAPER_WORKERW_POSITION_FAILED" }
+if (-not [MineradioDesktopWallpaperNative]::IsWindowVisible($target)) { throw "WALLPAPER_WORKERW_VISIBILITY_FAILED" }
 $className = New-Object System.Text.StringBuilder 128
 [MineradioDesktopWallpaperNative]::GetClassName($script:workerw, $className, $className.Capacity) | Out-Null
 [pscustomobject]@{
@@ -179,6 +181,7 @@ $className = New-Object System.Text.StringBuilder 128
   y = ${y}
   width = ${width}
   height = ${height}
+  visible = $true
 } | ConvertTo-Json -Compress
 if ($previousDpiContext -ne [IntPtr]::Zero) {
   try { [MineradioDesktopWallpaperNative]::SetThreadDpiAwarenessContext($previousDpiContext) | Out-Null } catch { }
@@ -191,7 +194,7 @@ function parseAttachOutput(stdout) {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     try {
       const parsed = JSON.parse(lines[index]);
-      if (parsed && parsed.ok === true) return parsed;
+      if (parsed && parsed.ok === true && parsed.visible === true) return parsed;
     } catch (_) { }
   }
   throw new Error('WALLPAPER_WORKERW_ACK_INVALID');

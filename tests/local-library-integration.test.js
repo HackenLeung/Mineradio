@@ -16,6 +16,8 @@ const queueSnapshot = read('public/js/modules/05-playback/09-queue-snapshot-auto
 const beatCacheModal = read('public/js/modules/03-beat/03-local-beat-cache-modal.js');
 const beatAnalysis = read('public/js/modules/03-beat/01-audio-beat-analysis.js');
 const coverLoading = read('public/js/modules/03-beat/05-cover-loading-crop.js');
+const customCoverMap = read('public/js/modules/05-playback/01-cover-custom-map.js');
+const playbackStart = read('public/js/modules/05-playback/13-playback-start-audio.js');
 const playlistDetail = read('public/js/modules/06-lyrics/02-playlist-detail.js');
 const pointerLayer = read('public/js/modules/02-visual/00-pointer-cover-particles.js');
 const indexHtml = read('public/index.html');
@@ -35,6 +37,10 @@ assert.match(desktopMain, /parseFile\(item\.filePath, \{ duration: true, skipCov
   'chooseLocalMusicFolder',
   'scanLocalMusicFolder',
   'resolveLocalMusicFile',
+  'getLocalLibraryFolders',
+  'setLocalLibraryFolders',
+  'getCustomCovers',
+  'setCustomCovers',
   'getLocalLyricsCache',
   'setLocalLyricsCache',
   'getLocalOnlineMetadataCache',
@@ -42,10 +48,15 @@ assert.match(desktopMain, /parseFile\(item\.filePath, \{ duration: true, skipCov
 ].forEach(name => assert.match(preload, new RegExp(`${name}:`), `${name} must be exposed through preload`));
 
 assert.match(upload, /function restoreLocalLibraryFolders\(/);
+assert.match(upload, /await hydrateLocalLibraryFolderPaths\(\)/);
+assert.match(upload, /setLocalLibraryFolders\(normalized\)/);
+assert.match(upload, /updateLocalLibraryFolder\(paths\[i\], \[\], \{ restoreError:/);
+assert.match(upload, /folder\.restoreError \? \('读取失败/);
 assert.match(upload, /function rebindRestoredLocalQueueSongs\(/);
 assert.match(upload, /function hydrateLocalFolderPreview\(/);
 assert.match(upload, /Math\.min\(3, songs\.length\)/);
 assert.match(upload, /Object\.assign\(song, cloneSong\(fresh\), \{ localMissing: false \}\)/);
+assert.match(upload, /embeddedMediaParsed: file\.embeddedMediaParsed === true/);
 assert.match(upload, /provider: provider,[\s\S]{0,500}albumAudioId:[\s\S]{0,250}mixSongId:/);
 assert.match(upload, /function compactLocalOnlineMetadata\(/);
 assert.match(upload, /source: provider/);
@@ -59,6 +70,35 @@ assert.match(upload, /syncResolvedLocalSongReferences\(song\)/);
 assert.match(upload, /localLibrarySongs[\s\S]{0,260}localFolderPlaylists[\s\S]{0,260}playQueue/);
 assert.match(upload, /function matchLocalFolderLyrics\(/);
 assert.match(upload, /function matchLocalSongLyricsWithRetry\(/);
+assert.match(upload, /function hasReusableLocalLyricMatch\(/);
+assert.match(upload, /function readReusableLocalLyricCache\(/);
+assert.match(upload, /getLocalLyricsCache\(cacheKey\)/);
+assert.match(upload, /function localFolderHasUsableLyricPayload\(/);
+assert.match(upload, /parseLyricResponseToOriginalState\(song \|\| \{\}, payload \|\| \{\}\)/);
+assert.match(upload, /cached && cached\.ok && localFolderHasUsableLyricPayload\(song, cached\.payload\)/);
+assert.match(upload, /return \{ reused: true, source: 'cache', provider: provider/);
+assert.match(upload, /return \{ reused: false, source: 'remote', provider: provider/);
+assert.match(upload, /if \(result && result\.reused\) localFolderLyricMatchState\.skipped \+= 1/);
+assert.doesNotMatch(upload, /applyLocalOnlineMetadata\(song, metadata\);[\s\S]{0,100}syncResolvedLocalSongReferences\(song\);[\s\S]{0,50}return true;/);
+assert.match(upload, /function hasReusableLocalOnlineMetadata\(/);
+assert.match(upload, /function normalizeStoredLocalOnlineMetadata\(/);
+assert.match(upload, /var LOCAL_LYRIC_MATCH_PROVIDERS = \['netease', 'kugou', 'qq'\]/);
+assert.match(upload, /function isLocalLyricMatchProvider\(/);
+assert.match(upload, /function localLyricMatchProviderOrder\(/);
+assert.match(upload, /function isAcceptableLocalLyricCandidate\(/);
+assert.match(upload, /function resolveLocalOnlineLyricMatch\(/);
+assert.match(upload, /LOCAL_ONLINE_LYRIC_EMPTY/);
+assert.match(upload, /!localFolderHasUsableLyricPayload\(song, response\)/);
+assert.match(upload, /savedPayload = savedOnlineSong \? await readReusableLocalLyricCache/);
+assert.match(upload, /provider: savedMetadata\.provider, metadata: savedMetadata, payload: savedPayload/);
+assert.match(upload, /ranked\.slice\(0, 2\)/);
+assert.doesNotMatch(upload, /providers = \[savedMetadata\.provider\]/);
+assert.match(upload, /syncLocalMetadata\(song, metadata\);[\s\S]{0,180}return \{ reused: false, source: 'remote'/);
+assert.match(upload, /return await resolveLocalOnlineLyricMatch\(song, desktopApi\)/);
+assert.match(upload, /localFolderLyricMatchState\.skipped \+= 1|skipped \+= 1/);
+assert.match(upload, /else pendingSongs\.push\(song\)/);
+assert.match(upload, /applyStoredLocalMetadataToLibrary\(\)/);
+assert.match(upload, /await hydrateLocalMetadataFromDisk\(\)/);
 assert.match(upload, /id="folder-lyric-match-/);
 assert.match(upload, /'匹配歌词'/);
 assert.match(upload, /folder-lyric-match-btn' \+ \(localFolderLyricMatchState\.active/);
@@ -69,7 +109,21 @@ assert.match(indexCss, /\.local-library-name,\.local-library-sub\{[^}]*display:b
 assert.match(indexCss, /\.local-library-folder:hover \.folder-lyric-match-btn/);
 
 assert.match(coverLoading, /isInlineCoverSrc\(directUrl\)[\s\S]{0,120}applyCoverDataUrl\(directUrl, opts\)/);
+assert.match(desktopMain, /local-library-folders-v1\.json/);
+assert.match(desktopMain, /custom-covers-v1\.json/);
+assert.match(desktopMain, /item\.embeddedMediaParsed = true/);
+assert.match(customCoverMap, /function hydrateCustomCoverMapFromDisk\(/);
+assert.match(customCoverMap, /Object\.assign\(\{\}, result\.payload, customCoverMap \|\| \{\}\)/);
+assert.match(customCoverMap, /localLibrarySongs\) \? localLibrarySongs : \[\]\)\.forEach\(hydrateCustomCover\)/);
+assert.match(customCoverMap, /setCustomCovers\(customCoverMap \|\| \{\}\)/);
+assert.match(playbackStart, /!song\.localUrl \|\| \(!song\.customCover && !song\.sidecarCover && !song\.embeddedCover && !song\.embeddedMediaParsed\)/);
 assert.match(indexHtml, /id="playlist-detail-panel"/);
+assert.match(upload, /data-local-detail-current="1">定位当前歌曲/);
+assert.match(upload, /function locateCurrentLocalLibraryTrack\(/);
+assert.match(upload, /localLibraryDetailState\.renderLimit = index \+ 1/);
+assert.match(upload, /data-local-detail-row="' \+ index/);
+assert.match(playlistDetail, /closest\('\[data-local-detail-current\]'\)/);
+assert.match(indexCss, /\.pl-detail-row\.is-current-located/);
 assert.match(indexCss, /playlist-panel-sticky \.panel-tabs\s*\{[\s\S]{0,180}grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 assert.match(indexCss, /\.panel-tab\s*\{[\s\S]{0,420}white-space:\s*nowrap/);
 assert.match(indexCss, /#playlist-detail-panel\.show\s*\{[\s\S]{0,120}pointer-events:\s*auto/);
@@ -80,10 +134,15 @@ assert.doesNotMatch(playlistDetail, /entries\.push\(\{ type: 'detail'/);
 assert.match(playlistDetail, /document\.getElementById\('playlist-detail-panel'\)/);
 assert.match(pointerLayer, /#playlist-detail-panel/);
 
-assert.match(queueSnapshot, /var packedQueue = Array\.isArray\(playQueue\) \? playQueue\.map/);
+assert.match(queueSnapshot, /function playbackRestoreSongSnapshot\(song, minimal\)/);
 assert.doesNotMatch(queueSnapshot, /playQueue\.slice\(0, 120\)/);
-assert.match(queueSnapshot, /var limits = \[packedQueue\.length, 1000, 500, 200, 80\]/);
-assert.match(queueSnapshot, /'localPath'.*'localFolderPath'.*'localLyricText'.*'embeddedLyrics'/s);
+assert.doesNotMatch(queueSnapshot, /PLAYBACK_SNAPSHOT_QUEUE_LIMIT|limit:\s*\d+/);
+assert.match(queueSnapshot, /var attempts = \[\s*\{ minimal: false \},\s*\{ minimal: true \}/);
+assert.match(queueSnapshot, /var packed = sourceQueue\.map/);
+assert.match(queueSnapshot, /var PLAYBACK_SNAPSHOT_IDENTITY_KEYS = \[/);
+assert.match(queueSnapshot, /function playbackSnapshotSafeUrl\(value\)/);
+assert.match(queueSnapshot, /\^data:/);
+assert.match(queueSnapshot, /'localPath'.*'localFolderPath'.*'localFolderName'/s);
 assert.match(queueSnapshot, /if \(snapshot\.playMode\) playMode = snapshot\.playMode/);
 assert.match(queueSnapshot, /currentLocalSong = isLocal \? playQueue\[currentIdx\] : null/);
 
@@ -101,10 +160,18 @@ assert.match(indexCss, /#local-beat-modal \.local-beat-modal\s*\{\s*pointer-even
 
 const inlineBranch = lyrics.indexOf("var inlineText = String(song.localLyricText || song.embeddedLyrics || '')");
 const onlineBranch = lyrics.indexOf('var onlineSong = localOnlineSongForMetadata(song)');
+const resolverBranch = lyrics.indexOf('if (typeof resolveLocalOnlineLyricMatch');
 const remoteFetch = lyrics.indexOf('var response = await apiJson(lyricEndpointForSong(onlineSong))');
-assert.ok(inlineBranch >= 0 && onlineBranch > inlineBranch && remoteFetch > onlineBranch,
-  'sidecar and embedded lyrics must win before cached or remote online lyrics');
+assert.ok(inlineBranch >= 0 && resolverBranch > inlineBranch && onlineBranch > resolverBranch && remoteFetch > onlineBranch,
+  'sidecar and embedded lyrics must win, then the verified resolver must run before legacy remote fallback');
 assert.match(lyrics, /getLocalLyricsCache\(cacheKey\)/);
 assert.match(lyrics, /setLocalLyricsCache\(cacheKey, response \|\| \{\}\)/);
+assert.match(lyrics, /resolveLocalOnlineLyricMatch\(song, window\.desktopWindow\)/);
+assert.match(lyrics, /!isLocalLyricMatchProvider\(provider\)\) return null/);
+assert.match(lyrics, /fallback && fallback\.payload/);
+assert.match(lyrics, /var resolved = await resolveLocalOnlineLyricMatch\(song, window\.desktopWindow\)/);
+assert.doesNotMatch(lyrics.slice(lyrics.indexOf('async function fetchLocalSongLyric'), lyrics.indexOf('async function fetchLyric')), /resolveLocalOnlineMetadata\(song, token\)/);
+assert.match(read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), /var providers = \[\{ key: 'netease'.*\{ key: 'kugou'.*\{ key: 'qq'/s);
+assert.doesNotMatch(read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), /var providers = \[[^\]]*qishui[^\]]*spotify/);
 
 console.log('OK local-library-integration');

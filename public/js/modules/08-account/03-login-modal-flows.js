@@ -433,7 +433,12 @@ function bindLoginWorkflowPointerEvents() {
     window.addEventListener('orientationchange', function () { scheduleLoginWorkflowEdges('orientation'); });
   }
 }
+function updateLoginResetAllButton() {
+  var button = document.getElementById('login-reset-all-btn');
+  if (button) button.hidden = !hasAnyPlatformLogin();
+}
 function updateLoginNodeGraphUi() {
+  updateLoginResetAllButton();
   var graph = document.getElementById('login-node-graph');
   if (graph) graph.setAttribute('data-provider', loginProvider);
   syncAccountProviderOrderUi();
@@ -565,15 +570,7 @@ async function showLoginModal(opts) {
   opts = opts || {};
   loginProvider = opts.provider ? normalizeLoginProviderKey(opts.provider) : 'netease';
   var modal = document.getElementById('login-modal');
-  if (typeof setLoginEasterEggMode === 'function' &&
-      (!loginEasterEggState || !loginEasterEggState.ready || !loginEasterEggState.unlocked)) {
-    setLoginEasterEggMode(true);
-  }
   openGsapModal(modal);
-  var unlocked = typeof prepareLoginEasterEggGate === 'function'
-    ? await prepareLoginEasterEggGate()
-    : true;
-  if (!unlocked) return;
   resumeLoginModalAfterGate();
 }
 function resumeLoginModalAfterGate() {

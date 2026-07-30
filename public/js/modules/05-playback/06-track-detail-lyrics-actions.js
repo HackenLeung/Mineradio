@@ -31,8 +31,6 @@ var trackDetailSeq = 0;
 var detailArtistSongs = [];
 var detailAlbumSongs = [];
 var detailAlbumContext = null;
-var detailAlbumGaplessEnabled = true;
-var detailAlbumGaplessUserTouched = false;
 var detailAlbumCollectionState = Object.create(null);
 var detailCommentSong = null;
 var detailCommentSubmitBusy = false;
@@ -201,35 +199,6 @@ async function toggleAlbumCollection() {
     if (btn) btn.classList.remove('busy');
   }
 }
-function renderAlbumGaplessButton() {
-  return '<button id="album-gapless-toggle" class="detail-action-toggle' + (detailAlbumGaplessEnabled ? ' on' : '') + '" type="button" onclick="toggleAlbumGaplessPlayback()">' +
-    (detailAlbumGaplessEnabled ? '无缝衔接 开' : '无缝衔接 关') +
-    '</button>';
-}
-function syncAlbumGaplessButton() {
-  var btn = document.getElementById('album-gapless-toggle');
-  if (!btn) return;
-  btn.classList.toggle('on', detailAlbumGaplessEnabled);
-  btn.textContent = detailAlbumGaplessEnabled ? '无缝衔接 开' : '无缝衔接 关';
-}
-function toggleAlbumGaplessPlayback() {
-  detailAlbumGaplessUserTouched = true;
-  detailAlbumGaplessEnabled = !detailAlbumGaplessEnabled;
-  if (typeof setAlbumGaplessPlaybackContext === 'function') {
-    setAlbumGaplessPlaybackContext(detailAlbumGaplessEnabled, detailAlbumContext, { userToggle: true });
-  }
-  syncAlbumGaplessButton();
-  showToast(detailAlbumGaplessEnabled ? '专辑无缝衔接已开启' : '专辑无缝衔接已关闭');
-}
-function tagAlbumSongsForGapless(songs, context) {
-  var albumKey = context && context.albumKey || '';
-  return (songs || []).map(function (song, i) {
-    var copy = cloneSong(song);
-    copy.__albumGaplessKey = albumKey;
-    copy.__albumTrackIndex = i;
-    return copy;
-  });
-}
 function renderAlbumSongList(songs) {
   detailAlbumSongs = (songs || []).map(cloneSong);
   if (!detailAlbumSongs.length) return '<div class="detail-empty">暂无专辑曲目</div>';
@@ -253,12 +222,8 @@ function renderAlbumSongList(songs) {
 function playAlbumDetailSong(i) {
   var song = detailAlbumSongs[i];
   if (!song) return;
-  var taggedSongs = tagAlbumSongsForGapless(detailAlbumSongs, detailAlbumContext);
-  playQueue = taggedSongs;
+  playQueue = detailAlbumSongs.map(cloneSong);
   currentIdx = i;
-  if (typeof setAlbumGaplessPlaybackContext === 'function') {
-    setAlbumGaplessPlaybackContext(detailAlbumGaplessEnabled, detailAlbumContext);
-  }
   safeRenderQueuePanel('album-detail-play');
   safeShelfRebuild('album-detail-play', true);
   closeTrackDetailModal();
@@ -615,7 +580,7 @@ function ensureLocalMatchModal() {
 function renderLocalMatchProviderTabs() {
   var target = document.getElementById('local-match-provider-tabs');
   if (!target) return;
-  var providers = [{ key: 'netease', label: '网易云' }, { key: 'qq', label: 'QQ' }, { key: 'kugou', label: '酷狗' }, { key: 'qishui', label: '汽水' }, { key: 'spotify', label: 'Spotify' }];
+  var providers = [{ key: 'netease', label: '网易云' }, { key: 'kugou', label: '酷狗' }, { key: 'qq', label: 'QQ' }];
   target.innerHTML = providers.map(function (item) {
     return '<button type="button" class="local-match-provider ' + (item.key === localMatchModalState.provider ? 'active' : '') + '" aria-pressed="' + (item.key === localMatchModalState.provider ? 'true' : 'false') + '" onclick="setLocalMatchProvider(\'' + item.key + '\')">' + item.label + '</button>';
   }).join('');
@@ -630,7 +595,9 @@ function openLocalMatchModal(song) {
   if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) { showToast('请选择本地歌曲'); return; }
   localMatchModalState.song = song;
   localMatchModalState.provider = typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease';
-  if (localMatchModalState.provider === 'local') localMatchModalState.provider = 'netease';
+  if (['netease', 'kugou', 'qq'].indexOf(localMatchModalState.provider) < 0) {
+    localMatchModalState.provider = typeof localLyricMatchProviderOrder === 'function' ? localLyricMatchProviderOrder()[0] : 'netease';
+  }
   localMatchModalState.candidates = [];
   var mask = ensureLocalMatchModal();
   renderLocalMatchProviderTabs();
@@ -731,10 +698,6 @@ function openTrackDetailModal(type, songOverride) {
     var albumUrl = albumDetailUrlForSong(song);
     var albumTitle = song.album || (song.type === 'podcast' ? (song.radioName || 'Podcast') : '未知专辑');
     var albumKey = currentAlbumKey(song);
-    detailAlbumGaplessUserTouched = false;
-    detailAlbumGaplessEnabled = typeof albumGaplessDefaultEnabledForContext === 'function'
-      ? albumGaplessDefaultEnabledForContext({ albumKey: albumKey })
-      : true;
     detailAlbumSongs = [];
     detailAlbumContext = {
       provider: songProviderKey(song),
@@ -758,7 +721,7 @@ function openTrackDetailModal(type, songOverride) {
       '<span class="detail-chip">' + escHtml(songSourceLabel(song)) + '</span>' +
       '<span class="detail-chip">按专辑顺序播放</span>' +
       '</div>' +
-      '<div class="detail-section"><div class="detail-section-head"><div class="detail-section-title">专辑曲目</div><div class="detail-section-actions">' + renderAlbumCollectionButton(song) + renderAlbumGaplessButton() + '</div></div><div id="album-song-list">' +
+      '<div class="detail-section"><div class="detail-section-head"><div class="detail-section-title">专辑曲目</div><div class="detail-section-actions">' + renderAlbumCollectionButton(song) + '</div></div><div id="album-song-list">' +
       (albumUrl ? '<div class="detail-loading">正在载入专辑曲目...</div>' : '<div class="detail-empty">' + escHtml(albumDetailMissingText(song)) + '</div>') +
       '</div></div>';
     syncAlbumCollectionState(song);
@@ -782,12 +745,6 @@ function openTrackDetailModal(type, songOverride) {
         if (!detailAlbumContext.albumKey && albumInfo) {
           detailAlbumContext.albumKey = (r.provider || songProviderKey(song)) + ':' + (albumInfo.albumId || albumInfo.id || albumInfo.albumMid || albumInfo.mid || albumTitle);
         }
-        if (!detailAlbumGaplessUserTouched && typeof albumGaplessDefaultEnabledForContext === 'function') {
-          detailAlbumGaplessEnabled = albumGaplessDefaultEnabledForContext(detailAlbumContext);
-        }
-        if (detailAlbumGaplessEnabled && typeof setAlbumGaplessPlaybackContext === 'function') {
-          setAlbumGaplessPlaybackContext(true, detailAlbumContext);
-        }
         var titleEl = document.getElementById('album-detail-title');
         var subEl = document.getElementById('album-detail-sub');
         if (titleEl && albumInfo.name) titleEl.textContent = albumInfo.name;
@@ -803,7 +760,6 @@ function openTrackDetailModal(type, songOverride) {
           }
         }
         if (target) target.innerHTML = renderAlbumSongList(songs);
-        syncAlbumGaplessButton();
         bindTrackDetailScrollers();
       }).catch(function () {
         var target = document.getElementById('album-song-list');

@@ -59,7 +59,6 @@ var fxDefaults = {
   backgroundColorMode: 'cover',
   backgroundColor: '#000000',
   backgroundOpacity: 1,
-  wallpaperEngineLink: false,
   wallpaperEngineDim: 0.18,
   windowBackgroundOpacity: 1,
   backgroundGlassOpacity: 0,

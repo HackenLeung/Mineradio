@@ -23,7 +23,26 @@ assert.doesNotMatch(installer, /RMDir\s+\/r\s+"\$INSTDIR"(?:\r?\n|$)/,
 assert.match(installer, /Section \/o "un\.删除用户数据（设置、缓存和登录状态）"/,
   'user data deletion must remain an explicit opt-in uninstall section');
 assert.match(installer, /RMDir \/r "\$INSTDIR\\user-data"/);
+assert.match(installer, /RMDir \/r "\$INSTDIR\\MineradioCache"/);
 assert.match(installer, /RMDir \/r "\$LOCALAPPDATA\\mineradio-updater"/);
+assert.match(installer, /RMDir \/r "\$INSTDIR\\resources"/,
+  'program resources must be removed before update extraction so stale code cannot survive');
+assert.match(installer, /RMDir \/r "\$INSTDIR\\locales"/);
+assert.match(installer, /!macro customFiles_x64[\s\S]*!insertmacro MineradioReplacePackagedProgramDirectories/,
+  'the current installer must replace stale program directories left by a main-era uninstaller');
+assert.match(installer, /RMDir \/r "\$INSTDIR\\resources"[\s\S]*CopyFiles \/SILENT "\$PLUGINSDIR\\7z-out\\resources" "\$INSTDIR"/);
+assert.doesNotMatch(installer, /\$PLUGINSDIR\\7z-out\\(?:user-data|MineradioCache)/,
+  'post-extraction replacement must never source or replace user data directories');
+
+const preferred = functionBody('MineradioUsePreferredInstallDir');
+assert.ok(preferred.indexOf('Call MineradioUseRegisteredInstallDir') < preferred.indexOf('${GetOptions} $R0 "/D=" $R1'),
+  'a valid registered legacy directory must take priority over /D and defaults');
+assert.match(preferred, /\$R2 == "2"[\s\S]*没有找到原 user-data[\s\S]*Abort/,
+  'a broken registered legacy install must stop instead of falling back to a fresh directory');
+assert.match(functionBody('MineradioRegisteredInstallPathCanBeUsed'), /IfFileExists "\$2\\user-data\\\." usable 0/);
+assert.match(functionBody('MineradioRegisteredInstallPathCanBeUsed'), /broken:[\s\S]*StrCpy \$1 "2"/);
+assert.doesNotMatch(functionBody('MineradioUseRegisteredInstallDir'), /Call MineradioNormalizeInstallDir/,
+  'the exact registered legacy install directory must not be renamed or nested');
 
 const normalize = functionBody('MineradioNormalizeInstallDir');
 assert.match(normalize, /ExpandEnvStrings \$0 "\$0"/);
@@ -49,9 +68,23 @@ assert.match(uninstallValidation, /Call un\.MineradioInstallDirLooksOwned/);
 assert.match(uninstallValidation, /SetErrorLevel 2[\s\S]*?Quit/);
 
 const removeFiles = functionBody('un.MineradioRemoveInstalledFiles');
+assert.match(removeFiles, /RMDir \/r "\$INSTDIR\\resources"/);
+assert.doesNotMatch(removeFiles, /RMDir \/r "\$INSTDIR\\user-data"/,
+  'default uninstall/update cleanup must preserve the adjacent complete profile');
+assert.doesNotMatch(removeFiles, /RMDir \/r "\$INSTDIR\\MineradioCache"/,
+  'default uninstall/update cleanup must preserve the adjacent cache root');
 assert.match(removeFiles, /Delete "\$INSTDIR\\\.mineradio-install-root"|Delete "\$INSTDIR\\\$\{MINERADIO_INSTALL_MARKER\}"/);
 assert.match(removeFiles, /Delete "\$INSTDIR\\resources\\app-update\.yml"/);
-assert.doesNotMatch(removeFiles, /RMDir\s+\/r/);
+assert.doesNotMatch(removeFiles, /user-data|MineradioCache/,
+  'default uninstall must leave the portable profile and adjacent cache untouched');
+
+assert.match(installer, /CreateDirectory "\$INSTDIR\\user-data"/,
+  'a fresh install must create an empty user-data dir so the packaged runtime (requireExisting) can start');
+assert.match(installer, /CreateDirectory "\$INSTDIR\\user-data"[\s\S]*\$\{If\} \$\{Errors\}[\s\S]*无法创建或访问用户数据目录[\s\S]*Abort/);
+assert.match(functionBody('MineradioValidateInstallDir'), /legacyProfileMissing:[\s\S]*没有找到原 user-data[\s\S]*Abort/,
+  'an existing Mineradio program directory without user-data must not be treated as a fresh install');
+assert.match(functionBody('MineradioUserDataPathIsWritable'), /FileOpen \$2 "\$0\\\.mineradio-installer-write-probe\.tmp" w/);
+assert.match(functionBody('MineradioValidateInstallDir'), /legacyProfileCheckWritable:[\s\S]*Call MineradioUserDataPathIsWritable[\s\S]*旧版用户数据目录不可写[\s\S]*Abort/);
 
 assert.match(afterPack, /fs\.rmSync\(appUpdateConfigPath, \{ force: true \}\)/,
   'unused electron-builder updater metadata must not recreate the legacy updater cache');

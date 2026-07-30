@@ -337,10 +337,12 @@ function localOnlineSongForMetadata(song) {
   song = song || {};
   var metadata = song.onlineMetadata || (typeof localMetadataMap !== 'undefined' && localMetadataMap[localMetadataKey(song)]) || null;
   if (!metadata) return null;
+  var provider = metadata.provider || metadata.source || metadata.platform || metadata.type || 'netease';
+  if (typeof isLocalLyricMatchProvider === 'function' && !isLocalLyricMatchProvider(provider)) return null;
   return Object.assign({}, metadata, {
-    type: metadata.provider || 'netease',
-    source: metadata.provider || 'netease',
-    provider: metadata.provider || 'netease',
+    type: provider,
+    source: provider,
+    provider: provider,
     name: metadata.name || song.name || '',
     artist: metadata.artist || song.artist || '',
     album: metadata.album || song.album || '',
@@ -355,12 +357,16 @@ async function fetchLocalSongLyric(song, token) {
   if (inlineText.trim()) {
     return applyFetchedLyricResponse(song, token, { lyric: inlineText }, { persist: false });
   }
-  var onlineSong = localOnlineSongForMetadata(song);
-  if (!onlineSong && typeof resolveLocalOnlineMetadata === 'function') {
-    await resolveLocalOnlineMetadata(song, token);
-    if (token !== trackSwitchToken) return null;
-    onlineSong = localOnlineSongForMetadata(song);
+  if (typeof resolveLocalOnlineLyricMatch === 'function') {
+    try {
+      var resolved = await resolveLocalOnlineLyricMatch(song, window.desktopWindow);
+      if (token !== trackSwitchToken) return null;
+      if (resolved && resolved.payload) return applyFetchedLyricResponse(song, token, resolved.payload, { persist: false });
+    } catch (error) {
+      console.warn('[LocalLyricInitialMatch]', song && song.name, error);
+    }
   }
+  var onlineSong = localOnlineSongForMetadata(song);
   if (!onlineSong) {
     setOriginalLyricsState(withLyricFallbackForSong(song, []), false, 'fallback', [], 'none');
     applyPreferredLyricsForCurrent(true);
@@ -378,6 +384,18 @@ async function fetchLocalSongLyric(song, token) {
   }
   var response = await apiJson(lyricEndpointForSong(onlineSong));
   var state = applyFetchedLyricResponse(song, token, response, { persist: false });
+  if ((!state || !state.usableLyric) && typeof resolveLocalOnlineLyricMatch === 'function') {
+    try {
+      var fallback = await resolveLocalOnlineLyricMatch(song, window.desktopWindow);
+      if (token !== trackSwitchToken) return null;
+      if (fallback && fallback.payload) {
+        state = applyFetchedLyricResponse(song, token, fallback.payload, { persist: false });
+        if (state && state.usableLyric) return state;
+      }
+    } catch (error) {
+      console.warn('[LocalLyricProviderFallback]', song && song.name, error);
+    }
+  }
   if (state && state.usableLyric && window.desktopWindow && typeof window.desktopWindow.setLocalLyricsCache === 'function') {
     window.desktopWindow.setLocalLyricsCache(cacheKey, response || {}).catch(function () { });
   }

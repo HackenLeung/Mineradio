@@ -8,6 +8,7 @@ const {
   desktopWindowCoexistAttachScript,
   desktopWindowDetachScript,
 } = require('../desktop/full-desktop-mode-runtime');
+const { workerWAttachScript } = require('../desktop/wallpaper-mode-runtime');
 
 function deferred() {
   let resolve;
@@ -734,6 +735,61 @@ test('native attach failure fails closed and restores the normal window', async 
   assert.equal(win.ignoreMouse, false);
   assert.equal(win.focusable, true);
   assert.equal(win.webContents.backgroundThrottling, true);
+});
+
+test('mixed-monitor physical conversion stays anchored to the Mineradio window display', async () => {
+  const primary = {
+    id: 1,
+    bounds: { x: 0, y: 0, width: 3440, height: 1440 },
+    workArea: { x: 0, y: 0, width: 3440, height: 1392 },
+  };
+  const portrait = {
+    id: 2,
+    bounds: { x: 3440, y: -1128, width: 1440, height: 2560 },
+    workArea: { x: 3440, y: -1128, width: 1440, height: 2512 },
+  };
+  const conversions = [];
+  const screen = {
+    getAllDisplays: () => [primary, portrait],
+    getPrimaryDisplay: () => primary,
+    getDisplayMatching: () => primary,
+    dipToScreenRect: (targetWindow, bounds) => {
+      conversions.push(targetWindow);
+      return targetWindow
+        ? { ...bounds }
+        : { ...bounds, y: portrait.bounds.y };
+    },
+  };
+  const win = new FakeBrowserWindow({ bounds: { x: 760, y: 156, width: 1920, height: 1080 } });
+  const { runtime, calls } = makeRuntime({ screen });
+
+  const result = await runtime.enable(win, { interactive: false, reason: 'mixed-monitor-lock' });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.attach[0] && {
+    x: calls.attach[0].x,
+    y: calls.attach[0].y,
+    width: calls.attach[0].width,
+    height: calls.attach[0].height,
+  }, primary.bounds);
+  assert.ok(conversions.length >= 2);
+  assert.equal(conversions.every((targetWindow) => targetWindow === win), true,
+    'DIP conversion must not use the cursor display via a null BrowserWindow');
+});
+
+test('passive WorkerW attach raises and verifies the Mineradio surface before acknowledging success', () => {
+  const script = workerWAttachScript({
+    hwnd: '424242',
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+  });
+  assert.match(script, /SetWindowPos\(\$target, \[IntPtr\]::Zero[\s\S]*0x0070/);
+  assert.match(script, /IsWindowVisible\(\$target\)/);
+  assert.match(script, /WALLPAPER_WORKERW_VISIBILITY_FAILED/);
+  assert.match(script, /visible = \$true/);
+  assert.doesNotMatch(script, /SetWindowPos\(\$target, \[IntPtr\]::new\(\[Int64\]1\)/);
 });
 
 test('coexist attach places the complete Mineradio surface below SysListView without mouse synthesis', () => {

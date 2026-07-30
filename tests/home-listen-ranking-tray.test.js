@@ -138,11 +138,11 @@ test('Next Up only exposes a real queued successor and never synthesizes a singl
   assert.match(dashboard, /'暂无下一首'/);
 });
 
-test('Wallpaper Engine link and desktop lock appear immediately above the Wallpaper Engine library row', () => {
-  const linkAt = consoleWorkspace.indexOf("fxConsoleItem('t-wallpaperEngineLink'");
+test('desktop lock appears immediately above the Wallpaper Engine library row without a separate link toggle', () => {
   const lockAt = consoleWorkspace.indexOf("fxConsoleItem('t-desktopLock'");
   const libraryAt = consoleWorkspace.indexOf("fxConsoleItem('wallpaper-engine-value'");
-  assert.ok(linkAt >= 0 && lockAt > linkAt && libraryAt > lockAt);
+  assert.ok(lockAt >= 0 && libraryAt > lockAt);
+  assert.doesNotMatch(consoleWorkspace, /t-wallpaperEngineLink|Wallpaper Engine 联动/);
 });
 
 test('tray is created at startup and the one-time default migration preserves later choices', () => {

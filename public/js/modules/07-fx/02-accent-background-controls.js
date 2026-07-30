@@ -124,9 +124,8 @@ function applyCustomBackgroundCropVars(root, layer) {
 function applyCustomBackground() {
   var color = normalizeHexColor(fx.backgroundColor || '#000000', '#000000');
   var rgb = hexToRgb(color);
-  var wallpaperEngineLinked = fx.wallpaperEngineLink === true;
-  var albumMode = !wallpaperEngineLinked && typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
-  var media = wallpaperEngineLinked ? null : customBackgroundActiveMedia();
+  var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
+  var media = customBackgroundActiveMedia();
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
@@ -139,7 +138,7 @@ function applyCustomBackground() {
   var glassBrightness = 1 + glassOpacity * 0.08;
   var glassVeil = glassOpacity * 0.075;
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
-  var override = wallpaperEngineLinked || albumMode || !!media || customColor || opacity < 1 || windowOpacity < 0.999 || glassActive;
+  var override = albumMode || !!media || customColor || opacity < 1 || windowOpacity < 0.999 || glassActive;
   var root = document.documentElement;
   var layer = document.getElementById('custom-bg');
   var video = document.getElementById('custom-bg-video');
@@ -149,12 +148,11 @@ function applyCustomBackground() {
   root.style.setProperty('--wallpaper-engine-dim', clampRange(fx.wallpaperEngineDim == null ? fxDefaults.wallpaperEngineDim : Number(fx.wallpaperEngineDim), 0, 0.85).toFixed(3));
   applyCustomBackgroundCropVars(root, layer);
   document.body.classList.toggle('custom-background-override', override);
-  document.body.classList.toggle('custom-background-flat', override && !media && !wallpaperEngineLinked);
+  document.body.classList.toggle('custom-background-flat', override && !media);
   document.body.classList.toggle('custom-background-album-cover', albumMode);
   document.body.classList.toggle('custom-background-video', hasVideo);
-  document.body.classList.toggle('custom-window-transparent', wallpaperEngineLinked || windowOpacity < 0.999);
+  document.body.classList.toggle('custom-window-transparent', windowOpacity < 0.999);
   document.body.classList.toggle('custom-bg-glass-active', glassActive);
-  document.body.classList.toggle('wallpaper-engine-linked', wallpaperEngineLinked);
   if (layer) {
     layer.style.setProperty('--custom-bg-image', image ? 'url("' + cssImageUrl(image) + '")' : 'none');
     layer.style.setProperty('--custom-bg-image-opacity', image ? opacity.toFixed(3) : '0');
@@ -234,9 +232,7 @@ function updateCustomBackgroundControls() {
   var imageValue = document.getElementById('bg-image-value');
   var albumBtn = document.getElementById('bg-album-toggle-btn');
   var cropBtn = document.getElementById('bg-media-crop-btn');
-  var linkToggle = document.getElementById('t-wallpaperEngineLink');
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
-  if (linkToggle) linkToggle.classList.toggle('on', fx.wallpaperEngineLink === true);
   if (picker) picker.value = color;
   if (value) value.textContent = customColor ? color.toUpperCase() : '\u5c01\u9762\u6e10\u53d8';
   if (picker && picker.closest) {

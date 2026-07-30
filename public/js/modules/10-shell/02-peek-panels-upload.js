@@ -91,7 +91,7 @@ function setPeek(el, on, key) {
     var runPlaylistOpenAnimation = key === 'pl' && !wasPeek ? shouldAnimatePlaylistPanelOpen(el) : false;
     if (key === 'pl' && !wasPeek) preparePlaylistPanelTabOnOpen(el);
     el.classList.add('peek');
-    if (key === 'pl' && typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
+    if (key === 'pl' && !wasPeek && typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
     if (key === 'pl' && !wasPeek) markPlaylistPanelMotion(el, playlistPanelMotionMs('open'));
     if (key === 'pl' && !wasPeek) {
       scheduleUiWarmTask(function () {

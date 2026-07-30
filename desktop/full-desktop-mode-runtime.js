@@ -428,7 +428,7 @@ function captureBrowserWindowState(win, screen) {
   } catch (_) { }
   let physicalBounds = { ...bounds };
   try {
-    if (screen && typeof screen.dipToScreenRect === 'function') physicalBounds = normalizeBounds(screen.dipToScreenRect(null, bounds), bounds);
+    if (screen && typeof screen.dipToScreenRect === 'function') physicalBounds = normalizeBounds(screen.dipToScreenRect(win, bounds), bounds);
   } catch (_) { }
   return {
     bounds,
@@ -1298,7 +1298,7 @@ class FullDesktopModeRuntime {
     const bounds = normalizeBounds(display.bounds);
     let physicalBounds = { ...bounds };
     if (this.platform === 'win32') {
-      const converted = safeCall(this.screen, 'dipToScreenRect', null, null, bounds);
+      const converted = safeCall(this.screen, 'dipToScreenRect', null, win, bounds);
       if (converted) physicalBounds = normalizeBounds(converted, bounds);
     }
     const workArea = normalizeBounds(display.workArea || display.bounds, bounds);
@@ -1327,7 +1327,7 @@ class FullDesktopModeRuntime {
     };
     let physicalBounds = { ...bounds };
     if (this.platform === 'win32') {
-      const converted = safeCall(this.screen, 'dipToScreenRect', null, null, bounds);
+      const converted = safeCall(this.screen, 'dipToScreenRect', null, this.window, bounds);
       if (converted) physicalBounds = normalizeBounds(converted, bounds);
     }
     this.snapshot = {
