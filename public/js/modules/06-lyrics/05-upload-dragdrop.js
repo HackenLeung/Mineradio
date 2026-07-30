@@ -773,6 +773,11 @@ function playLocalLibraryDetailTrack(index) {
   if (localLibraryDetailState.folderIndex < 0) return;
   playLocalFolderPlaylist(localLibraryDetailState.folderIndex, index);
 }
+function queueLocalLibraryDetailTrackNext(index) {
+  var folder = localFolderPlaylists[localLibraryDetailState.folderIndex];
+  var song = folder && folder.songs && folder.songs[index];
+  if (song) queueDetailSongNext(song);
+}
 function openLocalLibraryDetailArtist(index) {
   var folder = localFolderPlaylists[localLibraryDetailState.folderIndex];
   var song = folder && folder.songs && folder.songs[index];

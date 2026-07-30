@@ -185,7 +185,10 @@ function queueSongFileActionHtml(song, index) {
 }
 
 function localDetailFileActionHtml(index) {
-  return '<button type="button" class="pl-detail-row-action" data-local-detail-folder="' + index + '" title="打开所在文件夹" aria-label="打开所在文件夹">' + folderLocationIconSvg() + '</button>';
+  return '<span class="local-detail-row-actions">' +
+    '<button type="button" class="pl-detail-row-action local-detail-row-action queue-next" data-local-detail-next="' + index + '" title="下一首播放" aria-label="下一首播放">下</button>' +
+    '<button type="button" class="pl-detail-row-action local-detail-row-action" data-local-detail-folder="' + index + '" title="打开所在文件夹" aria-label="打开所在文件夹">' + folderLocationIconSvg() + '</button>' +
+    '</span>';
 }
 
 function onlineDetailDownloadActionHtml(song, index) {

@@ -767,6 +767,13 @@ if (playlistDetailPanelEl) playlistDetailPanelEl.addEventListener('click', funct
     if (typeof openLocalLibraryDetailArtist === 'function') openLocalLibraryDetailArtist(Number(localArtist.getAttribute('data-local-detail-artist')));
     return;
   }
+  var localNext = e.target && e.target.closest ? e.target.closest('[data-local-detail-next]') : null;
+  if (localNext) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof queueLocalLibraryDetailTrackNext === 'function') queueLocalLibraryDetailTrackNext(Number(localNext.getAttribute('data-local-detail-next')));
+    return;
+  }
   var localFolder = e.target && e.target.closest ? e.target.closest('[data-local-detail-folder]') : null;
   if (localFolder) {
     e.preventDefault();

@@ -25,14 +25,18 @@
     var previousSkin = state.skin;
     state = Object.assign({}, state, next);
     state.skin = skin(state.skin);
+    var trackLabel = [state.title, state.artist].filter(function (value) { return String(value || '').trim(); }).join(' - ') || '未播放';
     document.body.dataset.skin = state.skin;
     document.body.classList.toggle('visible', !!state.enabled);
+    var cube = document.getElementById('skin-cube');
+    if (cube) cube.title = trackLabel;
     document.querySelectorAll('[data-field="title"]').forEach(function (node) { node.textContent = state.title || '未播放'; });
     document.querySelectorAll('[data-field="artist"]').forEach(function (node) { node.textContent = state.artist || ''; });
     document.querySelectorAll('.cover-button').forEach(function (button) {
       button.classList.toggle('is-playing', !!state.playing);
-      button.title = state.playing ? '暂停' : '播放';
-      button.setAttribute('aria-label', button.title);
+      var playbackLabel = state.playing ? '暂停' : '播放';
+      button.title = button.closest('#skin-cube') ? trackLabel : playbackLabel;
+      button.setAttribute('aria-label', button.closest('#skin-cube') ? (trackLabel + '，' + playbackLabel) : playbackLabel);
       button.classList.toggle('has-cover', !!state.cover);
       var image = button.querySelector('.cover');
       if (!image) return;

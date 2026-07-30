@@ -617,6 +617,9 @@ body.desktop-shell #desktop-titlebar #dl-center-btn,
 body.desktop-shell #desktop-titlebar #update-entry {
   width: 30px;
   height: 30px;
+  flex: 0 0 30px;
+  box-sizing: border-box;
+  padding: 0;
   border-radius: 10px;
   box-shadow: none;
   background: rgba(4, 8, 10, .42);
@@ -630,13 +633,14 @@ body.desktop-shell #desktop-titlebar #visual-guide-btn {
   font-size: 14px
 }
 
-body.desktop-shell #desktop-titlebar #update-entry.available {
-  display: flex
+body.desktop-shell #desktop-titlebar #dl-center-btn svg,
+body.desktop-shell #desktop-titlebar #update-entry svg {
+  width: 16px;
+  height: 16px
 }
 
-body.desktop-shell #desktop-titlebar #update-entry svg {
-  width: 18px;
-  height: 18px
+body.desktop-shell #desktop-titlebar #update-entry.available {
+  display: flex
 }
 
 body.desktop-shell #desktop-titlebar #update-entry::before,
@@ -17651,6 +17655,78 @@ body.panel-reordering .mini-queue-item.is-reordering {
   }
 }
 
+/* Windows 125% scaling reduces a 1920px display to a 1536px CSS viewport.
+   Give the dashboard more room on the right and compact its first row so the
+   three quick-entry titles do not collapse into near-vertical text. */
+@media (min-width:1201px) and (max-width:1600px) {
+  #empty-home .empty-home-shell {
+    grid-template-columns: minmax(440px, .42fr) minmax(0, .58fr);
+    gap: 12px
+  }
+
+  #empty-home .home-hero {
+    padding: 24px
+  }
+
+  #empty-home .home-grid.home-quick-grid {
+    grid-template-columns: minmax(240px, 1.55fr) repeat(3, minmax(120px, 1fr));
+    gap: 10px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card {
+    min-height: 140px;
+    padding: 12px 14px 14px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-label {
+    font-size: 9px;
+    margin-bottom: 5px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-featured {
+    min-height: 154px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-featured .home-card-title {
+    max-width: calc(100% - 118px);
+    font-size: 21px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-featured .home-card-sub {
+    max-width: calc(100% - 118px);
+    font-size: 11px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-featured .home-card-art {
+    right: 14px;
+    bottom: 14px;
+    width: 104px;
+    height: 104px;
+    border-radius: 22px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-quick .home-card-title {
+    max-width: calc(100% - 54px);
+    overflow: hidden;
+    font-size: 15px;
+    white-space: nowrap;
+    text-overflow: ellipsis
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-quick .home-card-sub {
+    max-width: calc(100% - 52px);
+    font-size: 9.5px
+  }
+
+  #empty-home .home-grid.home-quick-grid .home-card-quick .home-card-art {
+    right: 10px;
+    bottom: 10px;
+    width: 48px;
+    height: 48px;
+    border-radius: 13px
+  }
+}
+
 @media (min-width:761px) and (max-height:980px) {
   #empty-home .empty-home-shell {
     min-height: 0;
@@ -18216,6 +18292,7 @@ body.desktop-shell.desktop-wallpaper-mode.diy-mode #bottom-bar.stage-mode {
 #playlist-panel .pl-inline-detail[data-local-detail] .pl-detail-play{background:rgba(255,255,255,.075)!important;border-color:rgba(255,255,255,.16)!important}
 .desktop-link-grid{grid-template-columns:minmax(0,1fr);margin-bottom:4px}.desktop-link-toggle{min-height:44px!important;border-color:rgba(255,255,255,.14)!important;background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(7,9,14,.62))!important}.desktop-link-toggle:hover{border-color:rgba(255,255,255,.28)!important;background:rgba(255,255,255,.095)!important}
 .pl-detail-row-action{width:28px;height:28px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.09);border-radius:7px;background:rgba(255,255,255,.045);color:rgba(255,255,255,.52);opacity:0;transform:translateX(3px);transition:opacity .15s,transform .15s,background .15s,color .15s}.pl-detail-row:hover .pl-detail-row-action,.pl-detail-row-action:focus-visible{opacity:1;transform:none}.pl-detail-row-action:hover{background:rgba(255,255,255,.12);color:#fff}
+.local-detail-row-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto;opacity:0;pointer-events:none;transform:translateX(5px);transition:opacity .15s,transform .18s}.pl-detail-row:hover .local-detail-row-actions,.pl-detail-row:focus-within .local-detail-row-actions{opacity:1;pointer-events:auto;transform:none}#playlist-detail-panel .pl-detail-row-action.local-detail-row-action{width:24px;height:24px;padding:0;border:0!important;border-radius:5px;background:rgba(255,255,255,.06)!important;box-shadow:none!important;color:rgba(255,255,255,.55)!important;font-size:13px;line-height:1;cursor:pointer;opacity:1;transform:none}#playlist-detail-panel .pl-detail-row-action.local-detail-row-action:hover{background:rgba(255,255,255,.15)!important;color:#fff!important}#playlist-detail-panel .pl-detail-row-action.local-detail-row-action.queue-next:hover{background:rgba(var(--fc-accent-rgb),.14)!important;color:#fff!important}
 
 /* Song downloads: top entry, queue/search hover actions and the compact download center. */
 #dl-center-btn{position:relative;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.08);background:rgba(36,38,44,.46);color:rgba(184,188,196,.66);cursor:pointer}
