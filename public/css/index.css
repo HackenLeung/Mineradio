@@ -615,18 +615,12 @@ body.desktop-shell #desktop-titlebar::after {
 body.desktop-shell #desktop-titlebar #visual-guide-btn,
 body.desktop-shell #desktop-titlebar #dl-center-btn,
 body.desktop-shell #desktop-titlebar #update-entry {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   box-sizing: border-box;
   padding: 0;
   border-radius: 10px;
-  box-shadow: none;
-  background: rgba(4, 8, 10, .42);
-  border-color: rgba(255, 255, 255, .08);
-  color: rgba(224, 250, 255, .70);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none
 }
 
 body.desktop-shell #desktop-titlebar #visual-guide-btn {
@@ -634,9 +628,11 @@ body.desktop-shell #desktop-titlebar #visual-guide-btn {
 }
 
 body.desktop-shell #desktop-titlebar #dl-center-btn svg,
+body.desktop-shell #desktop-titlebar #visual-guide-btn svg,
 body.desktop-shell #desktop-titlebar #update-entry svg {
-  width: 16px;
-  height: 16px
+  width: 18px;
+  height: 18px;
+  display: block
 }
 
 body.desktop-shell #desktop-titlebar #update-entry.available {
@@ -651,9 +647,6 @@ body.desktop-shell #desktop-titlebar #update-entry::after {
 body.desktop-shell #desktop-titlebar #visual-guide-btn:hover,
 body.desktop-shell #desktop-titlebar #dl-center-btn:hover,
 body.desktop-shell #desktop-titlebar #update-entry:hover {
-  background: rgba(255, 83, 103, .10);
-  border-color: rgba(255, 83, 103, .32);
-  color: #fff;
   transform: translateY(-1px)
 }
 
@@ -15719,10 +15712,28 @@ body.empty-home-active #home-btn {
   stroke: currentColor !important;
 }
 
+#visual-guide-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#dl-center-btn,
 #visual-guide-btn,
+#update-entry,
+body.desktop-shell #desktop-titlebar #dl-center-btn,
 body.desktop-shell #desktop-titlebar #visual-guide-btn,
-html.control-glass-svg-ok #visual-guide-btn {
-  color: rgba(184, 188, 196, .58) !important;
+body.desktop-shell #desktop-titlebar #update-entry,
+html.control-glass-svg-ok #dl-center-btn,
+html.control-glass-svg-ok #visual-guide-btn,
+html.control-glass-svg-ok #update-entry {
+  border-radius: 10px !important;
+  color: rgba(255, 239, 190, .94) !important;
   border-color: rgba(255, 255, 255, .08) !important;
   background: rgba(36, 38, 44, .46) !important;
   box-shadow: 0 10px 26px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .06) !important;
@@ -15730,9 +15741,15 @@ html.control-glass-svg-ok #visual-guide-btn {
   -webkit-backdrop-filter: none !important;
 }
 
+#dl-center-btn:hover,
 #visual-guide-btn:hover,
+#update-entry:hover,
+body.desktop-shell #desktop-titlebar #dl-center-btn:hover,
 body.desktop-shell #desktop-titlebar #visual-guide-btn:hover,
-html.control-glass-svg-ok #visual-guide-btn:hover {
+body.desktop-shell #desktop-titlebar #update-entry:hover,
+html.control-glass-svg-ok #dl-center-btn:hover,
+html.control-glass-svg-ok #visual-guide-btn:hover,
+html.control-glass-svg-ok #update-entry:hover {
   color: #fff !important;
   border-color: rgba(255, 255, 255, .24) !important;
   background: rgba(72, 76, 86, .72) !important;

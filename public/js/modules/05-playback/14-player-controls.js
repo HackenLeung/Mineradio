@@ -103,7 +103,7 @@ function playbackResumePausedLongEnough(song) {
 function trackSwitchStallRecoveryAllowed(song, opts) {
   opts = opts || {};
   if (!opts.trackSwitch || opts.resumeRecovery) return true;
-  return playbackResumeProvider(song) === 'qishui';
+  return canRefreshCurrentPlaybackUrlForResume(song);
 }
 
 function isQishuiTrackStartStalled(song, opts, media, startTime, current) {
@@ -513,14 +513,18 @@ async function attemptAudioPlay(opts) {
       try {
         var recovered = await retryTrackSwitchAudioPlayOnce(opts, err, expectedMedia, expectedToken);
         if (recovered) return true;
-        return false;
       } catch (retryErr) {
         err = retryErr;
       }
     }
+    if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     console.warn('Audio play blocked:', err && (err.message || err));
-    if (!opts.trackSwitch && !opts.resumeRecovery) {
-      var resumed = await recoverCurrentTrackPlaybackFromFreshUrl('play-rejected', { originalError: err, silent: opts.silent });
+    if (!opts.resumeRecovery) {
+      var recoveryReason = opts.trackSwitch ? 'track-switch-play-rejected' : 'play-rejected';
+      var resumed = await recoverCurrentTrackPlaybackFromFreshUrl(recoveryReason, {
+        originalError: err,
+        silent: opts.silent
+      });
       if (resumed) return true;
     }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;

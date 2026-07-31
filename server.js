@@ -145,7 +145,7 @@ const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || path.join(DEFA
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.3.0';
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.3.1';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
@@ -3756,6 +3756,19 @@ async function qqGetJSON(targetUrl, params, opts) {
   if (opts.cookie !== false && qqCookie) headers.Cookie = qqCookie;
   const text = await requestText(u.toString(), { headers });
   return parseJSONText(text);
+}
+
+const AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES = 1024 * 1024;
+
+function normalizeAudioProxyUpstreamRange(range) {
+  const raw = String(range || '').trim();
+  const match = /^bytes=(\d+)-$/i.exec(raw);
+  if (!match) return raw;
+  const start = Number(match[1]);
+  if (!Number.isSafeInteger(start) || start < 0) return raw;
+  const end = start + AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES - 1;
+  if (!Number.isSafeInteger(end)) return raw;
+  return `bytes=${start}-${end}`;
 }
 
 function audioProxyHeadersFor(audioUrl, range) {
@@ -7546,7 +7559,11 @@ const server = http.createServer(async (req, res) => {
           return;
         }
       }
-      const hdr = audioProxyHeadersFor(audioUrl, range);
+      // Some NetEase FLAC URLs reject Chromium's open-ended `bytes=N-`
+      // request with HTTP 403. Ask the upstream for a bounded chunk instead;
+      // the browser will request the following ranges as it needs them.
+      const upstreamRange = normalizeAudioProxyUpstreamRange(range);
+      const hdr = audioProxyHeadersFor(audioUrl, upstreamRange);
       const up = await fetchWithTimeout(audioUrl, { headers: hdr }, 9000);
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),

@@ -4,10 +4,12 @@ Mineradio 是 Windows Electron 桌面音乐播放器，包含在线搜索与播�
 
 当前维护仓库：[HackenLeung/Mineradio](https://github.com/HackenLeung/Mineradio)
 
-## 本次更新内容（v1.3.0）
+## 本次更新内容（v1.3.1）
 
+- **播放稳定性修复：** 修复旧歌曲的异步播放请求在切歌后继续影响新歌曲的问题，切歌失败时增加当前媒体和 token 校验，并完善音频代理的分段 Range 请求。
+- **桌面歌词修复：** 主窗口生命周期清理时保留桌面歌词启用状态，重开后可继续恢复桌面歌词。
+- **更新入口调整：** 更新入口启动即显示，改为点击后手动检查更新，避免后台频繁请求；标题栏图标统一为 SVG 尺寸和线条样式。
 - **模块化架构同步：** 主界面运行时同步到模块化前端结构，并融合原有 Home、本地音乐、歌词、视觉控制台、桌面功能和远程控制能力，后续维护不再依赖旧版单文件前端。
-- **多平台账号与歌单：** 支持小云、小Q、小狗、小汽和 Spotify 的账号/搜索/歌单能力；Spotify 使用官方 OAuth，同步歌单与 Liked Songs，播放时按匹配源自动换源。
 - **本地音乐增强：** 保留已添加文件夹、完整本地元数据和在线匹配结果；继续优先读取自定义、同目录和内嵌封面/歌词，并新增“定位到当前歌曲”。
 - **歌词匹配修复：** 自动匹配只使用小云、小狗、小Q，优先当前登录平台；已匹配且有可用歌词的歌曲直接复用，持久缓存保留翻译、逐字歌词和罗马音。批量匹配加入平台间隔和限流冷却，减少 `405 操作频繁`。
 - **播放与过渡：** 保留智能过渡的音频和画面联动，删除独立的专辑“无缝衔接”和 Cuefield AutoMix 运行时；音源失败时按已登录平台有限回退，失败候选会回滚队列。
@@ -30,7 +32,7 @@ Mineradio 是 Windows Electron 桌面音乐播放器，包含在线搜索与播�
 发布后从 [GitHub Releases](https://github.com/HackenLeung/Mineradio/releases) 下载并运行：
 
 ```text
-Mineradio-1.3.0-Setup.exe
+Mineradio-1.3.1-Setup.exe
 ```
 
 - 已安装用户应直接选择原安装目录，例如 `D:\Mineradio`，安装器会优先采用注册表记录的原路径。
@@ -62,7 +64,7 @@ Mineradio-1.3.0-Setup.exe
 
 - **当前项目与维护：** [HackenLeung/Mineradio](https://github.com/HackenLeung/Mineradio) 是 Mineradio 的 Windows Electron 社区维护版；当前功能融合、Windows 构建、版本发布和问题处理由 [@HackenLeung](https://github.com/HackenLeung) 负责。
 - **原项目与原作者：** 本项目基于 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio) 继续开发，原作者为 [@XxHuberrr](https://github.com/XxHuberrr)，仓库保留原始署名和版权信息。
-- **同步与参考：** v1.3.0 同步了原项目后续模块化架构和部分功能，并融合当前维护版既有实现；Wallpaper Engine 与完整桌面/Home 方向还参考了 [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music)。具体来源与边界见 [NOTICE.md](./NOTICE.md) 和 [THIRD_PARTY_PORTS.md](./docs/THIRD_PARTY_PORTS.md)。
+- **同步与参考：** v1.3.1 延续了原项目后续模块化架构和部分功能，并融合当前维护版既有实现；Wallpaper Engine 与完整桌面/Home 方向还参考了 [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music)。具体来源与边界见 [NOTICE.md](./NOTICE.md) 和 [THIRD_PARTY_PORTS.md](./docs/THIRD_PARTY_PORTS.md)。
 - **版本关系：** 当前仓库发布的修改版不是原项目作者发布或维护的官方版本；本仓库的修改、说明和发布行为不代表原作者或参考项目维护者认可、授权、担保或背书。
 - **内容与账号边界：** 仓库不分发歌曲、歌词库、专辑封面库、平台歌单数据库、壁纸素材或账号凭据，也不提供绕过付费、会员、地区或版权限制的能力。
 - **隐私与反馈：** 登录状态和 Cookie 仅保存在用户本机。详见 [PRIVACY.md](./PRIVACY.md) 与 [SECURITY.md](./SECURITY.md)；问题请提交到当前仓库的 [GitHub Issues](https://github.com/HackenLeung/Mineradio/issues)。

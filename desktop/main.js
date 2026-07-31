@@ -4867,7 +4867,9 @@ async function closeWallpaperWindow(reason = 'disabled') {
 }
 
 function closeOverlayWindows(reason = 'overlay-close') {
-  closeDesktopLyricsWindow();
+  // Closing the main window is lifecycle cleanup, not a user request to
+  // disable desktop lyrics. Preserve the preference for the next launch.
+  closeDesktopLyricsWindow({ preserveEnabled: true, silent: true });
   cubeRemoteRuntime.close({ preserveEnabled: true });
   return closeWallpaperWindow(reason).catch((error) => {
     console.warn('[FullDesktopMode] close failed:', error && error.message || error);

@@ -2599,11 +2599,14 @@ function checkPlaybackResumeRecoveryGuard() {
   if (!/function updatePlaybackResumePauseMarker/.test(controlsText) || !/function playbackResumePausedLongEnough/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\('long-pause-stale-source'/.test(controlsText) || !/updatePlaybackResumePauseMarker\(reason\)/.test(fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '12-playback-switch-core.js'), 'utf8'))) {
     fail('manual resume after a long pause must refresh stale provider URLs before trying the old audio src');
   }
-  if (!/function schedulePlaybackStallRecovery/.test(controlsText) || !/ensureAudiblePlaybackGain\('resume-stall-before-refresh'\)/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\('play-rejected'/.test(controlsText)) {
+  if (!/function schedulePlaybackStallRecovery/.test(controlsText) || !/ensureAudiblePlaybackGain\('resume-stall-before-refresh'\)/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\(recoveryReason,/.test(controlsText) || !/'play-rejected'/.test(controlsText)) {
     fail('playback resume recovery must cover rejected play() and stalled media after WebAudio checks');
   }
-  if (!/function trackSwitchStallRecoveryAllowed/.test(controlsText) || !/playbackResumeProvider\(song\) === 'qishui'/.test(controlsText) || !/\(opts\.trackSwitch \|\| opts\.manual \|\| opts\.fastResume\)/.test(controlsText) || !/function nudgeQishuiTrackStart/.test(controlsText) || !/qishui-track-start-stalled/.test(controlsText) || /if \(opts\.trackSwitch && !opts\.resumeRecovery\) return;/.test(controlsText)) {
-    fail('Qishui auto-next start stalls must be watched, nudged, and refreshed instead of skipping track-switch recovery');
+  if (!/function trackSwitchStallRecoveryAllowed/.test(controlsText) || !/return canRefreshCurrentPlaybackUrlForResume\(song\)/.test(controlsText) || !/\(opts\.trackSwitch \|\| opts\.manual \|\| opts\.fastResume\)/.test(controlsText) || !/function nudgeQishuiTrackStart/.test(controlsText) || !/qishui-track-start-stalled/.test(controlsText) || /if \(opts\.trackSwitch && !opts\.resumeRecovery\) return;/.test(controlsText)) {
+    fail('Online track-start stalls must be watched and refreshed instead of poisoning later track switches');
+  }
+  if (!/var recoveryReason = opts\.trackSwitch \? 'track-switch-play-rejected' : 'play-rejected'/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\(recoveryReason,/.test(controlsText)) {
+    fail('track-switch play rejection must attempt fresh-url recovery before leaving the queue stuck');
   }
   if (
     !/resumeRecovery: !!opts\.resumeRecovery/.test(playbackText)

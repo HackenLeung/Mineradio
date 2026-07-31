@@ -231,6 +231,10 @@ function testStaticRecoveryWiring() {
   assert(/freshUrlAttemptCount\) \|\| 0\) >= 1/.test(controlsText));
   assert(/sourceFallbackRecovery:\s*recovery/.test(controlsText));
   assert(/if \(recovered === true\) return true/.test(controlsText));
+  assert(
+    /}\s*\n\s*if \(!playbackAttemptStillCurrent\(expectedMedia, expectedToken\)\) return false;\s*\n\s*console\.warn\('Audio play blocked:/.test(controlsText),
+    'stale track-switch retries must stop before fresh-url recovery',
+  );
   assert(/clearPlaybackResumeWatchdogs\(\)/.test(fallbackText));
   assert(/playbackResumeRecovery\.serial =/.test(fallbackText));
   assert(/audio\.__mineradioTrackSwitchToken = token/.test(startText));

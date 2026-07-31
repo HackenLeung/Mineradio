@@ -1,13 +1,16 @@
-# Mineradio v1.3.0 发布说明
+# Mineradio v1.3.1 发布说明
 
 ## 本次版本定位
 
-`v1.3.0` 是 HackenLeung/Mineradio 维护版的大版本功能同步与融合版本。它采用后续模块化架构，同时保留维护版原有的本地音乐、智能过渡、桌面歌词、Wallpaper Engine、桌面锁定、遥控器、均衡器、视觉设置和安装目录用户数据。
+`v1.3.1` 是 HackenLeung/Mineradio 维护版的补丁修复版本，延续模块化架构，同时保留维护版原有的本地音乐、智能过渡、桌面歌词、Wallpaper Engine、桌面锁定、遥控器、均衡器、视觉设置和安装目录用户数据。
 
 当前维护仓库：`https://github.com/HackenLeung/Mineradio`
 
 ## 用户可见更新
 
+- 修复切歌旧请求干扰新歌曲播放的问题，并完善音频代理 Range 分段处理。
+- 修复桌面歌词窗口关闭清理时启用状态被误清除的问题。
+- 更新按钮启动即显示，点击后才手动检查更新；标题栏图标统一尺寸、SVG 画布和线条样式。
 - 多平台账号、搜索和歌单流程补充到小云、小Q、小狗、小汽和 Spotify。
 - 本地音乐文件夹、内嵌封面/歌词、匹配结果和完整播放队列继续持久保存。
 - 本地歌词匹配优先当前平台，仅使用小云、小狗、小Q；已匹配歌曲跳过重复请求，翻译/逐字/罗马音写入持久缓存。
@@ -29,7 +32,7 @@
 
 ## 发布前检查
 
-- 确认 `package.json`、`package-lock.json`、运行时版本和内测配置均为 `1.3.0`。
+- 确认 `package.json`、`package-lock.json`、运行时版本和内测配置均为 `1.3.1`。
 - 确认更新与发布仓库为 `HackenLeung/Mineradio`。
 - 确认 `.cookie`、`.qq-cookie`、`.kugou-cookie`、`.spotify-token.json`、`user-data/`、`MineradioCache/`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 运行 `git diff --check` 和 `node scripts/quick-check.js`。
@@ -40,21 +43,21 @@
 
 ## 预期发布资产
 
-- `dist/Mineradio-1.3.0-Setup.exe`
-- `dist/Mineradio-1.3.0-Setup.exe.blockmap`
-- `dist/Mineradio-1.3.0-SHA256SUMS.txt`
+- `dist/Mineradio-1.3.1-Setup.exe`
+- `dist/Mineradio-1.3.1-Setup.exe.blockmap`
+- `dist/Mineradio-1.3.1-SHA256SUMS.txt`
 - `dist/latest.yml`
 
 Release tag：
 
 ```text
-v1.3.0
+v1.3.1
 ```
 
 Release 标题：
 
 ```text
-Mineradio v1.3.0 功能同步与兼容升级
+Mineradio v1.3.1 播放稳定性与桌面体验修复
 ```
 
 ## 发布边界

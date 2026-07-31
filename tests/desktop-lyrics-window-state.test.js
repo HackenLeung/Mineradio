@@ -51,5 +51,6 @@ test('desktop lyric renderer keeps approved readability, compact layout, and ups
   assert.match(html, /function applyCustomFontPayload\(font\)/);
   assert.match(html, /new FontFace/);
   assert.match(main, /closeDesktopLyricsWindow\(\{ preserveEnabled: true, silent: true \}\)/);
+  assert.match(main, /function closeOverlayWindows\(reason = 'overlay-close'\) \{[\s\S]*?closeDesktopLyricsWindow\(\{ preserveEnabled: true, silent: true \}\)/);
   assert.match(main, /desktopLyricsWindowState\.remember\(desktopLyricsWindow\.getBounds\(\), \{ immediate: true \}\)/);
 });
