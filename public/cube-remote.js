@@ -78,7 +78,8 @@
     document.querySelectorAll('.play-btn').forEach(function (btn) {
       btn.classList.toggle('is-playing', !!state.playing);
       btn.setAttribute('aria-label', state.playing ? '暂停' : '播放');
-      btn.title = state.playing ? '暂停' : '播放';
+      var mediaHint = [state.artist, state.title !== '未播放' ? state.title : ''].filter(Boolean).join(' - ');
+      btn.title = state.skin === 'cube' && mediaHint ? mediaHint : (state.playing ? '暂停' : '播放');
     });
 
     document.querySelectorAll('.open-btn, .pad-up').forEach(function (btn) {
