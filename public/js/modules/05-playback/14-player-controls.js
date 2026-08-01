@@ -355,6 +355,46 @@ function awaitMediaPlayWithTimeout(media, playPromise, token, timeoutMs) {
     });
   });
 }
+function waitForAudioPlaybackProgress(media, token, startTime, timeoutMs, minAdvance) {
+  timeoutMs = Math.max(400, Number(timeoutMs) || 1200);
+  minAdvance = Math.max(0.02, Number(minAdvance) || 0.04);
+  startTime = Math.max(0, Number(startTime) || 0);
+  return new Promise(function (resolve) {
+    var settled = false;
+    var timer = 0;
+    var poll = 0;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) {
+        media.removeEventListener(name, check);
+      });
+    }
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(!!ok);
+    }
+    function check(event) {
+      if (
+        !playbackAttemptStillCurrent(media, token)
+        || media.error
+        || media.ended
+        || media.paused
+        || (event && /^(error|ended|abort)$/.test(event.type))
+      ) return finish(false);
+      var current = isFinite(Number(media.currentTime)) ? Number(media.currentTime) : 0;
+      if (current >= startTime + minAdvance) finish(true);
+    }
+    ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) {
+      media.addEventListener(name, check);
+    });
+    poll = setInterval(check, 80);
+    timer = setTimeout(function () { finish(false); }, timeoutMs);
+    check();
+  });
+}
 function playbackMediaMatchesCurrentQueueItem(media) {
   if (!media || !media.src || currentIdx < 0 || currentIdx >= playQueue.length) return false;
   var song = playQueue[currentIdx];
@@ -362,10 +402,22 @@ function playbackMediaMatchesCurrentQueueItem(media) {
   var mediaKey = String(media.__mineradioQueueItemKey || '');
   return !!(expectedKey && mediaKey && expectedKey === mediaKey);
 }
+function createAudioClockStalledError() {
+  var error = new Error('AUDIO_CLOCK_STALLED');
+  error.code = 'AUDIO_CLOCK_STALLED';
+  return error;
+}
 
 async function completeAudioPlayStart(opts, reason, expectedMedia, expectedToken) {
   opts = opts || {};
   if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
+  if (opts.trackSwitch) {
+    var trackStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
+    if (!await waitForAudioPlaybackProgress(expectedMedia, expectedToken, trackStartTime, 1800, 0.04)) {
+      try { expectedMedia.pause(); } catch (e) { }
+      throw createAudioClockStalledError();
+    }
+  }
   await ensurePlaybackAudioGraph(reason || 'playback-started');
   if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
   switchPlaybackVisualToEmily();
@@ -422,10 +474,15 @@ async function resumePausedAudioFast(opts) {
   var media = audio;
   var src = media.currentSrc || media.src || '';
   var token = trackSwitchToken;
+  var startTime = isFinite(media.currentTime) ? Number(media.currentTime) : 0;
   try {
     restorePlaybackGain();
     await awaitMediaPlayWithTimeout(media, media.play(), token);
     if (!isSameAudioPlaybackTarget(media, src) || token !== trackSwitchToken) return false;
+    if (!await waitForAudioPlaybackProgress(media, token, startTime, 1200, 0.04)) {
+      try { media.pause(); } catch (e) { }
+      return false;
+    }
     switchPlaybackVisualToEmily();
     playing = true; setPlayIcon(true);
     if (typeof markStageLyricsPlaybackResume === 'function') {
@@ -473,6 +530,11 @@ async function attemptAudioPlay(opts) {
   try {
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     var currentSongForResume = playQueue && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
+    if (opts.manual && !opts.trackSwitch && !opts.resumeRecovery) {
+      // A manual click is an explicit new recovery attempt. Do not let a
+      // previous automatic refresh permanently consume this song's retry.
+      resetPlaybackFreshUrlRecoveryBudget(currentSongForResume);
+    }
     if (opts.manual && !opts.trackSwitch && !opts.resumeRecovery && audio && audio.src && audio.paused && !audio.ended && playbackResumePausedLongEnough(currentSongForResume)) {
       var staleResumeAt = currentResumeSeconds(playbackResumeRecovery && playbackResumeRecovery.pausedPosition);
       var refreshedResume = await recoverCurrentTrackPlaybackFromFreshUrl('long-pause-stale-source', {
@@ -484,10 +546,16 @@ async function attemptAudioPlay(opts) {
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     var fastResume = await resumePausedAudioFast(opts);
     if (fastResume === true) return true;
+    if (fastResume === false) {
+      var fastResumeStall = new Error('AUDIO_CLOCK_STALLED');
+      fastResumeStall.code = 'AUDIO_CLOCK_STALLED';
+      throw fastResumeStall;
+    }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     if (!audioGraphHealthy()) initAudio();
     if (opts.fade !== false) preparePlaybackFadeIn();
     if (opts.manual || opts.trackSwitch) {
+      var directStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
       var directPlay = expectedMedia.play();
       await applyAudioOutputDevice(expectedMedia);
       if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) {
@@ -496,6 +564,9 @@ async function attemptAudioPlay(opts) {
       }
       await ensurePlaybackAudioGraph(opts.manual ? 'manual-after-play-request' : 'track-switch-after-play-request');
       await awaitMediaPlayWithTimeout(expectedMedia, directPlay, expectedToken);
+      if (opts.manual && !opts.trackSwitch && !await waitForAudioPlaybackProgress(expectedMedia, expectedToken, directStartTime, 1200, 0.04)) {
+        throw createAudioClockStalledError();
+      }
     } else {
       await applyAudioOutputDevice(expectedMedia);
       if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;

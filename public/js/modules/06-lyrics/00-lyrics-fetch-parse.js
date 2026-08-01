@@ -352,8 +352,18 @@ function localOnlineSongForMetadata(song) {
 function localLyricCacheKey(song, onlineSong) {
   return ['local-lyrics-v1', localMetadataKey(song), onlineSong && songProviderKey(onlineSong), onlineSong && (onlineSong.id || onlineSong.mid || onlineSong.hash || '')].join('|');
 }
+function hasManualLocalLyricMatch(song) {
+  if (!song) return false;
+  if (song.manualMatched === true) return true;
+  if (song.onlineMetadata && song.onlineMetadata.manualMatched === true) return true;
+  if (typeof storedLocalMetadataForSong !== 'function') return false;
+  var stored = storedLocalMetadataForSong(song);
+  return !!(stored && stored.manualMatched === true);
+}
 async function fetchLocalSongLyric(song, token) {
-  var inlineText = String(song.localLyricText || song.embeddedLyrics || '');
+  // A manual re-match is an explicit correction, so it outranks the sidecar /
+  // embedded lyrics baked into the file — those are often what was wrong.
+  var inlineText = hasManualLocalLyricMatch(song) ? '' : String(song.localLyricText || song.embeddedLyrics || '');
   if (inlineText.trim()) {
     return applyFetchedLyricResponse(song, token, { lyric: inlineText }, { persist: false });
   }

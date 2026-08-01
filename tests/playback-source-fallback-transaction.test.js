@@ -7,10 +7,12 @@ const appRoot = path.resolve(__dirname, '..');
 const fallbackPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '11-provider-fallback.js');
 const startPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '13-playback-start-audio.js');
 const controlsPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '14-player-controls.js');
+const switchCorePath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '12-playback-switch-core.js');
 const progressPath = path.join(appRoot, 'public', 'js', 'modules', '06-lyrics', '04-progress-seek.js');
 const fallbackText = fs.readFileSync(fallbackPath, 'utf8');
 const startText = fs.readFileSync(startPath, 'utf8');
 const controlsText = fs.readFileSync(controlsPath, 'utf8');
+const switchCoreText = fs.readFileSync(switchCorePath, 'utf8');
 const progressText = fs.readFileSync(progressPath, 'utf8');
 
 function createMedia() {
@@ -229,6 +231,16 @@ function testStaticRecoveryWiring() {
   assert(/catchRecovery \? sourceFallbackRecoveryFailureOptions\(opts\)/.test(startText));
   assert(/setupRecovery \? sourceFallbackRecoveryFailureOptions\(opts\)/.test(startText));
   assert(/freshUrlAttemptCount\) \|\| 0\) >= 1/.test(controlsText));
+  assert(/opts\.manual && !opts\.trackSwitch && !opts\.resumeRecovery[\s\S]{0,260}resetPlaybackFreshUrlRecoveryBudget/.test(controlsText));
+  assert(/function waitForAudioPlaybackProgress/.test(controlsText));
+  const completeStartBlock = controlsText.slice(
+    controlsText.indexOf('async function completeAudioPlayStart'),
+    controlsText.indexOf('function canResumePausedAudioFast')
+  );
+  assert(/opts\.trackSwitch[\s\S]{0,320}waitForAudioPlaybackProgress/.test(completeStartBlock), 'natural track switches must wait for the media clock before showing playback');
+  assert(/AUDIO_CLOCK_STALLED/.test(controlsText));
+  assert(/function playbackStartEventHasClock/.test(switchCoreText));
+  assert(/startEventPendingClock[\s\S]{0,260}!startEventPendingClock/.test(switchCoreText), 'play events at 0:00 must not mark the player as running');
   assert(/sourceFallbackRecovery:\s*recovery/.test(controlsText));
   assert(/if \(recovered === true\) return true/.test(controlsText));
   assert(

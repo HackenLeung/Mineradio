@@ -12,14 +12,19 @@ function pauseCurrentAudioForTrackSwitch() {
   syncPlaybackStateFromAudioEvent('track-switch');
 }
 
+function playbackStartEventHasClock(media) {
+  return !!(media && isFinite(Number(media.currentTime)) && Number(media.currentTime) >= 0.04);
+}
+
 function syncPlaybackStateFromAudioEvent(reason) {
   if (typeof updatePlaybackResumePauseMarker === 'function') updatePlaybackResumePauseMarker(reason);
-  var isPlaying = !!(audio && audio.src && !audio.paused && !audio.ended);
+  var startEventPendingClock = (reason === 'play' || reason === 'playing') && !playbackStartEventHasClock(audio);
+  var isPlaying = !!(audio && audio.src && !audio.paused && !audio.ended && !startEventPendingClock);
   playing = isPlaying;
   setPlayIcon(isPlaying);
   if (typeof syncMediaSessionState === 'function') syncMediaSessionState();
-  if (!isPlaying) hideLoading();
-  if (reason === 'play' || reason === 'playing') {
+  if (!isPlaying && !startEventPendingClock) hideLoading();
+  if ((reason === 'play' || reason === 'playing') && isPlaying) {
     switchPlaybackVisualToEmily();
     if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason);
   }

@@ -148,6 +148,31 @@ function closeLyricTimingPopover(force) {
   suppressLyricTimingSiblingPanels(false);
 }
 
+function isLyricRematchableSong(song) {
+  return !!(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
+}
+
+function updateLyricRematchUi(song) {
+  var btn = document.getElementById('lyric-rematch-btn');
+  if (!btn) return;
+  var rematchable = isLyricRematchableSong(song);
+  btn.hidden = !rematchable;
+  btn.disabled = !rematchable;
+  btn.setAttribute('aria-hidden', rematchable ? 'false' : 'true');
+  if (!song) btn.title = '先播放一首歌';
+  else if (!rematchable) btn.title = '只有本地歌曲可以重新匹配在线版本';
+  else btn.title = '重新搜索并选择正确的在线版本';
+}
+
+function openLyricRematchForCurrentSong() {
+  var song = lyricTimingCurrentSong();
+  if (!song) { showToast('先播放一首歌'); return; }
+  if (!isLyricRematchableSong(song)) { showToast('只有本地歌曲可以重新匹配'); return; }
+  if (typeof openLocalMatchModal !== 'function') return;
+  closeLyricTimingPopover(true);
+  openLocalMatchModal(song);
+}
+
 function updateLyricTimingOffsetUi(songOverride) {
   var song = songOverride || lyricTimingCurrentSong();
   var key = lyricTimingSongKey(song);
@@ -161,6 +186,7 @@ function updateLyricTimingOffsetUi(songOverride) {
   document.querySelectorAll('[data-lyric-offset-step],[data-lyric-offset-reset]').forEach(function (btn) {
     btn.disabled = !key;
   });
+  updateLyricRematchUi(song);
 }
 
 function refreshLyricTimingAfterOffsetChange() {
@@ -220,11 +246,16 @@ function handleLyricTimingOffsetClick(e) {
   if (e && e._mineradioLyricTimingHandled) return;
   var stepBtn = e && e.target && e.target.closest ? e.target.closest('[data-lyric-offset-step]') : null;
   var resetBtn = e && e.target && e.target.closest ? e.target.closest('[data-lyric-offset-reset]') : null;
-  if (!stepBtn && !resetBtn) return;
+  var rematchBtn = e && e.target && e.target.closest ? e.target.closest('[data-lyric-rematch]') : null;
+  if (!stepBtn && !resetBtn && !rematchBtn) return;
   if (e) {
     e._mineradioLyricTimingHandled = true;
     e.preventDefault();
     e.stopPropagation();
+  }
+  if (rematchBtn) {
+    openLyricRematchForCurrentSong();
+    return;
   }
   if (resetBtn) setCurrentLyricTimingOffset(0);
   else adjustCurrentLyricTimingOffset(Number(stepBtn.getAttribute('data-lyric-offset-step')) || 0);
@@ -248,7 +279,7 @@ function bindLyricTimingOffsetControls() {
   root.addEventListener('mouseleave', function () { releaseLyricTimingSiblingPanelsSoon(root); });
   root.addEventListener('focusout', function () { releaseLyricTimingSiblingPanelsSoon(root); });
   root.addEventListener('click', handleLyricTimingOffsetClick);
-  root.querySelectorAll('[data-lyric-offset-step],[data-lyric-offset-reset]').forEach(function (btn) {
+  root.querySelectorAll('[data-lyric-offset-step],[data-lyric-offset-reset],[data-lyric-rematch]').forEach(function (btn) {
     btn.addEventListener('click', handleLyricTimingOffsetClick);
   });
   document.addEventListener('pointerdown', function (e) {

@@ -103,7 +103,9 @@
       paint-order:stroke fill;
       text-shadow:0 0 1px rgba(255,255,255,.34),0 0 calc(6px + var(--lyric-css-beat-glow)) var(--lyric-shadow-soft),0 0 calc(14px + var(--lyric-css-beat-glow)) var(--lyric-shadow-glow);
       filter:none;
-      opacity:0;
+      /* 可见性不能依赖入场动画跑完：没歌词的歌整首只有一行，
+         文本不再变化就不会再重放动画，动画一旦没 tick 就永久空白。 */
+      opacity:1;
       transform:translate3d(0,0,0);
       transform-origin:center;
       backface-visibility:hidden;
@@ -213,6 +215,7 @@
     var dragPointerId = null;
     var dragLast = { x:0, y:0 };
     var lastDrawAt = 0;
+    var lineAnimationTimer = 0;
     var layoutKey = '';
     var hoverInside = false;
     var hintVisible = false;
@@ -685,6 +688,13 @@
       line.classList.remove('in');
       void line.offsetWidth;
       line.classList.add('in');
+      // 入场动画只是装饰。窗口首帧还没合成时动画可能不 tick，
+      // 到点无条件摘掉 .in，让基础样式（opacity:1）接管。
+      if (lineAnimationTimer) clearTimeout(lineAnimationTimer);
+      lineAnimationTimer = setTimeout(function(){
+        lineAnimationTimer = 0;
+        line.classList.remove('in');
+      }, 900);
     }
     function syncLockClasses() {
       var locked = isLocked();

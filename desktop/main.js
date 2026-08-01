@@ -4710,6 +4710,18 @@ function sendDesktopLyricsState() {
   desktopLyricsWindow.webContents.send('mineradio-desktop-lyrics-state', desktopLyricsState);
 }
 
+// `ready-to-show` is unreliable for transparent overlays: a window whose first
+// frame never composites stays hidden forever while the toggle still reads on.
+// Showing is idempotent, so every path that touches the window re-asserts it.
+function ensureDesktopLyricsWindowVisible(win = desktopLyricsWindow) {
+  if (!win || win.isDestroyed() || win.isVisible()) return;
+  try {
+    win.showInactive();
+  } catch (error) {
+    console.warn('[DesktopLyrics] show failed:', error && error.message || error);
+  }
+}
+
 function createDesktopLyricsWindow(payload = {}) {
   const previousY = desktopLyricsState.y;
   const previousOpacity = desktopLyricsState.opacity;
@@ -4730,6 +4742,7 @@ function createDesktopLyricsWindow(payload = {}) {
       desktopLyricsWindow.setOpacity(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92));
     }
     applyDesktopLyricsMouseBehavior();
+    ensureDesktopLyricsWindowVisible();
     sendDesktopLyricsState();
     return desktopLyricsWindow;
   }
@@ -4764,18 +4777,25 @@ function createDesktopLyricsWindow(payload = {}) {
   startDesktopLyricsMousePoller();
   applyDesktopLyricsMouseBehavior();
   positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
-  desktopLyricsWindow.once('ready-to-show', () => {
-    if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-    desktopLyricsWindow.showInactive();
-    sendDesktopLyricsState();
+  const createdWindow = desktopLyricsWindow;
+  createdWindow.once('ready-to-show', () => {
+    ensureDesktopLyricsWindowVisible(createdWindow);
+    if (createdWindow === desktopLyricsWindow) sendDesktopLyricsState();
   });
-  desktopLyricsWindow.webContents.once('did-finish-load', sendDesktopLyricsState);
-  desktopLyricsWindow.on('closed', () => {
-    desktopLyricsWindow = null;
-    desktopLyricsMouseIgnored = null;
+  createdWindow.webContents.once('did-finish-load', () => {
+    ensureDesktopLyricsWindowVisible(createdWindow);
+    if (createdWindow === desktopLyricsWindow) sendDesktopLyricsState();
   });
-  desktopLyricsWindow.on('moved', rememberDesktopLyricsBounds);
-  desktopLyricsWindow.loadURL(overlayUrl('desktop-lyrics.html')).catch((e) => console.warn('Desktop lyrics load failed:', e.message));
+  createdWindow.on('closed', () => {
+    // A stale close must not drop the reference to a newer window, or the
+    // replacement becomes an orphan that never receives state and never closes.
+    if (desktopLyricsWindow === createdWindow) {
+      desktopLyricsWindow = null;
+      desktopLyricsMouseIgnored = null;
+    }
+  });
+  createdWindow.on('moved', rememberDesktopLyricsBounds);
+  createdWindow.loadURL(overlayUrl('desktop-lyrics.html')).catch((e) => console.warn('Desktop lyrics load failed:', e.message));
   return desktopLyricsWindow;
 }
 
