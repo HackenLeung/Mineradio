@@ -1808,7 +1808,7 @@ async function checkProviderFallbackTerminalStateGuard() {
   if (!/fallbackResult !== null/.test(playbackText) || /if \(isQQPlayback && await retryQQPlaybackWithCompatibleQuality\(song, idx, token, retryPlaybackOpts, data, requestedQuality\)\)/.test(playbackText)) {
     fail('normal playback must resolve fallback candidates itself and must not recursively retry QQ qualities after an empty URL response');
   }
-  if (!/AUDIO_PLAY_REQUEST_TIMEOUT_MS\s*=\s*9000/.test(controlsText) || !/function awaitMediaPlayWithTimeout/.test(controlsText) || (controlsText.match(/awaitMediaPlayWithTimeout\(/g) || []).length < 5 || !/function playbackMediaMatchesCurrentQueueItem/.test(controlsText)) {
+  if (!/AUDIO_PLAY_REQUEST_TIMEOUT_MS\s*=\s*12500/.test(controlsText) || !/function awaitMediaPlayWithTimeout/.test(controlsText) || (controlsText.match(/awaitMediaPlayWithTimeout\(/g) || []).length < 5 || !/function playbackMediaMatchesCurrentQueueItem/.test(controlsText)) {
     fail('media.play promises must be time-bounded and manual resume must reject stale audio ownership');
   }
   if (!/function probePlaybackAudioUrl/.test(serverText) || !/AUDIO_URL_PROBE_BYTES\s*=\s*8192/.test(serverText) || !/function audioProbeMagic/.test(serverText) || !/audioProxyHeadersFor\(audioUrl, 'bytes=0-'/.test(serverText) || !/&& !!magic/.test(serverText) || !/function probeQQAudioUrl/.test(serverText) || !/probe\.ok/.test(serverText) || !/function readStreamChunkWithTimeout/.test(serverText) || !/fetchWithTimeout\(audioUrl, \{ headers: hdr \}, 9000\)/.test(serverText)) {

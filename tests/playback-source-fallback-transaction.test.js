@@ -7,12 +7,16 @@ const appRoot = path.resolve(__dirname, '..');
 const fallbackPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '11-provider-fallback.js');
 const startPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '13-playback-start-audio.js');
 const controlsPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '14-player-controls.js');
+const graphPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '08-audio-graph-controls.js');
 const switchCorePath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '12-playback-switch-core.js');
+const smartTransitionPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '18-smart-transition-integration.js');
 const progressPath = path.join(appRoot, 'public', 'js', 'modules', '06-lyrics', '04-progress-seek.js');
 const fallbackText = fs.readFileSync(fallbackPath, 'utf8');
 const startText = fs.readFileSync(startPath, 'utf8');
 const controlsText = fs.readFileSync(controlsPath, 'utf8');
+const graphText = fs.readFileSync(graphPath, 'utf8');
 const switchCoreText = fs.readFileSync(switchCorePath, 'utf8');
+const smartTransitionText = fs.readFileSync(smartTransitionPath, 'utf8');
 const progressText = fs.readFileSync(progressPath, 'utf8');
 
 function createMedia() {
@@ -26,6 +30,106 @@ function createMedia() {
     removeAttribute(name) { if (name === 'src') this.src = ''; },
     load() {},
   };
+}
+
+function createDeferredSeekMedia(src) {
+  const listeners = {};
+  let currentTime = 0;
+  const media = {
+    src: src || '',
+    currentSrc: src || '',
+    paused: false,
+    ended: false,
+    preload: 'auto',
+    playbackRate: 1,
+    readyState: 0,
+    duration: 0,
+    onended: null,
+    onloadedmetadata: null,
+    pause() { this.paused = true; },
+    load() {},
+    addEventListener(type, handler, options) {
+      (listeners[type] || (listeners[type] = [])).push({ handler, once: !!(options && options.once) });
+    },
+    removeEventListener(type, handler) {
+      if (!listeners[type]) return;
+      listeners[type] = listeners[type].filter(item => item.handler !== handler);
+    },
+    emit(type) {
+      const handlers = (listeners[type] || []).slice();
+      handlers.forEach(item => {
+        if (item.once) this.removeEventListener(type, item.handler);
+        item.handler.call(this, { type });
+      });
+      const propertyHandler = this['on' + type];
+      if (typeof propertyHandler === 'function') propertyHandler.call(this, { type });
+    },
+  };
+  Object.defineProperty(media, 'currentTime', {
+    get() { return currentTime; },
+    set(value) {
+      // Simulate Chromium's pre-metadata seek behavior during a frozen recovery.
+      if (this.readyState >= 1) currentTime = Number(value) || 0;
+    },
+  });
+  return media;
+}
+
+function testPendingResumeSurvivesGraphRecovery() {
+  const oldMedia = createDeferredSeekMedia('https://old.invalid/audio');
+  let replacement = null;
+  let progressUpdates = 0;
+  const sandbox = {
+    console: { warn() {} },
+    Math,
+    Number,
+    isFinite,
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    trackSwitchToken: 9,
+    audio: oldMedia,
+    audioReady: false,
+    audioCtx: null,
+    source: null,
+    audioSourceMedia: null,
+    analyser: null,
+    beatAnalyser: null,
+    gainNode: null,
+    analysisSinkNode: null,
+    bindPlaybackProgressEvents() {},
+    applyVolumeToAudio() {},
+    applyAudioOutputDevice() {},
+    updatePlaybackProgressUi() { progressUpdates++; },
+    Audio: function Audio() {
+      replacement = createDeferredSeekMedia('');
+      return replacement;
+    },
+  };
+  vm.runInNewContext(switchCoreText, sandbox, { filename: switchCorePath });
+  const graphRecoveryText = graphText.slice(0, graphText.indexOf('function resetPlaybackAudioGraphForSourceSwitch'));
+  vm.runInNewContext(graphRecoveryText, sandbox, { filename: graphPath });
+
+  sandbox.scheduleAudioResumePosition(oldMedia, 83, 9);
+  assert.strictEqual(oldMedia.currentTime, 0, 'the frozen source must still retain its pending seek');
+  assert.strictEqual(oldMedia.__mineradioPendingResumeSeconds, 83);
+  assert.strictEqual(sandbox.replaceAudioElementForGraphRecovery('test', { preservePlayback: true }), true);
+  assert(replacement, 'graph recovery must create a replacement media element');
+  assert.strictEqual(replacement.__mineradioPendingResumeSeconds, 83);
+  assert.strictEqual(replacement.__mineradioPendingResumeToken, 9);
+
+  replacement.readyState = 1;
+  replacement.duration = 180;
+  replacement.emit('loadedmetadata');
+  assert.strictEqual(replacement.currentTime, 83, 'the replacement must seek after metadata arrives');
+  assert.strictEqual(replacement.__mineradioPendingResumeSeconds, undefined, 'the seek is cleared only after its clock confirms it');
+  assert(progressUpdates > 0, 'the restored seek must refresh playback progress');
+
+  const nextTrackMedia = createDeferredSeekMedia('https://old.invalid/next');
+  nextTrackMedia.__mineradioPendingResumeSeconds = 47;
+  nextTrackMedia.__mineradioPendingResumeToken = 9;
+  sandbox.audio = nextTrackMedia;
+  assert.strictEqual(sandbox.replaceAudioElementForGraphRecovery('new-track', { preservePlayback: false }), true);
+  assert.strictEqual(replacement.__mineradioPendingResumeSeconds, undefined, 'a source switch must not inherit the old track seek');
 }
 
 function createSandbox(queue, statusOverrides) {
@@ -233,12 +337,20 @@ function testStaticRecoveryWiring() {
   assert(/freshUrlAttemptCount\) \|\| 0\) >= 1/.test(controlsText));
   assert(/opts\.manual && !opts\.trackSwitch && !opts\.resumeRecovery[\s\S]{0,260}resetPlaybackFreshUrlRecoveryBudget/.test(controlsText));
   assert(/function waitForAudioPlaybackProgress/.test(controlsText));
+  assert(/var AUDIO_PLAY_REQUEST_TIMEOUT_MS = 12500/.test(controlsText), 'renderer start budget must exceed the proxy upstream budget');
+  assert(/var AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS = 6500/.test(controlsText), 'normal network buffering must not be classified as a 1.8s clock stall');
+  assert(/function audioPlaybackStartState/.test(controlsText), 'clock-stall logs must include non-sensitive media state');
+  assert(/function rebuildTrackSwitchMediaAfterClockStall/.test(controlsText), 'a stalled element must be rebuilt before retrying the same URL');
+  assert(/audioErrorHasCode\(originalErr, 'AUDIO_CLOCK_STALLED'\)[\s\S]{0,180}rebuildTrackSwitchMediaAfterClockStall/.test(controlsText));
   const completeStartBlock = controlsText.slice(
     controlsText.indexOf('async function completeAudioPlayStart'),
     controlsText.indexOf('function canResumePausedAudioFast')
   );
   assert(/opts\.trackSwitch[\s\S]{0,320}waitForAudioPlaybackProgress/.test(completeStartBlock), 'natural track switches must wait for the media clock before showing playback');
   assert(/AUDIO_CLOCK_STALLED/.test(controlsText));
+  assert(/SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS = 9000/.test(smartTransitionText));
+  assert(/SMART_TRANSITION_CLOCK_TIMEOUT_MS = 6500/.test(smartTransitionText));
+  assert(/waitForSmartTransitionPlaybackProgress\([\s\S]{0,320}SMART_TRANSITION_CLOCK_TIMEOUT_MS/.test(smartTransitionText));
   assert(/function playbackStartEventHasClock/.test(switchCoreText));
   assert(/startEventPendingClock[\s\S]{0,260}!startEventPendingClock/.test(switchCoreText), 'play events at 0:00 must not mark the player as running');
   assert(/sourceFallbackRecovery:\s*recovery/.test(controlsText));
@@ -274,6 +386,7 @@ async function run() {
   await testDuplicateSongProviderDeduplication();
   await testLateAsyncCannotReviveTerminal();
   await testDeadlineAndManualSupersession();
+  testPendingResumeSurvivesGraphRecovery();
   testStaticRecoveryWiring();
   console.log('OK playback-source-fallback-transaction');
 }

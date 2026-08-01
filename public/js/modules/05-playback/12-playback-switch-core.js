@@ -78,22 +78,82 @@ function playbackFailureToastText(err) {
 }
 function scheduleAudioResumePosition(media, seconds, token) {
   seconds = Math.max(0, Number(seconds) || 0);
-  if (!media || seconds < 0.35) return;
+  if (!media) return;
+  if (seconds < 0.35) {
+    if (Number(media.__mineradioPendingResumeToken) === Number(token)) {
+      delete media.__mineradioPendingResumeSeconds;
+      delete media.__mineradioPendingResumeToken;
+      delete media.__mineradioPendingResumeRequestId;
+    }
+    return;
+  }
+  // currentTime writes before metadata are not durable in every Chromium
+  // recovery path. Keep the request on the element until its clock confirms it.
+  var requestId = (Number(media.__mineradioPendingResumeRequestId) || 0) + 1;
+  media.__mineradioPendingResumeSeconds = seconds;
+  media.__mineradioPendingResumeToken = token;
+  media.__mineradioPendingResumeRequestId = requestId;
   var applied = false;
-  function applyResume() {
-    if (applied || token !== trackSwitchToken || !media) return;
+  var retryTimer = null;
+  function requestStillCurrent() {
+    return !applied
+      && token === trackSwitchToken
+      && Number(media.__mineradioPendingResumeRequestId) === requestId;
+  }
+  function targetResumeTime() {
     var duration = Number(media.duration) || 0;
-    var target = duration > 0 ? Math.min(seconds, Math.max(0, duration - 0.45)) : seconds;
+    return duration > 0 ? Math.min(seconds, Math.max(0, duration - 0.45)) : seconds;
+  }
+  function stopWatching() {
+    if (!media || !media.removeEventListener) return;
+    media.removeEventListener('loadedmetadata', applyResume);
+    media.removeEventListener('canplay', applyResume);
+    media.removeEventListener('seeked', verifyResume);
+    media.removeEventListener('timeupdate', verifyResume);
+    if (retryTimer != null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  }
+  function finishWhenApplied(target) {
+    if (!requestStillCurrent() || Number(media.readyState) < 1) return false;
+    var current = Number(media.currentTime);
+    var tolerance = Math.min(0.35, Math.max(0.08, target * 0.2));
+    if (!isFinite(current) || Math.abs(current - target) > tolerance) return false;
+    applied = true;
+    if (Number(media.__mineradioPendingResumeRequestId) === requestId) {
+      delete media.__mineradioPendingResumeSeconds;
+      delete media.__mineradioPendingResumeToken;
+      delete media.__mineradioPendingResumeRequestId;
+    }
+    stopWatching();
+    if (typeof syncBeatMapPlaybackCursor === 'function') syncBeatMapPlaybackCursor(target, true);
+    if (typeof syncPodcastDjMapCursor === 'function') syncPodcastDjMapCursor(target, true);
+    updatePlaybackProgressUi();
+    return true;
+  }
+  function applyResume() {
+    if (!requestStillCurrent()) {
+      stopWatching();
+      return;
+    }
+    var target = targetResumeTime();
     try {
       media.currentTime = target;
-      applied = true;
-      if (typeof syncBeatMapPlaybackCursor === 'function') syncBeatMapPlaybackCursor(target, true);
-      if (typeof syncPodcastDjMapCursor === 'function') syncPodcastDjMapCursor(target, true);
-      updatePlaybackProgressUi();
     } catch (e) { }
+    finishWhenApplied(target);
+  }
+  function verifyResume() {
+    if (!requestStillCurrent()) {
+      stopWatching();
+      return;
+    }
+    finishWhenApplied(targetResumeTime());
   }
   media.addEventListener('loadedmetadata', applyResume, { once: true });
   media.addEventListener('canplay', applyResume, { once: true });
-  setTimeout(applyResume, 520);
+  media.addEventListener('seeked', verifyResume, { once: true });
+  media.addEventListener('timeupdate', verifyResume, { once: true });
+  retryTimer = setTimeout(applyResume, 520);
   applyResume();
 }

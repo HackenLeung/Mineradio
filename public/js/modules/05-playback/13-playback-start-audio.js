@@ -679,6 +679,18 @@ async function playQueueAt(idx, opts) {
       markPlayPhase('audio-start');
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
       var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, fade: transitionHandoff ? false : opts.fade, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
+      // A confirmed frozen media clock may require a clean Audio element. The
+      // retry keeps the same token/key, so adopt only that deliberate rebuild;
+      // any other replacement is still a stale invocation and must be ignored.
+      // This must also run when the start failed: otherwise the swapped-in
+      // element makes the invocation look stale and the whole failure chain
+      // below (source match retry, provider fallback, skip) is skipped.
+      if (
+        audio
+        && audio !== playbackMedia
+        && Number(audio.__mineradioTrackSwitchToken) === Number(token)
+        && String(audio.__mineradioQueueItemKey || '') === String(queueItemKey(song) || '')
+      ) playbackMedia = audio;
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
       if (
         typeof sourceFallbackRecoveryFromOptions === 'function'

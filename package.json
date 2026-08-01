@@ -20,6 +20,7 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "electronDist": "node_modules/electron/dist",
     "afterPack": "build/after-pack.js",
     "toolsets": {
       "winCodeSign": "1.1.0"

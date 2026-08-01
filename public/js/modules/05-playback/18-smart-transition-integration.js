@@ -823,6 +823,9 @@ function smartTransitionPromiseWithTimeout(promise, timeoutMs, code) {
   });
 }
 
+var SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS = 9000;
+var SMART_TRANSITION_CLOCK_TIMEOUT_MS = 6500;
+
 function waitForSmartTransitionPlaybackProgress(pending, media, context, startTime, timeoutMs) {
   return new Promise(function (resolve) {
     var settled = false;
@@ -845,7 +848,7 @@ function waitForSmartTransitionPlaybackProgress(pending, media, context, startTi
     }
     ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.addEventListener(name, check); });
     poll = setInterval(check, 80);
-    timer = setTimeout(function () { finish(false); }, Math.max(500, Number(timeoutMs) || 1600));
+    timer = setTimeout(function () { finish(false); }, Math.max(500, Number(timeoutMs) || SMART_TRANSITION_CLOCK_TIMEOUT_MS));
     check();
   });
 }
@@ -880,7 +883,7 @@ function waitForAdoptedSmartTransitionPlaybackProgress(media, expectedToken, exp
     }
     ['timeupdate', 'playing', 'error', 'ended', 'abort'].forEach(function (name) { media.addEventListener(name, check); });
     poll = setInterval(check, 80);
-    timer = setTimeout(function () { finish(false); }, Math.max(650, Number(timeoutMs) || 1800));
+    timer = setTimeout(function () { finish(false); }, Math.max(650, Number(timeoutMs) || SMART_TRANSITION_CLOCK_TIMEOUT_MS));
     check();
   });
 }
@@ -924,8 +927,8 @@ async function executeSmartCrossfade(pending) {
       return;
     }
     var nextMediaStartTime = Number(nextMedia.currentTime) || 0;
-    await smartTransitionPromiseWithTimeout(nextMedia.play(), 3600, 'SMART_TRANSITION_PLAY_TIMEOUT');
-    var progressed = await waitForSmartTransitionPlaybackProgress(pending, nextMedia, transitionContext, nextMediaStartTime, 1600);
+    await smartTransitionPromiseWithTimeout(nextMedia.play(), SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS, 'SMART_TRANSITION_PLAY_TIMEOUT');
+    var progressed = await waitForSmartTransitionPlaybackProgress(pending, nextMedia, transitionContext, nextMediaStartTime, SMART_TRANSITION_CLOCK_TIMEOUT_MS);
     if (!progressed) throw new Error('SMART_TRANSITION_CLOCK_STALLED');
   } catch (_) {
     smartCrossfadeExecuting = false;
@@ -1018,7 +1021,7 @@ async function executeSmartCrossfade(pending) {
     if (handoffSucceeded) {
       var adoptedToken = trackSwitchToken;
       var adoptedStartTime = Number(nextMedia.currentTime) || 0;
-      var adoptedProgressed = await waitForAdoptedSmartTransitionPlaybackProgress(nextMedia, adoptedToken, pending.nextIndex, adoptedStartTime, 1800);
+      var adoptedProgressed = await waitForAdoptedSmartTransitionPlaybackProgress(nextMedia, adoptedToken, pending.nextIndex, adoptedStartTime, SMART_TRANSITION_CLOCK_TIMEOUT_MS);
       if (!adoptedProgressed) {
         console.warn('[SmartCrossfade] adopted media clock stalled; falling back to a fresh player');
         handoffSucceeded = await runSmartTransitionNormalFallback();

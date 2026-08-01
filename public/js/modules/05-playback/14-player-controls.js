@@ -327,7 +327,12 @@ function schedulePlaybackStallRecovery(reason, opts) {
 function playbackAttemptStillCurrent(media, token) {
   return !!(media && audio === media && token === trackSwitchToken);
 }
-var AUDIO_PLAY_REQUEST_TIMEOUT_MS = 9000;
+// The local audio proxy can spend up to 9 seconds waiting for an upstream
+// first byte. A shorter renderer timeout turns ordinary buffering into a
+// false media-clock failure.
+var AUDIO_PLAY_REQUEST_TIMEOUT_MS = 12500;
+var AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS = 6500;
+var AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS = 4200;
 function awaitMediaPlayWithTimeout(media, playPromise, token, timeoutMs) {
   timeoutMs = Math.max(1000, Number(timeoutMs) || AUDIO_PLAY_REQUEST_TIMEOUT_MS);
   return new Promise(function (resolve, reject) {
@@ -402,9 +407,22 @@ function playbackMediaMatchesCurrentQueueItem(media) {
   var mediaKey = String(media.__mineradioQueueItemKey || '');
   return !!(expectedKey && mediaKey && expectedKey === mediaKey);
 }
-function createAudioClockStalledError() {
-  var error = new Error('AUDIO_CLOCK_STALLED');
+function audioPlaybackStartState(media) {
+  if (!media) return 'media=missing';
+  var mediaError = media.error;
+  return [
+    'time=' + (isFinite(Number(media.currentTime)) ? Number(media.currentTime).toFixed(3) : 'NaN'),
+    'readyState=' + Number(media.readyState || 0),
+    'networkState=' + Number(media.networkState || 0),
+    'paused=' + !!media.paused,
+    'ended=' + !!media.ended,
+    'error=' + (mediaError ? Number(mediaError.code || 0) : 0)
+  ].join(' ');
+}
+function createAudioClockStalledError(media, phase) {
+  var error = new Error('AUDIO_CLOCK_STALLED' + (phase ? ' (' + phase + ')' : '') + ': ' + audioPlaybackStartState(media));
   error.code = 'AUDIO_CLOCK_STALLED';
+  error.mediaState = audioPlaybackStartState(media);
   return error;
 }
 
@@ -413,9 +431,10 @@ async function completeAudioPlayStart(opts, reason, expectedMedia, expectedToken
   if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
   if (opts.trackSwitch) {
     var trackStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
-    if (!await waitForAudioPlaybackProgress(expectedMedia, expectedToken, trackStartTime, 1800, 0.04)) {
+    if (!await waitForAudioPlaybackProgress(expectedMedia, expectedToken, trackStartTime, AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS, 0.04)) {
+      var trackStartStall = createAudioClockStalledError(expectedMedia, 'track-switch');
       try { expectedMedia.pause(); } catch (e) { }
-      throw createAudioClockStalledError();
+      throw trackStartStall;
     }
   }
   await ensurePlaybackAudioGraph(reason || 'playback-started');
@@ -479,7 +498,7 @@ async function resumePausedAudioFast(opts) {
     restorePlaybackGain();
     await awaitMediaPlayWithTimeout(media, media.play(), token);
     if (!isSameAudioPlaybackTarget(media, src) || token !== trackSwitchToken) return false;
-    if (!await waitForAudioPlaybackProgress(media, token, startTime, 1200, 0.04)) {
+    if (!await waitForAudioPlaybackProgress(media, token, startTime, AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS, 0.04)) {
       try { media.pause(); } catch (e) { }
       return false;
     }
@@ -502,11 +521,54 @@ async function resumePausedAudioFast(opts) {
   }
 }
 
+function audioErrorHasCode(error, code) {
+  if (!error) return false;
+  if (error.code === code) return true;
+  return String(error.message || '').indexOf(code) === 0;
+}
+
+function releaseReplacedPlaybackMedia(media) {
+  if (!media || media === audio) return;
+  // A replaced element keeps its src, so its buffer and its open connection to
+  // the local audio proxy stay alive until GC. Chromium caps same-host
+  // connections, so leaking one per stalled switch would feed the very stall
+  // this rebuild exists to recover from.
+  try {
+    media.pause();
+    media.removeAttribute('src');
+    media.load();
+  } catch (e) { }
+}
+
+function rebuildTrackSwitchMediaAfterClockStall(media, token) {
+  if (!media || media !== audio || !media.src || typeof replaceAudioElementForGraphRecovery !== 'function') return null;
+  var queueKey = String(media.__mineradioQueueItemKey || '');
+  try {
+    replaceAudioElementForGraphRecovery('track-switch-clock-stalled', { preservePlayback: true });
+  } catch (rebuildErr) {
+    console.warn('[Playback] media rebuild after stalled clock failed:', rebuildErr && (rebuildErr.message || rebuildErr));
+  }
+  var rebuilt = audio;
+  if (!rebuilt || rebuilt === media) return null;
+  // The swap lands before any of the rebuild's own setup can throw, so stamp
+  // the identity markers on whatever survived the call. Without them a partial
+  // rebuild leaves an unrecognisable element behind and every caller downstream
+  // reads the attempt as stale, giving up without restoring gain or the UI.
+  rebuilt.__mineradioQueueItemKey = queueKey;
+  rebuilt.__mineradioTrackSwitchToken = token;
+  if (!rebuilt.src) return null;
+  releaseReplacedPlaybackMedia(media);
+  try { rebuilt.load(); } catch (e) { }
+  return rebuilt;
+}
+
 async function retryTrackSwitchAudioPlayOnce(opts, originalErr, expectedMedia, expectedToken) {
-  var retryAudio = expectedMedia;
+  var retryAudio = audioErrorHasCode(originalErr, 'AUDIO_CLOCK_STALLED')
+    ? (rebuildTrackSwitchMediaAfterClockStall(expectedMedia, expectedToken) || expectedMedia)
+    : expectedMedia;
   var retrySrc = retryAudio && (retryAudio.currentSrc || retryAudio.src || '');
   if (!retryAudio || !retrySrc) throw originalErr;
-  await waitForAudioReadyToPlay(retryAudio, opts.manual ? 650 : 900);
+  await waitForAudioReadyToPlay(retryAudio, opts.manual ? 1400 : 2600);
   if (!playbackAttemptStillCurrent(retryAudio, expectedToken) || !isSameAudioPlaybackTarget(retryAudio, retrySrc)) return null;
   if (retryAudio.readyState === 0 || retryAudio.networkState === retryAudio.NETWORK_EMPTY) {
     try { retryAudio.load(); } catch (e) { }
@@ -547,9 +609,7 @@ async function attemptAudioPlay(opts) {
     var fastResume = await resumePausedAudioFast(opts);
     if (fastResume === true) return true;
     if (fastResume === false) {
-      var fastResumeStall = new Error('AUDIO_CLOCK_STALLED');
-      fastResumeStall.code = 'AUDIO_CLOCK_STALLED';
-      throw fastResumeStall;
+      throw createAudioClockStalledError(expectedMedia, 'manual-resume');
     }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     if (!audioGraphHealthy()) initAudio();
@@ -564,8 +624,8 @@ async function attemptAudioPlay(opts) {
       }
       await ensurePlaybackAudioGraph(opts.manual ? 'manual-after-play-request' : 'track-switch-after-play-request');
       await awaitMediaPlayWithTimeout(expectedMedia, directPlay, expectedToken);
-      if (opts.manual && !opts.trackSwitch && !await waitForAudioPlaybackProgress(expectedMedia, expectedToken, directStartTime, 1200, 0.04)) {
-        throw createAudioClockStalledError();
+      if (opts.manual && !opts.trackSwitch && !await waitForAudioPlaybackProgress(expectedMedia, expectedToken, directStartTime, AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS, 0.04)) {
+        throw createAudioClockStalledError(expectedMedia, 'manual-start');
       }
     } else {
       await applyAudioOutputDevice(expectedMedia);
@@ -581,12 +641,23 @@ async function attemptAudioPlay(opts) {
   } catch (err) {
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     if (opts.trackSwitch && expectedMedia && expectedMedia.src) {
+      var stalledQueueItemKey = String(expectedMedia.__mineradioQueueItemKey || '');
       try {
         var recovered = await retryTrackSwitchAudioPlayOnce(opts, err, expectedMedia, expectedToken);
         if (recovered) return true;
       } catch (retryErr) {
         err = retryErr;
       }
+      // The stalled-clock retry may deliberately rebuild the media element.
+      // Follow that swap, otherwise the identity check below reads the retry
+      // as a stale attempt and silently skips the fresh-url recovery, the gain
+      // restore and hideLoading, leaving the player frozen on a loading state.
+      if (
+        audio
+        && audio !== expectedMedia
+        && Number(audio.__mineradioTrackSwitchToken) === Number(expectedToken)
+        && String(audio.__mineradioQueueItemKey || '') === stalledQueueItemKey
+      ) expectedMedia = audio;
     }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     console.warn('Audio play blocked:', err && (err.message || err));

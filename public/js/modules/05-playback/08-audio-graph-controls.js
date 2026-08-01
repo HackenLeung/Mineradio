@@ -36,12 +36,23 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   var preservePlayback = opts.preservePlayback !== false;
   var oldAudio = audio;
   var src = preservePlayback ? (oldAudio.currentSrc || oldAudio.src || '') : '';
+  var pendingResumeSeconds = preservePlayback ? Number(oldAudio.__mineradioPendingResumeSeconds) : 0;
+  var pendingResumeToken = preservePlayback ? oldAudio.__mineradioPendingResumeToken : null;
+  var hasPendingResume = pendingResumeSeconds >= 0.35
+    && pendingResumeToken != null
+    && Number(pendingResumeToken) === Number(trackSwitchToken);
+  if (!hasPendingResume) {
+    pendingResumeSeconds = 0;
+    pendingResumeToken = null;
+  }
   var seconds = preservePlayback && isFinite(oldAudio.currentTime) ? oldAudio.currentTime : 0;
+  if (hasPendingResume) seconds = Math.max(seconds, pendingResumeSeconds);
   var wasPaused = oldAudio.paused;
   var rate = oldAudio.playbackRate || 1;
   var endedHandler = preservePlayback ? oldAudio.onended : null;
   var metadataHandler = preservePlayback ? oldAudio.onloadedmetadata : null;
   var queueItemKey = oldAudio.__mineradioQueueItemKey;
+  var mediaToken = preservePlayback ? oldAudio.__mineradioTrackSwitchToken : null;
   try { oldAudio.pause(); } catch (e) { }
   disconnectAudioGraphNodes(false);
   try {
@@ -55,11 +66,19 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   audio.onended = endedHandler;
   audio.onloadedmetadata = metadataHandler;
   audio.__mineradioQueueItemKey = queueItemKey;
+  if (mediaToken != null) audio.__mineradioTrackSwitchToken = mediaToken;
+  if (hasPendingResume) {
+    audio.__mineradioPendingResumeSeconds = pendingResumeSeconds;
+    audio.__mineradioPendingResumeToken = pendingResumeToken;
+  }
   bindPlaybackProgressEvents(audio);
   applyVolumeToAudio();
   if (src) {
     audio.src = src;
     restoreMediaTimeWhenReady(audio, seconds);
+    if (hasPendingResume && typeof scheduleAudioResumePosition === 'function') {
+      scheduleAudioResumePosition(audio, pendingResumeSeconds, pendingResumeToken);
+    }
     if (!wasPaused) {
       try { audio.load(); } catch (e) { }
     }
