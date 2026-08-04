@@ -3387,6 +3387,9 @@ var AUDIO_FADE_OUT_MS = 420;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var AUDIO_PLAY_TIMEOUT_MS = 3600;
 var AUDIO_STALL_TIMEOUT_MS = 7000;
+// FLAC needs longer metadata/decode time than the streamed online formats.
+var LOCAL_AUDIO_PLAY_TIMEOUT_MS = 12000;
+var LOCAL_AUDIO_STALL_TIMEOUT_MS = 15000;
 var playbackStallWatchdog = { timer: null, media: null, token: 0, startTime: 0, reason: '' };
 var smartTransitionChipTimer = null, smartTransitionChipSerial = 0;
 var SMART_TRANSITION_CHIP_MS = 2800;
@@ -22652,6 +22655,8 @@ function schedulePlaybackStallRecovery(media, reason) {
     var nowTime = isFinite(media.currentTime) ? media.currentTime : 0;
     if (nowTime > startTime + 0.35) return;
     var recoveries = Number(media._mineradioStallRecoveries) || 0;
+    var stalledSong = playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
+    var isLocalStall = !!(stalledSong && (stalledSong.type === 'local' || stalledSong.source === 'local' || stalledSong.localUrl));
     console.warn('[AudioStall]', reason || 'waiting', { currentTime: nowTime, readyState: media.readyState, networkState: media.networkState, recoveries: recoveries });
     if (recoveries < 1) {
       showSourceFallbackNotice('播放连接卡住', '正在重新连接当前歌曲。');
@@ -22667,8 +22672,12 @@ function schedulePlaybackStallRecovery(media, reason) {
     try { media.pause(); } catch (e) {}
     playing = false;
     setPlayIcon(false);
+    if (isLocalStall) {
+      showSourceFallbackNotice('本地歌曲仍在缓冲', '已保留当前歌曲，点击播放按钮可再次尝试。');
+      return;
+    }
     skipFailedQueueItem(currentIdx, token, '当前音频连接连续卡住，正在播放下一首。');
-  }, mediaErrored ? 800 : (reason === 'play-start' || reason === 'handoff-start') ? 2800 : AUDIO_STALL_TIMEOUT_MS);
+  }, mediaErrored ? 800 : (reason === 'play-start' || reason === 'handoff-start') ? 2800 : (isLocalSong(playQueue && playQueue[currentIdx]) ? LOCAL_AUDIO_STALL_TIMEOUT_MS : AUDIO_STALL_TIMEOUT_MS));
 }
 
 function ensureUiSfxContext() {
@@ -23332,6 +23341,9 @@ function scheduleAudioResumePosition(media, seconds, token) {
   var applied = false;
   function applyResume() {
     if (applied || token !== trackSwitchToken || !media) return;
+    // Seeking before HAVE_METADATA is silently ignored by Chromium for some
+    // FLAC files. Keep the pending position for the metadata/canplay event.
+    if (media.readyState < 1) return;
     var duration = Number(media.duration) || 0;
     var target = duration > 0 ? Math.min(seconds, Math.max(0, duration - 0.45)) : seconds;
     try {
@@ -23345,7 +23357,7 @@ function scheduleAudioResumePosition(media, seconds, token) {
   media.addEventListener('loadedmetadata', applyResume, { once: true });
   media.addEventListener('canplay', applyResume, { once: true });
   setTimeout(applyResume, 520);
-  applyResume();
+  if (media.readyState >= 1) applyResume();
 }
 
 async function playQueueAt(idx, opts) {
@@ -23532,7 +23544,12 @@ async function playQueueAt(idx, opts) {
       if (!audioReady) initAudio();
       await promiseWithTimeout(resumeAudioAnalysis(), opts.resumeTimeoutMs || 1800, 'AUDIO_CONTEXT_RESUME_TIMEOUT');
       markPlayPhase('audio-play');
-      var localStarted = useLocalCrossfadeHandoff ? true : await playAudio();
+      var localStarted = useLocalCrossfadeHandoff ? true : await playAudio({
+        manual: !!opts.manual,
+        silent: Number(opts.stallRecoveryCount) > 0,
+        localMedia: true,
+        playTimeoutMs: LOCAL_AUDIO_PLAY_TIMEOUT_MS
+      });
       if (localStarted) {
         if (useLocalCrossfadeHandoff) {
           try {
@@ -23562,6 +23579,8 @@ async function playQueueAt(idx, opts) {
         }
         beginListenSession(song, null);
         prepareLocalBeatAnalysis(song, localAudioUrl);
+      } else if (Number(opts.stallRecoveryCount) > 0) {
+        showSourceFallbackNotice('本地歌曲重新连接失败', '已保留当前歌曲，点击播放按钮可再次尝试。');
       }
       hideLoading();
       safeRenderQueuePanel('play-local-library', { scrollCurrent: miniQueueOpen });
@@ -23853,13 +23872,23 @@ async function attemptAudioPlay(opts) {
     playing = false; setPlayIcon(false);
     hideLoading();
     forcePlaybackControlsInteractive();
-    if (!opts.silent) showToast(opts.manual ? '播放启动失败, 请重新选择歌曲' : '播放被系统拦截, 请点击播放按钮');
+    if (!opts.silent) {
+      if (opts.localMedia) showToast(opts.manual ? '本地歌曲播放启动失败，请重新选择歌曲' : '本地歌曲加载缓慢或无法解码，请点击播放按钮重试');
+      else showToast(opts.manual ? '播放启动失败, 请重新选择歌曲' : '播放被系统拦截, 请点击播放按钮');
+    }
     return false;
   }
 }
 async function playAudio(opts) {
   opts = opts || {};
-  return attemptAudioPlay({ manual: false, silent: !!opts.silent, fade: opts.fade, fadeInMs: opts.fadeInMs });
+  return attemptAudioPlay({
+    manual: !!opts.manual,
+    silent: !!opts.silent,
+    localMedia: !!opts.localMedia,
+    playTimeoutMs: opts.playTimeoutMs,
+    fade: opts.fade,
+    fadeInMs: opts.fadeInMs
+  });
 }
 async function togglePlay() {
   if (playToggleBusy) return;
