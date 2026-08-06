@@ -4,7 +4,6 @@ function bindFxPanel() {
   organizeFxPanel();
   bindHotkeySettings();
   bindCloseBehaviorControls();
-  bindStartupResumeModeControls();
   bindAudioOutputControls();
   if (typeof bindSystemMemoryControls === 'function') bindSystemMemoryControls();
   buildPresetGrid();

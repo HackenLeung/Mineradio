@@ -18,6 +18,13 @@ const queueSnapshot = read('public/js/modules/05-playback/09-queue-snapshot-auto
 const consoleWorkspace = read('public/js/modules/07-fx/09-console-workspace.js');
 const css = read('public/css/index.css');
 const preferences = read('public/js/modules/00-state/02-preferences-ui-modes.js');
+const stores = read('public/js/modules/00-state/00-core-stores.js');
+const playbackRuntime = read('public/js/modules/00-state/07-ui-playback-runtime.js');
+const playbackStart = read('public/js/modules/05-playback/13-playback-start-audio.js');
+const providerFallback = read('public/js/modules/05-playback/11-provider-fallback.js');
+const progressSeek = read('public/js/modules/06-lyrics/04-progress-seek.js');
+const fxBindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
+const portableProbe = read('tests/portable-profile-runtime-probe.js');
 const desktop = read('desktop/main.js');
 const preload = read('desktop/preload.js');
 const cubeRemote = read('public/js/modules/10-shell/04a-cube-remote-controller.js');
@@ -81,7 +88,7 @@ test('continue listening restores the saved queue while recent playback opens ch
   assert.match(ranking, /sort\(function \(a, b\) \{ return Number\(b\.playedAt/);
 });
 
-test('recent playback restores the persisted full queue, current item, mode, and progress', () => {
+test('recent playback restores the persisted full queue, current item, and mode from track start', () => {
   const restoreRecent = namedFunctionSource(homeActions, 'playHomeRecentQueue');
   const hydrateQueue = vm.runInNewContext(`(${namedFunctionSource(queueSnapshot, 'hydrateLastPlaybackSnapshotQueue')})`, {
     hydrateCustomCover: (song) => song,
@@ -103,10 +110,71 @@ test('recent playback restores the persisted full queue, current item, mode, and
   assert.match(restoreRecent, /playQueue = restoredQueue\.queue/);
   assert.match(restoreRecent, /currentIdx = restoredQueue\.index/);
   assert.match(restoreRecent, /if \(snapshot\.playMode\) playMode = snapshot\.playMode/);
-  assert.match(restoreRecent, /resumeAt: resumeAt/);
+  assert.doesNotMatch(restoreRecent, /resumeAt|pendingPlaybackResumeAt/);
   assert.doesNotMatch(restoreRecent, /preserveHomeState:\s*true/);
   assert.match(restoreRecent, /dismissHomePage\(\{ toast: false \}\)/);
   assert.match(restoreRecent, /skipShuffleOrder: true/);
+});
+
+test('cross-restart playback always starts at zero while runtime recovery keeps explicit resume positions', () => {
+  const values = new Map();
+  const localStorage = {
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, String(value)); },
+  };
+  const readSnapshot = vm.runInNewContext(`(${namedFunctionSource(queueSnapshot, 'readLastPlaybackSnapshot')})`, {
+    localStorage,
+    LAST_PLAYBACK_STORE_KEY: 'mineradio-last-playback-v1',
+    playbackDurationFromSong: (song) => Number(song && song.duration) || 0,
+    JSON,
+    Math,
+    Number,
+    Date,
+    Array,
+  });
+
+  values.set('mineradio-last-playback-v1', JSON.stringify({
+    version: 1,
+    currentTime: 87,
+    currentIdx: 1,
+    playMode: 'shuffle',
+    current: { id: 2, name: 'B', duration: 200 },
+    queue: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }],
+  }));
+  const current = readSnapshot();
+  assert.equal(current.currentTime, 0);
+  assert.equal(current.currentIdx, 1);
+  assert.equal(current.playMode, 'shuffle');
+  assert.equal(current.queue.length, 2);
+
+  values.delete('mineradio-last-playback-v1');
+  values.set('mineradio-playback-session-v1', JSON.stringify({
+    currentTime: 54,
+    currentIdx: 0,
+    playMode: 'single',
+    queue: [{ id: 3, name: 'Legacy', duration: 180 }],
+  }));
+  const legacy = readSnapshot();
+  assert.equal(legacy.currentTime, 0);
+  assert.equal(legacy.playMode, 'single');
+
+  const saveSnapshot = namedFunctionSource(queueSnapshot, 'saveLastPlaybackSnapshot');
+  assert.match(saveSnapshot, /currentTime:\s*0/);
+  assert.doesNotMatch(saveSnapshot, /getPlaybackCurrentSeconds/);
+  assert.doesNotMatch(progressSeek, /saveLastPlaybackSnapshot\(false,\s*'tick'\)|saveLastPlaybackSnapshot\(true,\s*'seek'\)/);
+
+  assert.doesNotMatch(html, /startup-resume-mode|按上次进度|重播整首/);
+  assert.doesNotMatch(dashboard, /恢复上次进度/);
+  assert.doesNotMatch(stores, /STARTUP_RESUME_MODE_STORE_KEY/);
+  assert.doesNotMatch(preferences, /StartupResumeMode|startupResumeMode|startupResumeSecondsFromSnapshot/);
+  assert.doesNotMatch(playbackRuntime, /startupResumeMode|pendingPlaybackResumeAt/);
+  assert.doesNotMatch(fxBindings, /bindStartupResumeModeControls/);
+  assert.doesNotMatch(consoleWorkspace, /startupResumeMode|startup-resume-mode/);
+  assert.doesNotMatch(portableProbe, /mineradio-startup-resume-mode-v1/);
+  assert.doesNotMatch(playbackStart, /pendingPlaybackResumeAt|restoredLastPlaybackSnapshot/);
+  assert.doesNotMatch(providerFallback, /pendingPlaybackResumeAt/);
+  assert.match(playbackStart, /var requestedResumeAt = Math\.max\(0, Number\(opts\.resumeAt\) \|\| 0\)/);
+  assert.match(playbackStart, /scheduleAudioResumePosition\(audio, requestedResumeAt, token\)/);
 });
 
 test('Home discovery cards are two equal columns with matching heights and local search uses the application-styled label', () => {
@@ -126,6 +194,17 @@ test('queue hover actions center every icon and listening ranking rows fill the 
   assert.match(css, /\.home-listen-ranking-list\s*\{[\s\S]*?width:\s*100%/);
   assert.match(css, /\.home-listen-ranking-row\s*\{[\s\S]*?width:\s*100%/);
   assert.match(css, /\.home-listen-ranking-modal\s*\{[\s\S]*?background:\s*linear-gradient\(155deg, rgba\(19, 22, 27/);
+});
+
+test('listening ranking uses the shared high-resolution cover resolver and a visible fallback', () => {
+  assert.match(ranking, /function homeListenRankingCoverUrl\(item\)/);
+  assert.match(ranking, /songCoverSrc\(item, 240\)/);
+  assert.match(ranking, /home-listen-ranking-cover' \+ \(homeListenRankingCoverUrl\(item\) \? ' has-cover' : ' is-placeholder'\)/);
+  assert.match(server, /cover: s\.picUrl \|\| s\.cover \|\| s\.coverUrl \|\| album\.picUrl/);
+  assert.match(css, /\.home-listen-ranking-cover\.is-placeholder::before/);
+  assert.match(css, /\.home-listen-ranking-cover\s*\{[\s\S]*?width:\s*52px[\s\S]*?height:\s*52px[\s\S]*?aspect-ratio:\s*1 \/ 1/);
+  assert.match(css, /\.home-listen-ranking-modal \.home-listen-ranking-cover\s*\{[\s\S]*?background-size:\s*cover/);
+  assert.doesNotMatch(css, /\.home-listen-ranking-modal \.home-listen-ranking-cover\s*\{\s*background:/);
 });
 
 test('Next Up only exposes a real queued successor and never synthesizes a single recommendation', () => {

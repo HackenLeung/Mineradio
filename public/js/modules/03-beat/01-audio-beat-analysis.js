@@ -11,6 +11,11 @@ async function analyzeAudioBeats(audioUrl, durationSec, token, options) {
     showBeatChip('正在分析节奏…');
     var resp = await fetch(audioUrl);
     if (token !== beatMapToken) { hideBeatChip(); return null; }
+    if (!resp.ok) {
+      console.warn('beat audio fetch failed:', resp.status, resp.statusText || '');
+      hideBeatChip();
+      return null;
+    }
     var ab = await resp.arrayBuffer();
     if (token !== beatMapToken) { hideBeatChip(); return null; }
 

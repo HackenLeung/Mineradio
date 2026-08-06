@@ -200,7 +200,7 @@ function bindPlaybackProgressEvents(audioEl) {
       ) return;
       if (name === 'ended' && audioEl === audio && playbackTransitionHasAudibleNextDeck()) return;
       syncPlaybackStateFromAudioEvent(name);
-      saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
+      if (name === 'playing' || name === 'ended') saveLastPlaybackSnapshot(true, name);
     });
   });
   ['error', 'stalled'].forEach(function (name) {
@@ -410,7 +410,6 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
   if (resumeAfterSeek) primeProgressSeekPlayback(media, mediaSrc, serial);
   renderProgressPreview(targetTime, durationSec);
   syncBeatMapPlaybackCursor(targetTime, true);
-  saveLastPlaybackSnapshot(true, 'seek');
   waitForProgressSeekReady(media, targetTime, serial, 1800).then(function (ready) {
     if (serial !== progressDragState.commitSerial || !progressSeekMediaStillCurrent(media, mediaSrc)) return false;
     if (ready) return true;
@@ -475,8 +474,7 @@ progressBar.addEventListener('pointercancel', function (e) { endProgressDrag(e, 
 progressBar.addEventListener('lostpointercapture', function (e) { endProgressDrag(e, true); });
 setInterval(function () {
   if (!audio) {
-    if (restoredLastPlaybackSnapshot && pendingPlaybackResumeAt > 0) applyRestoredPlaybackProgressUi(restoredLastPlaybackSnapshot);
-    else updatePlaybackProgressUi();
+    updatePlaybackProgressUi();
     return;
   }
   if (progressDragState.active) {
@@ -485,7 +483,6 @@ setInterval(function () {
   }
   updateListenStatsTick(false);
   updatePlaybackProgressUi();
-  saveLastPlaybackSnapshot(false, 'tick');
   if (audio.currentTime) updateLyricsHighlight();
 }, 200);
 

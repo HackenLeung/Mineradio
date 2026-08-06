@@ -22,8 +22,28 @@ function namedFunctionSource(text, name) {
   let depth = 0;
   let quote = '';
   let escaped = false;
+  let regex = false;
+  let regexClass = false;
+  let lineComment = false;
+  let blockComment = false;
   for (let index = bodyStart; index < text.length; index += 1) {
     const character = text[index];
+    if (lineComment) {
+      if (character === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (character === '*' && text[index + 1] === '/') { blockComment = false; index += 1; }
+      continue;
+    }
+    if (regex) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '[') regexClass = true;
+      else if (character === ']') regexClass = false;
+      else if (character === '/' && !regexClass) regex = false;
+      continue;
+    }
     if (quote) {
       if (escaped) escaped = false;
       else if (character === '\\') escaped = true;
@@ -31,6 +51,12 @@ function namedFunctionSource(text, name) {
       continue;
     }
     if (character === '"' || character === "'" || character === '`') { quote = character; continue; }
+    if (character === '/' && text[index + 1] === '/') { lineComment = true; index += 1; continue; }
+    if (character === '/' && text[index + 1] === '*') { blockComment = true; index += 1; continue; }
+    if (character === '/') {
+      const previous = text.slice(bodyStart, index).trimEnd().slice(-1);
+      if (!previous || /[=(,:;!&|?{}\[]/.test(previous)) { regex = true; regexClass = false; continue; }
+    }
     if (character === '{') depth += 1;
     if (character === '}' && --depth === 0) return text.slice(declaration.index, index + 1);
   }
@@ -60,6 +86,7 @@ function fakeMedia() {
 test('smart transition owns the crossfade path without the removed upstream AutoMix modules', () => {
   const setSmart = namedFunctionSource(integration, 'setSmartTransitionStyle');
   const prepare = namedFunctionSource(integration, 'runSmartCrossfadePrepare');
+  const fallback = namedFunctionSource(integration, 'prepareSmartTransitionFallback');
   const execute = namedFunctionSource(integration, 'executeSmartCrossfade');
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/05-playback/16-cuefield-automix-core.js')), false);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/05-playback/17-cuefield-timeline-executor.js')), false);
@@ -68,14 +95,41 @@ test('smart transition owns the crossfade path without the removed upstream Auto
   assert.doesNotMatch(integration, /cuefield|automix/i);
   assert.match(setSmart, /scheduleSmartCrossfadePrepare/);
   assert.match(prepare, /prepareSmartTransitionFallback\(token, currentIndex\)/);
+  assert.match(fallback, /smartTransitionIncomingEntryTime\(nextSong, initialFadeSec\)/);
+  assert.match(fallback, /entryTime:\s*Math\.max\(0, Number\(incomingCue\.entryTime\) \|\| 0\)/);
+  assert.match(integration, /apiJson\(lyricEndpointForSong\(song\), \{ timeoutMs: 5000 \}\)/);
   assert.match(execute, /prepareSmartTransitionPendingAudio\(pending\)/);
   assert.match(execute, /runSmartTransitionTimeline\(pending, nextMedia, transitionContext\)/);
   assert.match(execute, /smartTransitionHandoff:\s*true/);
   assert.match(execute, /smartTransition:\s*isSmartTransition/);
+  assert.doesNotMatch(execute, /resumeAt:\s*0/);
   assert.match(playback, /transitionHandoff = !!\(opts\.smartTransitionHandoff && opts\.preloadedAudio\)/);
+  assert.match(playback, /&& !transitionHandoff/);
+  assert.match(playback, /function onlineSmartTransitionPrepareDelay/);
+  assert.match(playback, /Math\.min\(delayedMs, latestUsefulMs\)/);
   assert.match(playback, /claimSmartTransitionPreparedAudioForPlayback\(audio\)/);
   assert.doesNotMatch(integration, /albumGapless|AlbumGapless|ALBUM_GAPLESS|__albumGapless/);
   assert.doesNotMatch(playback, /albumGapless|AlbumGapless|ALBUM_GAPLESS|__albumGapless/);
+});
+
+test('smart transition enters the incoming song one fade length before its first vocal lyric', () => {
+  const cueFor = vm.runInNewContext(
+    `(${namedFunctionSource(integration, 'smartTransitionIncomingVocalCue')})`,
+    {
+      Array,
+      Number,
+      Math,
+      isFinite,
+      isNoLyricText: text => String(text || '').trim() === '纯音乐，请欣赏',
+      smartTransitionLyricLooksLikeCredit: text => /^(?:作词|作曲|编曲|制作人)(?:\s*[:：]|\s+)/.test(String(text || '').trim()),
+      SMART_TRANSITION_MAX_VOCAL_ENTRY_AT_SEC: 45,
+    },
+  );
+  assert.deepEqual({ ...cueFor([{ t: 7.2, text: '第一句人声' }], 4.2) }, { known: true, vocalAt: 7.2, entryTime: 3 });
+  assert.deepEqual({ ...cueFor([{ t: 1.4, text: '开场人声' }], 6.8) }, { known: true, vocalAt: 1.4, entryTime: 0 });
+  assert.deepEqual({ ...cueFor([{ t: 8, text: '纯音乐，请欣赏' }], 5) }, { known: false, vocalAt: 0, entryTime: 0 });
+  assert.deepEqual({ ...cueFor([{ t: 1, text: '作词：某某' }, { t: 7.2, text: '真正第一句' }], 4.2) }, { known: true, vocalAt: 7.2, entryTime: 3 });
+  assert.deepEqual({ ...cueFor([{ t: 61, text: '超长前奏后的第一句' }], 5) }, { known: false, vocalAt: 0, entryTime: 0 });
 });
 
 test('album detail no longer exposes or activates a separate gapless mode', () => {
@@ -227,10 +281,14 @@ test('adopted media must keep advancing after it becomes the main player', async
 test('failed start has timeout, clock-stall detection, and ordinary playback fallback', () => {
   const execute = namedFunctionSource(integration, 'executeSmartCrossfade');
   const recover = namedFunctionSource(integration, 'recoverSmartCrossfadeEndedOutgoing');
-  assert.match(execute, /smartTransitionPromiseWithTimeout\(nextMedia\.play\(\), 3600/);
+  assert.match(execute, /smartTransitionPromiseWithTimeout\(nextMedia\.play\(\), SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS/);
   assert.match(execute, /waitForSmartTransitionPlaybackProgress/);
   assert.match(execute, /waitForAdoptedSmartTransitionPlaybackProgress/);
   assert.match(execute, /SMART_TRANSITION_CLOCK_STALLED/);
+  assert.match(integration, /SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS = 2500/);
+  assert.match(integration, /SMART_TRANSITION_CLOCK_TIMEOUT_MS = 2500/);
+  assert.match(integration, /SMART_TRANSITION_ADOPTED_CLOCK_TIMEOUT_MS = 6500/);
+  assert.match(namedFunctionSource(integration, 'tickSmartCrossfade'), /Number\(preparedMedia\.readyState\) < 2/);
   assert.match(execute, /replaceAudioElementForGraphRecovery\('smart-transition-handoff-fallback'/);
   assert.match(execute, /runSmartTransitionNormalFallback/);
   assert.match(recover, /trackSwitchToken !== token/);

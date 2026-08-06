@@ -157,3 +157,40 @@ function scheduleAudioResumePosition(media, seconds, token) {
   retryTimer = setTimeout(applyResume, 520);
   applyResume();
 }
+
+function waitForAudioResumePosition(media, seconds, token, timeoutMs) {
+  seconds = Math.max(0, Number(seconds) || 0);
+  if (!media || seconds < 0.35) return Promise.resolve(true);
+  timeoutMs = Math.max(400, Number(timeoutMs) || 1800);
+  return new Promise(function (resolve) {
+    var settled = false;
+    var timer = 0;
+    var poll = 0;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      ['loadedmetadata', 'canplay', 'seeked', 'timeupdate', 'error', 'abort'].forEach(function (name) {
+        media.removeEventListener(name, check);
+      });
+    }
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(!!ok);
+    }
+    function check(event) {
+      if (token !== trackSwitchToken || media.error || (event && /^(error|abort)$/.test(event.type))) return finish(false);
+      var current = Number(media.currentTime);
+      var target = Number(media.__mineradioPendingResumeSeconds) || seconds;
+      var tolerance = Math.min(0.35, Math.max(0.08, target * 0.2));
+      if (Number(media.readyState) >= 1 && isFinite(current) && Math.abs(current - target) <= tolerance) finish(true);
+    }
+    ['loadedmetadata', 'canplay', 'seeked', 'timeupdate', 'error', 'abort'].forEach(function (name) {
+      media.addEventListener(name, check);
+    });
+    poll = setInterval(check, 60);
+    timer = setTimeout(function () { finish(false); }, timeoutMs);
+    check();
+  });
+}

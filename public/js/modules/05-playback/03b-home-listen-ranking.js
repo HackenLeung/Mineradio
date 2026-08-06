@@ -81,8 +81,16 @@ function homeListenRankingEscape(value) {
     });
 }
 
+function homeListenRankingCoverUrl(item) {
+  item = item || {};
+  var cover = typeof songCoverSrc === 'function'
+    ? songCoverSrc(item, 240)
+    : (item.cover || item.picUrl || item.albumCover || item.coverUrl || '');
+  return String(cover || '').trim();
+}
+
 function homeListenRankingCoverStyle(item) {
-  var cover = String(item && (item.cover || item.picUrl || item.albumCover) || '').trim();
+  var cover = homeListenRankingCoverUrl(item);
   if (!cover) return '';
   var url = typeof cssImageUrl === 'function' ? cssImageUrl(cover) : cover;
   return ' style="background-image:url(&quot;' + homeListenRankingEscape(url) + '&quot;)"';
@@ -112,7 +120,7 @@ function renderHomeListenRankingRows(rows, source, remote) {
       : (remote ? (plays + ' 次') : (plays + ' 次 · ' + homeListenRankingDuration(item.listenMs)));
     return '<button class="home-listen-ranking-row" type="button" data-listen-ranking-index="' + index + '">' +
       '<span class="home-listen-ranking-number">' + (index + 1) + '</span>' +
-      '<span class="home-listen-ranking-cover"' + homeListenRankingCoverStyle(item) + '></span>' +
+      '<span class="home-listen-ranking-cover' + (homeListenRankingCoverUrl(item) ? ' has-cover' : ' is-placeholder') + '"' + homeListenRankingCoverStyle(item) + '></span>' +
       '<span class="home-listen-ranking-copy"><strong>' + homeListenRankingEscape(item.name || item.title || '未知歌曲') + '</strong>' +
       '<small>' + homeListenRankingEscape(item.artist || item.source || homeListenRankingSourceLabel(source)) + '</small></span>' +
       '<span class="home-listen-ranking-stat">' + homeListenRankingEscape(metric) + '</span>' +

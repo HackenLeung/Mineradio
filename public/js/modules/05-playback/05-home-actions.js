@@ -60,9 +60,6 @@ async function playHomeRecentQueue(record) {
   startupRestoreHomePending = false;
   activeRadioContext = null;
   restoredLastPlaybackSnapshot = snapshot;
-  pendingPlaybackResumeAt = typeof startupResumeSecondsFromSnapshot === 'function'
-    ? startupResumeSecondsFromSnapshot(snapshot)
-    : Math.max(0, Number(snapshot.currentTime) || 0);
   playQueue = restoredQueue.queue;
   currentIdx = restoredQueue.index;
   currentLocalSong = playQueue[currentIdx] && (playQueue[currentIdx].type === 'local' || playQueue[currentIdx].localKey)
@@ -72,14 +69,11 @@ async function playHomeRecentQueue(record) {
   safeRenderQueuePanel('home-recent-queue', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('home-recent-queue', true);
   forcePlaybackControlsInteractive();
-  var resumeAt = pendingPlaybackResumeAt;
   var started = await playQueueAt(currentIdx, {
     manual: true,
-    resumeAt: resumeAt,
     skipShuffleOrder: true
   });
   if (started === true) {
-    pendingPlaybackResumeAt = 0;
     if (typeof dismissHomePage === 'function') dismissHomePage({ toast: false });
     showToast('已恢复上次队列 · ' + playQueue.length + ' 首');
   }

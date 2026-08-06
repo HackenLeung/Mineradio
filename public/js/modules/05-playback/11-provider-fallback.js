@@ -204,7 +204,6 @@ async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data
   markPlaybackQualityRuntimeCap(song, 'qq', nextQuality, 'qq-url-unavailable');
   if (!opts.startupAutoplay) showSourceFallbackNotice('小Q音质自动兼容', '当前音质启动失败，正在切到 ' + playbackQualityLabel(nextQuality, 'qq') + '。');
   var retryResumeAt = opts.resumeAt;
-  if (retryResumeAt == null && opts.startupAutoplay && pendingPlaybackResumeAt > 0) retryResumeAt = pendingPlaybackResumeAt;
   var retryStarted = await playQueueAt(idx, Object.assign({}, opts, {
     qualityOverride: nextQuality,
     qqQualityTried: tried,

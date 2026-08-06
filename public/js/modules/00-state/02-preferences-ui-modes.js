@@ -107,54 +107,11 @@ function initializeDesktopCloseBehavior() {
   bindCloseBehaviorControls();
   setCloseBehaviorPreference(closeBehaviorPreference, { toast: false });
 }
-function normalizeStartupResumeMode(value) {
-  return value === 'restart' ? 'restart' : 'resume';
-}
-function readStartupResumeModePreference() {
-  try { return normalizeStartupResumeMode(localStorage.getItem(STARTUP_RESUME_MODE_STORE_KEY) || 'resume'); } catch (e) { return 'resume'; }
-}
-function saveStartupResumeModePreference(value) {
-  try { localStorage.setItem(STARTUP_RESUME_MODE_STORE_KEY, normalizeStartupResumeMode(value)); } catch (e) { }
-}
-function startupResumeSecondsFromSnapshot(snapshot) {
-  if (startupResumeModePreference === 'restart') return 0;
-  return Math.max(0, Number(snapshot && snapshot.currentTime) || 0);
-}
-function applyStartupResumeModeToRestoredSnapshot() {
-  if (!restoredLastPlaybackSnapshot || (audio && audio.src)) return;
-  pendingPlaybackResumeAt = startupResumeSecondsFromSnapshot(restoredLastPlaybackSnapshot);
-  applyRestoredPlaybackProgressUi(Object.assign({}, restoredLastPlaybackSnapshot, { currentTime: pendingPlaybackResumeAt }));
-}
-function syncStartupResumeModeUi() {
-  document.querySelectorAll('#startup-resume-mode-seg [data-startup-resume-mode]').forEach(function (btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-startup-resume-mode') === startupResumeModePreference);
-  });
-}
-function setStartupResumeModePreference(value, opts) {
-  opts = opts || {};
-  startupResumeModePreference = normalizeStartupResumeMode(value);
-  saveStartupResumeModePreference(startupResumeModePreference);
-  syncStartupResumeModeUi();
-  applyStartupResumeModeToRestoredSnapshot();
-  if (opts.toast) showToast(startupResumeModePreference === 'restart' ? '恢复播放将重播整首' : '恢复播放将按上次进度继续');
-}
-function bindStartupResumeModeControls() {
-  var seg = document.getElementById('startup-resume-mode-seg');
-  if (!seg || seg._bound) return;
-  seg._bound = true;
-  seg.addEventListener('click', function (e) {
-    var btn = e.target && e.target.closest ? e.target.closest('[data-startup-resume-mode]') : null;
-    if (!btn) return;
-    setStartupResumeModePreference(btn.getAttribute('data-startup-resume-mode'), { toast: true });
-  });
-  syncStartupResumeModeUi();
-}
 function applyStartupAutoplayUi() {
   var btn = document.getElementById('t-startupAutoplay');
   if (btn) btn.classList.toggle('on', !!startupAutoplayPreference);
   var skipBtn = document.getElementById('t-startupFastSkip');
   if (skipBtn) skipBtn.classList.toggle('on', !!startupFastSkipPreference);
-  syncStartupResumeModeUi();
 }
 function toggleStartupAutoplay() {
   startupAutoplayPreference = !startupAutoplayPreference;

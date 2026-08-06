@@ -1,7 +1,6 @@
 var stageLyricPrewarm = { timer: 0, workTimer: 0, workRaf: 0, build: null, mesh: null, key: '', token: 0, targetIndex: null, lightweight: false, dueAt: 0 };
 var stageLyricSingleLinePrewarm = { items: {}, order: [], max: 10 };
 var stageLyricWarmup = { until: 0, reason: '' };
-var stageLyricRestoreWarmup = { time: 0, token: 0, until: 0, reason: '' };
 var stageLyricFullTrackWarmupTimer = 0;
 var stageLyricFullTrackWarmupTargetAt = 0;
 var stageLyricFullTrackWarmupIdle = 0;
@@ -93,7 +92,7 @@ function stageLyricPrewarmPayload() {
 }
 
 function stageLyricLightPrewarmReason(reason) {
-  return /^(intro-first-line|renderLyrics|renderLyrics-title|toggleLyricsPanel|setParticleLyricsSilently|track-demand-light|startup-restore|startup-restore-lyrics|playback-resume|playback-started)$/.test(String(reason || ''))
+  return /^(intro-first-line|renderLyrics|renderLyrics-title|toggleLyricsPanel|setParticleLyricsSilently|track-demand-light|startup-restore|playback-resume|playback-started)$/.test(String(reason || ''))
     || /^quality-switch/i.test(String(reason || ''));
 }
 
@@ -221,65 +220,6 @@ function stageLyricPreferLightweightTrack() {
 function stageLyricShouldSkipFullTrackWarmup(reason) {
   if (!stageLyricPreferLightweightTrack()) return false;
   return false;
-}
-
-function clearStageLyricRestoreWarmup() {
-  stageLyricRestoreWarmup.time = 0;
-  stageLyricRestoreWarmup.token = 0;
-  stageLyricRestoreWarmup.until = 0;
-  stageLyricRestoreWarmup.reason = '';
-}
-
-function stageLyricRestoreWarmupSeconds() {
-  var seconds = Number(stageLyricRestoreWarmup && stageLyricRestoreWarmup.time) || 0;
-  if (seconds < 0.35) return null;
-  if (stageLyricRestoreWarmup.token && typeof trackSwitchToken !== 'undefined' && stageLyricRestoreWarmup.token !== trackSwitchToken) {
-    clearStageLyricRestoreWarmup();
-    return null;
-  }
-  if ((Number(stageLyricRestoreWarmup.until) || 0) < stageLyricNowMs()) {
-    clearStageLyricRestoreWarmup();
-    return null;
-  }
-  var actual = audio && isFinite(Number(audio.currentTime)) ? Math.max(0, Number(audio.currentTime) || 0) : 0;
-  if (actual > 0.35 && Math.abs(actual - seconds) <= 1.25) {
-    return actual;
-  }
-  if (actual > seconds + 2.5) {
-    clearStageLyricRestoreWarmup();
-    return actual;
-  }
-  return seconds;
-}
-
-function stageLyricIndexForSeconds(seconds) {
-  if (!lyricsLines || !lyricsLines.length) return -1;
-  var lyricT = typeof getAdjustedLyricPlaybackTime === 'function' ? getAdjustedLyricPlaybackTime(seconds) : seconds;
-  var idx = findStageLyricIndexAtTime(lyricT);
-  if (idx < 0) idx = 0;
-  return Math.max(0, Math.min(lyricsLines.length - 1, idx));
-}
-
-function scheduleStageLyricRestorePrewarm(reason, delay) {
-  var seconds = stageLyricRestoreWarmupSeconds();
-  if (seconds == null) return false;
-  var idx = stageLyricIndexForSeconds(seconds);
-  if (idx < 0) return false;
-  scheduleStageLyricPrewarmForIndex(idx, reason || 'startup-restore', delay == null ? 16 : delay);
-  return true;
-}
-
-function requestStageLyricRestoreWarmup(seconds, token, reason) {
-  seconds = Math.max(0, Number(seconds) || 0);
-  if (seconds < 0.35) return false;
-  stageLyricRestoreWarmup.time = seconds;
-  stageLyricRestoreWarmup.token = Number(token) || 0;
-  stageLyricRestoreWarmup.until = stageLyricNowMs() + 18000;
-  stageLyricRestoreWarmup.reason = reason || 'startup-restore';
-  requestStageLyricWarmup(stageLyricRestoreWarmup.reason, 220);
-  scheduleStageLyricRestorePrewarm(stageLyricRestoreWarmup.reason, 16);
-  if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready-fast', 140);
-  return true;
 }
 
 function requestStageLyricWarmup(reason, ms) {
@@ -1515,8 +1455,6 @@ function stageLyricProgressPreviewActive() {
 function stageLyricPlaybackSeconds() {
   var preview = typeof getProgressDragPreviewSeconds === 'function' ? getProgressDragPreviewSeconds() : null;
   if (preview != null && isFinite(Number(preview))) return Math.max(0, Number(preview));
-  var restoreSeconds = stageLyricRestoreWarmupSeconds();
-  if (restoreSeconds != null) return restoreSeconds;
   return audio && isFinite(Number(audio.currentTime)) ? Math.max(0, Number(audio.currentTime)) : 0;
 }
 function stageLyricProgressSeekVisualReady(seconds) {

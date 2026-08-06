@@ -194,6 +194,8 @@ async function analyzeMusicTempoInWorker(buffer, token) {
 
 function scheduleBeatAnalysis(songId, audioUrl, token, song) {
   if (!songId || !audioUrl) return;
+  var remotePlayback = /^\/api\/audio\?/i.test(String(audioUrl || ''))
+    || !(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
   if (djMode.active) {
     cancelBeatAnalysisTimer();
     beatAnalysisStartedAt = 0;
@@ -216,6 +218,14 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song) {
       var diskMap = await readBeatDiskCache(songId);
       if (diskMap) {
         applyBeatMapCacheForCurrent(songId, diskMap, token, 'D盘节拍缓存命中:');
+        return;
+      }
+      // Never download an online track a second time while it is playing.
+      // Existing memory/disk beat maps remain available; only local files may
+      // start a new whole-file analysis after a cache miss.
+      if (remotePlayback) {
+        beatAnalysisStartedAt = 0;
+        hideBeatChip();
         return;
       }
       if (token !== beatMapToken || !audio || audio.paused || beatMapCache[songId]) return;

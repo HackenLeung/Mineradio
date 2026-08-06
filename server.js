@@ -33,7 +33,6 @@ const {
   playlist_subscribe,
   comment,
   comment_like,
-  scrobble,
   listen_data_total,
   playlist_tracks,
   playlist_track_add,
@@ -55,6 +54,7 @@ const {
   lyric_new,
   user_record,
 } = require('NeteaseCloudMusicApi');
+const { scrobble: enhancedNeteaseScrobble } = require('@neteasecloudmusicapienhanced/api');
 const http = require('http');
 const https = require('https');
 const fs   = require('fs');
@@ -272,6 +272,12 @@ function rememberListenSyncSubmission(key, result) {
   listenSyncJournal.entries[key] = {
     provider: result.provider,
     songId: String(result.songId || ''),
+    sourceId: String(result.sourceId || ''),
+    listenSeconds: Math.max(0, Number(result.listenSeconds) || 0),
+    platformCode: Number(result.platformCode) || 0,
+    reporter: String(result.reporter || ''),
+    startplayCode: Number(result.startplayCode) || 0,
+    playCode: Number(result.playCode) || 0,
     submittedAt: Date.now(),
     accountDurationSync: result.accountDurationSync || 'unsupported',
     historySynced: !!result.historySynced,
@@ -2230,7 +2236,9 @@ function mapSongRecord(s) {
     artistId: artists[0] && artists[0].id,
     album: album.name || '',
     albumId: album.id || '',
-    cover: album.picUrl || album.coverUrl || '',
+    // user_record responses vary between account states; preserve every
+    // known song/album cover field before falling back to an empty cover.
+    cover: s.picUrl || s.cover || s.coverUrl || album.picUrl || album.coverUrl || album.blurPicUrl || '',
     duration: s.dt || s.duration || 0,
     popularity: Number(s.pop || s.popularity || s.score || s.hotScore || 0) || 0,
     searchRank: s.rank === null || s.rank === undefined || s.rank === '' ? null : Number(s.rank),
@@ -3759,20 +3767,68 @@ async function qqGetJSON(targetUrl, params, opts) {
 }
 
 const AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES = 1024 * 1024;
+// A stalled CDN Range must give way to a retry before the renderer's media
+// clock budget expires. The completed chunk is cached below so a retry or an
+// Audio element replacement does not discard a successful upstream fetch.
+const AUDIO_PROXY_OPEN_TIMEOUT_MS = 3200;
+const AUDIO_PROXY_RANGE_BODY_IDLE_TIMEOUT_MS = 5000;
+const AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS = 45000;
+const AUDIO_PROXY_RANGE_FETCH_ATTEMPTS = 3;
+const AUDIO_PROXY_RANGE_CACHE_TTL_MS = 45000;
+const AUDIO_PROXY_RANGE_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const audioProxyRangeCache = new Map();
+const audioProxyRangeInFlight = new Map();
+let audioProxyRangeCacheBytes = 0;
 
 function normalizeAudioProxyUpstreamRange(range) {
   const raw = String(range || '').trim();
-  const match = /^bytes=(\d+)-$/i.exec(raw);
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(raw);
   if (!match) return raw;
   const start = Number(match[1]);
   if (!Number.isSafeInteger(start) || start < 0) return raw;
-  const end = start + AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES - 1;
+  const requestedEnd = match[2] ? Number(match[2]) : Number.POSITIVE_INFINITY;
+  if (match[2] && (!Number.isSafeInteger(requestedEnd) || requestedEnd < start)) return raw;
+  const end = Math.min(requestedEnd, start + AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES - 1);
   if (!Number.isSafeInteger(end)) return raw;
   return `bytes=${start}-${end}`;
 }
 
+function parseAudioProxyContentRange(value) {
+  const match = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const total = match[3] === '*' ? null : Number(match[3]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) return null;
+  if (total != null && (!Number.isSafeInteger(total) || total <= end)) return null;
+  return { start, end, total, length: end - start + 1 };
+}
+
+function audioProxyContentRangeMatchesRequest(contentRange, requestRange) {
+  const response = typeof contentRange === 'string' ? parseAudioProxyContentRange(contentRange) : contentRange;
+  const rawRequest = String(requestRange || '').trim();
+  const bounded = /^bytes=(\d+)-(\d+)$/i.exec(rawRequest);
+  if (bounded) {
+    const requestedStart = Number(bounded[1]);
+    const requestedEnd = Number(bounded[2]);
+    return !!response && response.start === requestedStart && response.end <= requestedEnd;
+  }
+  const suffix = /^bytes=-(\d+)$/i.exec(rawRequest);
+  if (!response || !suffix || !response.total) return false;
+  const requestedLength = Number(suffix[1]);
+  return Number.isSafeInteger(requestedLength)
+    && requestedLength > 0
+    && response.end === response.total - 1
+    && response.length <= requestedLength;
+}
+
+function audioProxyRangeResponseComplete(contentRange, receivedBytes) {
+  const parsed = typeof contentRange === 'string' ? parseAudioProxyContentRange(contentRange) : contentRange;
+  return !!(parsed && Number(receivedBytes) === parsed.length);
+}
+
 function audioProxyHeadersFor(audioUrl, range) {
-  const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/' };
+  const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/', 'Accept-Encoding': 'identity' };
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
@@ -3782,6 +3838,159 @@ function audioProxyHeadersFor(audioUrl, range) {
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
+}
+
+async function readCompleteAudioProxyRange(upstream, contentRange, lifecycle) {
+  const expected = contentRange && Number(contentRange.length);
+  if (!upstream || !upstream.body || !Number.isSafeInteger(expected) || expected <= 0) {
+    const error = new Error('AUDIO_PROXY_INVALID_RANGE_RESPONSE');
+    error.code = 'AUDIO_PROXY_INVALID_RANGE_RESPONSE';
+    throw error;
+  }
+  const reader = upstream.body.getReader();
+  lifecycle.reader = reader;
+  const chunks = [];
+  let received = 0;
+  try {
+    while (!lifecycle.clientClosed) {
+      const part = await readStreamChunkWithTimeout(reader, AUDIO_PROXY_RANGE_BODY_IDLE_TIMEOUT_MS);
+      if (part.done) break;
+      const chunk = Buffer.from(part.value);
+      received += chunk.length;
+      if (received > expected) {
+        const error = new Error('AUDIO_PROXY_RANGE_OVERFLOW');
+        error.code = 'AUDIO_PROXY_RANGE_OVERFLOW';
+        throw error;
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    if (lifecycle.reader === reader) lifecycle.reader = null;
+  }
+  if (lifecycle.clientClosed) {
+    const error = new Error('AUDIO_PROXY_CLIENT_CLOSED');
+    error.code = 'AUDIO_PROXY_CLIENT_CLOSED';
+    throw error;
+  }
+  if (!audioProxyRangeResponseComplete(contentRange, received)) {
+    const error = new Error(`AUDIO_PROXY_INCOMPLETE_RANGE: expected ${expected}, received ${received}`);
+    error.code = 'AUDIO_PROXY_INCOMPLETE_RANGE';
+    error.expectedBytes = expected;
+    error.receivedBytes = received;
+    throw error;
+  }
+  return Buffer.concat(chunks, received);
+}
+
+async function fetchCompleteAudioProxyRange(audioUrl, headers, lifecycle) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= AUDIO_PROXY_RANGE_FETCH_ATTEMPTS; attempt++) {
+    if (lifecycle.clientClosed) {
+      const closed = new Error('AUDIO_PROXY_CLIENT_CLOSED');
+      closed.code = 'AUDIO_PROXY_CLIENT_CLOSED';
+      throw closed;
+    }
+    let upstream = null;
+    try {
+      upstream = await fetchWithTimeout(audioUrl, { headers }, AUDIO_PROXY_OPEN_TIMEOUT_MS);
+      if (upstream.status !== 206) return { upstream, buffer: null, contentRange: null };
+      const contentRange = parseAudioProxyContentRange(upstream.headers.get('content-range'));
+      if (!contentRange || !audioProxyContentRangeMatchesRequest(contentRange, headers.Range) || contentRange.length > AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES) {
+        const invalid = new Error('AUDIO_PROXY_INVALID_RANGE_RESPONSE');
+        invalid.code = 'AUDIO_PROXY_INVALID_RANGE_RESPONSE';
+        throw invalid;
+      }
+      const buffer = await readCompleteAudioProxyRange(upstream, contentRange, lifecycle);
+      return { upstream, buffer, contentRange };
+    } catch (error) {
+      lastError = error;
+      const reader = lifecycle.reader;
+      lifecycle.reader = null;
+      if (reader) {
+        try { await reader.cancel(); } catch (_) {}
+      } else if (upstream && upstream.body) {
+        try { await upstream.body.cancel(); } catch (_) {}
+      }
+      if (lifecycle.clientClosed || (error && error.code === 'AUDIO_PROXY_CLIENT_CLOSED')) throw error;
+      if (attempt < AUDIO_PROXY_RANGE_FETCH_ATTEMPTS) {
+        console.warn('[Audio] retrying incomplete range', attempt, error && (error.code || error.message));
+      }
+    }
+  }
+  throw lastError || new Error('AUDIO_PROXY_RANGE_FAILED');
+}
+
+function audioProxyRangeCacheKey(audioUrl, headers) {
+  const range = String(headers && headers.Range || '').trim();
+  return range && /^bytes=\d+-\d+$/i.test(range) ? String(audioUrl || '') + '\n' + range : '';
+}
+
+function deleteAudioProxyRangeCacheEntry(key) {
+  const entry = audioProxyRangeCache.get(key);
+  if (!entry) return;
+  audioProxyRangeCache.delete(key);
+  audioProxyRangeCacheBytes = Math.max(0, audioProxyRangeCacheBytes - (Number(entry.bytes) || 0));
+}
+
+function readAudioProxyRangeCache(key) {
+  if (!key) return null;
+  const entry = audioProxyRangeCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    deleteAudioProxyRangeCacheEntry(key);
+    return null;
+  }
+  // Keep recently used ranges warm while the browser replaces or retries its
+  // media element during the same playback operation.
+  audioProxyRangeCache.delete(key);
+  audioProxyRangeCache.set(key, entry);
+  return entry.value;
+}
+
+function rememberAudioProxyRange(key, value) {
+  if (!key || !value || !Buffer.isBuffer(value.buffer) || !value.buffer.length) return;
+  deleteAudioProxyRangeCacheEntry(key);
+  const entry = {
+    value,
+    bytes: value.buffer.length,
+    expiresAt: Date.now() + AUDIO_PROXY_RANGE_CACHE_TTL_MS,
+  };
+  audioProxyRangeCache.set(key, entry);
+  audioProxyRangeCacheBytes += entry.bytes;
+  while (audioProxyRangeCacheBytes > AUDIO_PROXY_RANGE_CACHE_MAX_BYTES && audioProxyRangeCache.size) {
+    const oldestKey = audioProxyRangeCache.keys().next().value;
+    if (!oldestKey) break;
+    deleteAudioProxyRangeCacheEntry(oldestKey);
+  }
+}
+
+async function fetchAudioProxyRangeWithCache(audioUrl, headers, lifecycle) {
+  const key = audioProxyRangeCacheKey(audioUrl, headers);
+  if (!key) return fetchCompleteAudioProxyRange(audioUrl, headers, lifecycle);
+  const cached = readAudioProxyRangeCache(key);
+  if (cached) return cached;
+
+  const pending = audioProxyRangeInFlight.get(key);
+  if (pending) {
+    const shared = await pending;
+    // A provider that ignores Range returns a streaming 200 response. It is
+    // not safe to let two renderer responses consume that body together.
+    return shared && shared.buffer
+      ? shared
+      : fetchCompleteAudioProxyRange(audioUrl, headers, lifecycle);
+  }
+
+  // The shared request deliberately outlives one renderer client. A closed
+  // client must not cancel a chunk that a replacement Audio element can use.
+  const sharedLifecycle = { clientClosed: false, responseFinished: false, reader: null };
+  const sharedPromise = fetchCompleteAudioProxyRange(audioUrl, headers, sharedLifecycle)
+    .then(value => {
+      if (value && value.buffer) rememberAudioProxyRange(key, value);
+      return value;
+    })
+    .finally(() => { audioProxyRangeInFlight.delete(key); });
+  audioProxyRangeInFlight.set(key, sharedPromise);
+  return sharedPromise;
 }
 
 function qishuiAudioAuthFromUrl(audioUrl) {
@@ -5476,6 +5685,27 @@ function validateListenReport(body) {
   };
 }
 
+function resolveNeteaseListenSourceId(report) {
+  report = report && typeof report === 'object' ? report : {};
+  const context = report.context && typeof report.context === 'object' ? report.context : {};
+  const song = report.song && typeof report.song === 'object' ? report.song : {};
+  const album = song.album && typeof song.album === 'object' ? song.album : {};
+  const candidates = [
+    context.playlistId,
+    context.sourceId,
+    context.id,
+    song.albumId,
+    song.album_id,
+    album.id,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate == null ? '' : candidate).trim();
+    if (/^\d+$/.test(value) && value !== '0') return value;
+  }
+  const songId = String(report.songId || song.id || '').trim();
+  return /^\d+$/.test(songId) && songId !== '0' ? songId : '0';
+}
+
 async function handlePlatformListenReport(body) {
   const report = validateListenReport(body);
   const base = {
@@ -5516,20 +5746,25 @@ async function handlePlatformListenReport(body) {
     if (!info.loggedIn || !userCookie) {
       return Object.assign(base, { accepted: true, reason: 'NETEASE_LOGIN_REQUIRED' });
     }
-    const rawSourceId = report.context.playlistId || report.context.id || report.context.sourceId || 0;
-    const sourceId = /^\d+$/.test(String(rawSourceId || '')) ? String(rawSourceId) : 0;
-    const result = await scrobble({
+    const sourceId = resolveNeteaseListenSourceId(report);
+    const listenSeconds = Math.max(1, Math.floor(report.listenMs / 1000));
+    const result = await enhancedNeteaseScrobble({
       id: report.songId,
       sourceid: sourceId,
-      time: Math.max(1, Math.floor(report.listenMs / 1000)),
+      time: listenSeconds,
       cookie: userCookie,
       timestamp: Date.now(),
     });
     const code = normalizeApiCode(result);
-    if (code !== 200) {
+    const resultBody = result && (result.body || result) || {};
+    const details = resultBody.details && typeof resultBody.details === 'object' ? resultBody.details : {};
+    const startplayCode = details.startplay ? normalizeApiCode(details.startplay) : 0;
+    const playCode = details.play ? normalizeApiCode(details.play) : 0;
+    if (code !== 200 || startplayCode !== 200 || playCode !== 200) {
       const err = new Error(normalizeApiMessage(result) || 'NETEASE_SCROBBLE_FAILED');
       err.code = 'NETEASE_SCROBBLE_FAILED';
-      err.statusCode = code;
+      err.statusCode = code || playCode || startplayCode;
+      err.reportCodes = { code, startplayCode, playCode };
       throw err;
     }
     const submitted = Object.assign(base, {
@@ -5537,8 +5772,21 @@ async function handlePlatformListenReport(body) {
       platformSubmitted: true,
       accountDurationSync: 'submitted_unverified',
       platformCode: code,
+      reporter: 'enhanced-eapi',
+      startplayCode,
+      playCode,
+      sourceId,
+      listenSeconds,
     });
     rememberListenSyncSubmission(journalKey, submitted);
+    console.log('[ListenReport] netease submitted', {
+      songId: report.songId,
+      sourceId,
+      listenSeconds,
+      code,
+      startplayCode,
+      playCode,
+    });
     return submitted;
   }
 
@@ -7564,38 +7812,83 @@ const server = http.createServer(async (req, res) => {
       // the browser will request the following ranges as it needs them.
       const upstreamRange = normalizeAudioProxyUpstreamRange(range);
       const hdr = audioProxyHeadersFor(audioUrl, upstreamRange);
-      const up = await fetchWithTimeout(audioUrl, { headers: hdr }, 9000);
-      const out = {
-        'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
-        'Access-Control-Allow-Origin': '*',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-store',
+      // A bounded 206 is collected and length-checked before Chromium sees
+      // its headers. If the provider closes early, retry here instead of
+      // exposing a broken chunked response to the active media element.
+      const lifecycle = { clientClosed: false, responseFinished: false, reader: null };
+      const closeUpstream = () => {
+        if (lifecycle.responseFinished) return;
+        lifecycle.clientClosed = true;
+        const reader = lifecycle.reader;
+        lifecycle.reader = null;
+        if (reader) {
+          try { Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {}
+        }
       };
-      const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;
-      const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;
-      res.writeHead(up.status, out);
-      if (!up.body) { res.end(); return; }
-      const reader = up.body.getReader();
-      let clientClosed = false;
-      const closeReader = () => {
-        clientClosed = true;
-        try { Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {}
-      };
-      res.once('close', closeReader);
+      const finishUpstream = () => { lifecycle.responseFinished = true; };
+      res.once('finish', finishUpstream);
+      res.once('close', closeUpstream);
       try {
-        while (!clientClosed) {
-          const c = await readStreamChunkWithTimeout(reader, 12000);
-          if (c.done) break;
-          res.write(c.value);
+        const fetched = await fetchAudioProxyRangeWithCache(audioUrl, hdr, lifecycle);
+        const up = fetched.upstream;
+        if (lifecycle.clientClosed) {
+          // A shared bounded range has already consumed its upstream body;
+          // cancel an unbuffered 200 response if a client vanished meanwhile.
+          if (fetched && !fetched.buffer && up && up.body) {
+            try { await up.body.cancel(); } catch (_) {}
+          }
+          return;
         }
+        const out = {
+          'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
+          'Access-Control-Allow-Origin': '*',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store',
+        };
+        const cr = up.headers.get('content-range'); if (cr) out['Content-Range'] = cr;
+        if (fetched.buffer) out['Content-Length'] = String(fetched.buffer.length);
+        res.writeHead(up.status, out);
+        if (fetched.buffer) {
+          res.end(fetched.buffer);
+          return;
+        }
+        if (!up.body) { res.end(); return; }
+        const reader = up.body.getReader();
+        lifecycle.reader = reader;
+        try {
+          while (!lifecycle.clientClosed) {
+            const c = await readStreamChunkWithTimeout(reader, AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS);
+            if (c.done) break;
+            if (!res.write(c.value)) {
+              await new Promise((resolve) => {
+                let settled = false;
+                const done = () => {
+                  if (settled) return;
+                  settled = true;
+                  res.removeListener('drain', done);
+                  res.removeListener('close', done);
+                  res.removeListener('error', done);
+                  resolve();
+                };
+                res.once('drain', done);
+                res.once('close', done);
+                res.once('error', done);
+                if (res.writableEnded || res.destroyed) done();
+              });
+            }
+          }
+        } finally {
+          lifecycle.reader = null;
+          if (lifecycle.clientClosed) {
+            try { await reader.cancel(); } catch (_) {}
+          }
+        }
+        if (lifecycle.clientClosed) return;
+        res.end();
       } finally {
-        res.removeListener('close', closeReader);
-        if (clientClosed) {
-          try { await reader.cancel(); } catch (_) {}
-        }
+        res.removeListener('close', closeUpstream);
+        res.removeListener('finish', finishUpstream);
       }
-      if (clientClosed) return;
-      res.end();
     } catch (err) {
       console.error('[Audio]', err && (err.code || err.name || err.message || 'AUDIO_PROXY_FAILED'));
       if (res.headersSent) {

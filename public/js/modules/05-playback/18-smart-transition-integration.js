@@ -20,6 +20,7 @@ var smartCoverTransition = null;
 var smartCoverTransitionSerial = 0;
 var SMART_CROSSFADE_NORMAL_START_SETTLE_MS = 4200;
 var SMART_CROSSFADE_HANDOFF_SETTLE_MS = 5200;
+var SMART_TRANSITION_MAX_VOCAL_ENTRY_AT_SEC = 45;
 
 function normalizeSmartTransitionStyle(value) {
   value = String(value || '');
@@ -392,6 +393,72 @@ function transitionPendingEnabled(pending) {
   return !!(pending && pending.mode === 'smart-transition' && isSmartTransitionEnabled());
 }
 
+function smartTransitionLyricLooksLikeCredit(text) {
+  text = String(text || '').trim();
+  if (!text) return true;
+  return /^(?:作词|作曲|编曲|制作人|制作|监制|录音|混音|母带|吉他|贝斯|鼓|弦乐|和声|人声|演唱|词|曲|composer|lyricist|lyrics?|arranger|producer|mix(?:ed)?|master(?:ed)?)(?:\s*[:：]|\s+)/i.test(text);
+}
+
+function smartTransitionIncomingVocalCue(lines, fadeSec) {
+  // The incoming deck should meet the listener one fade before its first real
+  // lyric, rather than replaying a long instrumental intro from 0:00.
+  lines = Array.isArray(lines) ? lines : [];
+  var leadSec = Math.max(0, Number(fadeSec) || 0);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i] || {};
+    var at = Number(line.t);
+    if (!isFinite(at) || at < 0 || line.fallback || (typeof isNoLyricText === 'function' && isNoLyricText(line.text))) continue;
+    if (smartTransitionLyricLooksLikeCredit(line.text)) continue;
+    // A first vocal this late is more likely a long-intro/remix cue. Jumping
+    // tens of seconds is worse than keeping the full arrangement from 0:00.
+    if (at > SMART_TRANSITION_MAX_VOCAL_ENTRY_AT_SEC) return { known: false, vocalAt: 0, entryTime: 0 };
+    return {
+      known: true,
+      vocalAt: at,
+      // Begin B exactly one crossfade earlier, so its first lyric arrives
+      // as the incoming fade completes (not several seconds after it).
+      entryTime: Math.max(0, at - leadSec)
+    };
+  }
+  return { known: false, vocalAt: 0, entryTime: 0 };
+}
+
+function smartTransitionIncomingVocalCueFromResponse(song, response, fadeSec) {
+  if (typeof parseLyricResponseToOriginalState !== 'function') return { known: false, vocalAt: 0, entryTime: 0 };
+  try {
+    var merged = typeof mergeInlineLyricResponseForSong === 'function'
+      ? mergeInlineLyricResponseForSong(song, response || {})
+      : (response || {});
+    var state = parseLyricResponseToOriginalState(song, merged);
+    return smartTransitionIncomingVocalCue(state && state.lines, fadeSec);
+  } catch (_) {
+    return { known: false, vocalAt: 0, entryTime: 0 };
+  }
+}
+
+async function smartTransitionIncomingEntryTime(song, fadeSec) {
+  // Inline lyrics and the disk cache avoid an extra request in the common
+  // case.  A cache miss is still worth resolving while A is playing: it lets
+  // the B deck seek directly to the first vocal lead-in before it preloads.
+  var cue = smartTransitionIncomingVocalCueFromResponse(song, {}, fadeSec);
+  if (cue.known) return cue;
+  try {
+    if (typeof readPersistentLyricCache === 'function') {
+      var cached = await readPersistentLyricCache(song);
+      cue = smartTransitionIncomingVocalCueFromResponse(song, cached, fadeSec);
+      if (cue.known) return cue;
+    }
+    if (typeof apiJson !== 'function' || typeof lyricEndpointForSong !== 'function') return cue;
+    var response = await apiJson(lyricEndpointForSong(song), { timeoutMs: 5000 });
+    var merged = typeof mergeInlineLyricResponseForSong === 'function'
+      ? mergeInlineLyricResponseForSong(song, response || {})
+      : (response || {});
+    cue = smartTransitionIncomingVocalCueFromResponse(song, merged, fadeSec);
+    if (typeof writePersistentLyricCache === 'function') writePersistentLyricCache(song, merged);
+  } catch (_) { }
+  return cue;
+}
+
 function scheduleSmartCrossfadePrepare(token, index, delay, attempt) {
   clearSmartCrossfadeTimer();
   var smartEnabled = isSmartTransitionEnabled();
@@ -423,14 +490,27 @@ async function prepareSmartTransitionFallback(token, currentIndex) {
   var currentSong = playQueue[currentIndex];
   var nextSong = playQueue[nextIndex];
   if (!currentSong || !nextSong) return false;
-  var descriptor = await smartCrossfadeAudioDescriptor(nextSong);
+  var initialDuration = Number(audio && audio.duration) || (typeof getPlaybackDurationSeconds === 'function' ? Number(getPlaybackDurationSeconds()) : 0);
+  if (!isFinite(initialDuration) || initialDuration <= 12) return false;
+  // Resolve lyrics and the next source together, then recompute A's timing.
+  // These awaits can take several seconds on a slow provider.
+  var initialFadeSec = Math.min(7.6, Math.max(4.2, initialDuration * 0.045));
+  var prepared = await Promise.all([
+    smartCrossfadeAudioDescriptor(nextSong),
+    smartTransitionIncomingEntryTime(nextSong, initialFadeSec)
+  ]);
+  var descriptor = prepared[0];
+  var incomingCue = prepared[1] || { known: false, entryTime: 0 };
   if (!descriptor || !descriptor.proxyUrl || token !== trackSwitchToken || currentIndex !== currentIdx) return false;
   var duration = Number(audio && audio.duration) || (typeof getPlaybackDurationSeconds === 'function' ? Number(getPlaybackDurationSeconds()) : 0);
+  var nowSec = Number(audio && audio.currentTime) || 0;
+  if (!isFinite(duration) || duration <= 12 || duration - nowSec <= 1.5) return false;
   // 淡变触发点/时长：保持原动态算法（结束前 4.5% 钳 4.2~7.6s），不随提前量改变。
   var fadeLeadSec = Math.min(7.6, Math.max(4.2, duration * 0.045));
-  if (!isFinite(duration) || duration <= 12) return false;
-  var triggerAt = Math.max(Number(audio.currentTime) || 0, duration - fadeLeadSec);
+  var triggerAt = Math.max(nowSec, duration - fadeLeadSec);
   var fadeMs = Math.max(1200, Math.round((duration - triggerAt - 0.12) * 1000));
+  var fadeSec = fadeMs / 1000;
+  if (incomingCue.known) incomingCue.entryTime = Math.max(0, Number(incomingCue.vocalAt) - fadeSec);
   // 提前量（15/30/60s）：从"结束前 leadSec"开始进入人声监听窗口，
   // 检测到人声已结束（尾奏/纯伴奏）就提前触发淡变；检测不到则按 triggerAt 照旧。
   var monitorLeadSec = normalizeSmartTransitionLeadSec(smartTransitionLeadSec);
@@ -447,10 +527,11 @@ async function prepareSmartTransitionFallback(token, currentIndex) {
     audioUrl: descriptor,
     executionMode: 'simple-crossfade',
     mixType: 'crossfade',
-    fadeSec: fadeMs / 1000,
+    fadeSec: fadeSec,
     fadeStartA: triggerAt,
-    bFadeStart: 0,
-    entryTime: 0,
+    bFadeStart: Math.max(0, Number(incomingCue.entryTime) || 0),
+    entryTime: Math.max(0, Number(incomingCue.entryTime) || 0),
+    incomingVocalAt: Math.max(0, Number(incomingCue.vocalAt) || 0),
     exitTime: duration,
     triggerAt: triggerAt,
     vocalMonitor: vocalMonitorEnabled ? {
@@ -462,7 +543,7 @@ async function prepareSmartTransitionFallback(token, currentIndex) {
       lastSampleAt: 0
     } : null,
     timeline: [
-      { t: -fadeMs / 1000, deck: 'B', op: 'play', at: 0, volume: 0 },
+      { t: -fadeMs / 1000, deck: 'B', op: 'play', at: Math.max(0, Number(incomingCue.entryTime) || 0), volume: 0 },
       { t: -fadeMs / 1000, deck: 'AB', op: 'crossfade', duration: fadeMs },
       { t: -0.12, deck: 'B', op: 'handoff' }
     ],
@@ -757,6 +838,16 @@ function tickSmartCrossfade() {
     }
   }
   if (due) {
+    // Never mute/end A while B has not buffered enough to start.  Let A end
+    // naturally and use the ordinary next-track path instead of leaving an
+    // apparently selected but silent incoming song on screen.
+    var preparedMedia = pending.preparedAudio;
+    if (!preparedMedia || Number(preparedMedia.readyState) < 2) {
+      smartTransitionPending = null;
+      stopSmartTransitionPreparedAudio(preparedMedia);
+      updateSmartTransitionStyleControls();
+      return;
+    }
     smartTransitionPending = null;
     executeSmartCrossfade(pending);
   }
@@ -823,8 +914,12 @@ function smartTransitionPromiseWithTimeout(promise, timeoutMs, code) {
   });
 }
 
-var SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS = 9000;
-var SMART_TRANSITION_CLOCK_TIMEOUT_MS = 6500;
+// B is already required to have buffered before the fade trigger, so its play
+// and clock checks stay short. A slow/stale prepared deck is abandoned while
+// A still owns playback, rather than locking the transition for tens of seconds.
+var SMART_TRANSITION_PLAY_REQUEST_TIMEOUT_MS = 2500;
+var SMART_TRANSITION_CLOCK_TIMEOUT_MS = 2500;
+var SMART_TRANSITION_ADOPTED_CLOCK_TIMEOUT_MS = 6500;
 
 function waitForSmartTransitionPlaybackProgress(pending, media, context, startTime, timeoutMs) {
   return new Promise(function (resolve) {
@@ -906,9 +1001,10 @@ async function executeSmartCrossfade(pending) {
     startSmartCoverTransition(playQueue[pending.nextIndex], Number(pending.fadeSec) * 1000, activeRunStyle);
   }
   var nextMedia = prepareSmartTransitionPendingAudio(pending);
-  if (!nextMedia) {
+  if (!nextMedia || Number(nextMedia.readyState) < 2) {
     smartCrossfadeExecuting = false;
     if (isSmartTransition) resetSmartCoverTransition();
+    stopSmartTransitionPreparedAudio(nextMedia);
     if (isSmartTransition) updateSmartTransitionStyleControls();
     recoverSmartCrossfadeEndedOutgoing(pending, transitionContext, 'missing-audio');
     return;
@@ -1021,7 +1117,7 @@ async function executeSmartCrossfade(pending) {
     if (handoffSucceeded) {
       var adoptedToken = trackSwitchToken;
       var adoptedStartTime = Number(nextMedia.currentTime) || 0;
-      var adoptedProgressed = await waitForAdoptedSmartTransitionPlaybackProgress(nextMedia, adoptedToken, pending.nextIndex, adoptedStartTime, SMART_TRANSITION_CLOCK_TIMEOUT_MS);
+    var adoptedProgressed = await waitForAdoptedSmartTransitionPlaybackProgress(nextMedia, adoptedToken, pending.nextIndex, adoptedStartTime, SMART_TRANSITION_ADOPTED_CLOCK_TIMEOUT_MS);
       if (!adoptedProgressed) {
         console.warn('[SmartCrossfade] adopted media clock stalled; falling back to a fresh player');
         handoffSucceeded = await runSmartTransitionNormalFallback();

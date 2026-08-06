@@ -1145,10 +1145,12 @@ function searchSongResultHtml(s, i) {
       '<div class="search-result-meta">' + searchResultMetaHtml(s, i) + '</div>' +
       '</div>' +
       '</div>' +
+      '<div class="search-result-actions">' +
       '<button class="song-action-btn' + (isSongLiked(s) ? ' liked' : '') + '" data-like-index="' + i + '" title="' + (isSongLiked(s) ? '取消红心' : '红心喜欢') + '" onclick="event.stopPropagation();toggleLikeSearchResult(' + i + ')">' + heartIconSvg() + '</button>' +
       '<button class="song-action-btn" title="收藏到歌单" onclick="event.stopPropagation();collectSearchResult(' + i + ')">' + playlistPlusIconSvg() + '</button>' +
       (typeof canDownloadSong === 'function' && canDownloadSong(s) ? '<button class="song-action-btn dl-btn" title="下载" onclick="event.stopPropagation();downloadSongFromSearch(' + i + ')">' + downloadIconSvg() + '</button>' : '') +
       '<button class="add-btn" title="下一首播放" onclick="event.stopPropagation();queueSearchResult(' + i + ')">+</button>' +
+      '</div>' +
       '</div>';
 }
 function searchLoadMoreSentinelHtml() {

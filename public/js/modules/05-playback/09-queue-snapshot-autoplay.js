@@ -72,7 +72,10 @@ function readLastPlaybackSnapshot() {
     var raw = localStorage.getItem(LAST_PLAYBACK_STORE_KEY);
     if (raw) {
       var data = JSON.parse(raw);
-      if (data && data.version === 1 && data.current) return data;
+      if (data && data.version === 1 && data.current) {
+        data.currentTime = 0;
+        return data;
+      }
     }
 
     // main 旧版把完整队列保存在 playback-session-v1。直接从同一个
@@ -90,7 +93,7 @@ function readLastPlaybackSnapshot() {
       savedAt: Number(legacy.savedAt) || Date.now(),
       reason: 'main-playback-session-v1',
       currentIdx: legacyIndex,
-      currentTime: Math.max(0, Number(legacy.currentTime) || 0),
+      currentTime: 0,
       duration: playbackDurationFromSong(legacyCurrent),
       playing: false,
       playMode: legacy.playMode || 'loop',
@@ -107,19 +110,16 @@ function saveLastPlaybackSnapshot(force, reason) {
   var song = currentCoverSong();
   if (!song) return;
   if (!audio && restoredLastPlaybackSnapshot && restoredLastPlaybackSnapshot.current && queueItemKey(song) === queueItemKey(restoredLastPlaybackSnapshot.current)) return;
-  // 无论成功还是失败都推进节流时间戳：配额写不进去时若不推进，200ms 的 tick
-  // 会让整条队列的序列化每次都重跑，主线程会被彻底占死。
+  // 无论成功还是失败都推进节流时间戳，避免配额写入失败后紧密重试。
   lastPlaybackSnapshotSavedAt = now;
   var durationSec = getPlaybackDurationSeconds();
-  var currentSec = getPlaybackCurrentSeconds();
-  if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
   var sourceQueue = Array.isArray(playQueue) ? playQueue : [];
   function payloadForQueue(queue, minimal) { return {
     version: 1,
     savedAt: now,
     reason: reason || '',
     currentIdx: currentIdx,
-    currentTime: Math.max(0, Number(currentSec) || 0),
+    currentTime: 0,
     duration: Math.max(0, Number(durationSec) || playbackDurationFromSong(song) || 0),
     playing: !!(audio && !audio.paused && !audio.ended),
     playMode: playMode || 'loop',
@@ -148,11 +148,9 @@ function saveLastPlaybackSnapshot(force, reason) {
 function applyRestoredPlaybackProgressUi(snapshot) {
   snapshot = snapshot || {};
   var durationSec = Number(snapshot.duration) || playbackDurationFromSong(snapshot.current) || 0;
-  var currentSec = Math.max(0, Number(snapshot.currentTime) || 0);
-  if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
-  setProgressVisual(durationSec > 0 ? (currentSec / durationSec * 100) : 0);
+  setProgressVisual(0);
   var timeDisplay = document.getElementById('time-display');
-  if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
+  if (timeDisplay) timeDisplay.textContent = '0:00 / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
 function hydrateLastPlaybackSnapshotQueue(snapshot) {
   snapshot = snapshot || {};
@@ -185,7 +183,6 @@ function restoreLastPlaybackSnapshot() {
   var isLocal = current.type === 'local' || !!current.localKey || current.localMissing;
   restoredLastPlaybackSnapshot = snapshot;
   startupRestoreHomePending = !startupAutoplayPreference;
-  pendingPlaybackResumeAt = startupResumeSecondsFromSnapshot(snapshot);
   playQueue = restoredQueue.queue;
   currentIdx = restoredQueue.index;
   currentLocalSong = isLocal ? playQueue[currentIdx] : null;
@@ -207,7 +204,7 @@ function restoreLastPlaybackSnapshot() {
       }, 180);
     }
   }
-  applyRestoredPlaybackProgressUi(Object.assign({}, snapshot, { currentTime: pendingPlaybackResumeAt }));
+  applyRestoredPlaybackProgressUi(snapshot);
   showRestoredPlaybackControls('restore');
   return true;
 }
@@ -287,7 +284,6 @@ function tryStartupAutoplayHomeFallback(jobId) {
       playQueue = homeDiscoverState.songs.map(cloneSong);
       currentIdx = 0;
       currentLocalSong = null;
-      pendingPlaybackResumeAt = 0;
       startupRestoreHomePending = false;
       startupAutoplayAttemptCount = 0;
       safeRenderQueuePanel('startup-autoplay-home-fallback', { scrollCurrent: miniQueueOpen });

@@ -2,7 +2,7 @@ function hasRestoredPlaybackCandidate() {
   if (!restoredLastPlaybackSnapshot) return false;
   if (currentLocalSong) return true;
   if (Array.isArray(playQueue) && currentIdx >= 0 && playQueue[currentIdx]) return true;
-  return !!(restoredLastPlaybackSnapshot && pendingPlaybackResumeAt > 0 && restoredLastPlaybackSnapshot.current);
+  return !!restoredLastPlaybackSnapshot.current;
 }
 
 function hasPlaybackControlCandidate() {

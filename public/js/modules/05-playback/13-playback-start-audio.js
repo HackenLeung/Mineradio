@@ -175,6 +175,9 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     if (this && this.__mineradioSmartTransitionEndedRecoveryToken === token) return;
     if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) {
       if (typeof noteSmartCrossfadeOutgoingEnded === 'function') noteSmartCrossfadeOutgoingEnded(this, token, currentIdx);
+      if (typeof recoverSmartCrossfadeEndedOutgoing === 'function' && smartTransitionActiveTransitionContext) {
+        recoverSmartCrossfadeEndedOutgoing(smartTransitionPending, smartTransitionActiveTransitionContext, 'outgoing-ended');
+      }
       return;
     }
     finalizeListenSession(true);
@@ -207,7 +210,6 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     safeRenderQueuePanel('local-metadata', { scrollCurrent: miniQueueOpen });
   };
   scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);
-  if (resumeAt > 0) pendingPlaybackResumeAt = 0;
   if (!transitionHandoff) audio.load();
   currentBeatMap = null;
   beatMapNextIdx = 0;
@@ -336,20 +338,29 @@ async function playQueueAt(idx, opts) {
       }, 0);
       return true;
     }
-    var restoreResumeAt = 0;
-    if (
-      opts.resumeAt == null
-      && pendingPlaybackResumeAt > 0
-      && restoredLastPlaybackSnapshot
-      && restoredLastPlaybackSnapshot.current
-      && queueItemKey(song) === queueItemKey(restoredLastPlaybackSnapshot.current)
-      && !opts.autoRepeat
-      && !opts.qualitySwitch
-    ) {
-      restoreResumeAt = pendingPlaybackResumeAt;
+    var requestedResumeAt = Math.max(0, Number(opts.resumeAt) || 0);
+    var isRemotePlaybackSong = !(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
+    // A remote mid-track recovery starts with a thin range buffer around the requested position.
+    // Keep whole-track analysis, next-track beat prefetch, and B-deck preload
+    // out of that window so they cannot starve the resumed stream.
+    var onlineBackgroundAudioDeferUntil = isRemotePlaybackSong && !transitionHandoff && requestedResumeAt >= 0.35
+      ? Date.now() + 45000
+      : 0;
+    function onlineBackgroundAudioDelay(baseDelayMs) {
+      return Math.max(Math.max(0, Number(baseDelayMs) || 0), onlineBackgroundAudioDeferUntil - Date.now());
     }
-    if (restoreResumeAt > 0 && typeof requestStageLyricRestoreWarmup === 'function') {
-      requestStageLyricRestoreWarmup(restoreResumeAt, token, 'startup-restore');
+    function onlineSmartTransitionPrepareDelay(baseDelayMs) {
+      var delayedMs = onlineBackgroundAudioDelay(baseDelayMs);
+      if (!onlineBackgroundAudioDeferUntil || !audio) return delayedMs;
+      var durationSec = Number(audio.duration) || 0;
+      var positionSec = Number(audio.currentTime) || requestedResumeAt;
+      if (!isFinite(durationSec) || durationSec <= positionSec) return delayedMs;
+      var fadeLeadSec = Math.min(7.6, Math.max(4.2, durationSec * 0.045));
+      // Keep about ten seconds to resolve lyrics/source and buffer B before
+      // the fade trigger. A near-end recovery therefore prepares promptly,
+      // while an ordinary mid-track recovery still gets its quiet 45s window.
+      var latestUsefulMs = Math.max(600, (durationSec - positionSec - fadeLeadSec - 10) * 1000);
+      return Math.min(delayedMs, latestUsefulMs);
     }
     var playbackContext = opts.context || (song && song.radioContext) || null;
     activeRadioContext = playbackContext || null;
@@ -415,7 +426,7 @@ async function playQueueAt(idx, opts) {
     safePlaybackStep('trial-banner-reset', function () { document.getElementById('trial-banner').classList.remove('show'); });
     if (song.type === 'local' || song.source === 'local' || song.localUrl) {
       markPlayPhase('local-audio');
-      var localStarted = await playLocalQueueSong(song, idx, token, firstVisualPlay, opts, restoreResumeAt);
+      var localStarted = await playLocalQueueSong(song, idx, token, firstVisualPlay, opts, requestedResumeAt);
       if (localStarted === true && typeof completeSourceFallbackRecovery === 'function') {
         completeSourceFallbackRecovery(sourceFallbackRecoveryFromOptions(opts));
       }
@@ -505,7 +516,8 @@ async function playQueueAt(idx, opts) {
         if (isKugouPlayback && typeof applyKugouPlaybackStatusEvidence === 'function') applyKugouPlaybackStatusEvidence(data);
         if (isQQPlayback && typeof applyQQPlaybackStatusEvidence === 'function') applyQQPlaybackStatusEvidence(data, song);
       }
-      var retryPlaybackOpts = Object.assign({}, opts, { resumeAt: opts.resumeAt != null ? opts.resumeAt : restoreResumeAt });
+      var retryPlaybackOpts = Object.assign({}, opts);
+      if (opts.resumeAt != null) retryPlaybackOpts.resumeAt = requestedResumeAt;
       if (!data || !data.url) {
         var fallbackResult = await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts);
         if (fallbackResult !== null) return fallbackResult === true;
@@ -594,20 +606,23 @@ async function playQueueAt(idx, opts) {
       if (!transitionHandoff) audio.src = proxyAudioUrl;
       audio.__mineradioQueueItemKey = queueItemKey(song);
       audio.__mineradioTrackSwitchToken = token;
+      if (typeof clearRecoverableNetworkPlaybackStall === 'function') clearRecoverableNetworkPlaybackStall(audio);
       updatePlaybackProgressUi();
       audio.onended = function () {
         if (token !== trackSwitchToken) return;
         if (this && this.__mineradioSmartTransitionEndedRecoveryToken === token) return;
         if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting) {
           if (typeof noteSmartCrossfadeOutgoingEnded === 'function') noteSmartCrossfadeOutgoingEnded(this, token, currentIdx);
+          if (typeof recoverSmartCrossfadeEndedOutgoing === 'function' && smartTransitionActiveTransitionContext) {
+            recoverSmartCrossfadeEndedOutgoing(smartTransitionPending, smartTransitionActiveTransitionContext, 'outgoing-ended');
+          }
           return;
         }
         finalizeListenSession(true);
         if (playMode === 'single') setTimeout(function () { playQueueAt(currentIdx, { autoRepeat: true, suppressPlayFailureNotice: true }); }, 0);
         else setTimeout(nextTrack, 0);
       };
-      scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : restoreResumeAt, token);
-      if (restoreResumeAt > 0) pendingPlaybackResumeAt = 0;
+      scheduleAudioResumePosition(audio, requestedResumeAt, token);
       if (!transitionHandoff) audio.load();
       markPlayPhase(qualitySwitch ? 'visual-prep-skip' : 'visual-prep');
       if (qualitySwitch) {
@@ -651,7 +666,7 @@ async function playQueueAt(idx, opts) {
           syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, transitionMixed);
           notifyDesktopLyricsBeatMapReady();
           console.log('beatmap 缓存命中:', currentBeatMap.kicks.length, '个鼓点');
-          scheduleQueueBeatPrefetch(idx, 2600);
+          scheduleQueueBeatPrefetch(idx, onlineBackgroundAudioDelay(2600));
         } else {
           var diskBeatMap = bmKey ? await readBeatDiskCache(bmKey) : null;
           if (!playbackInvocationStillCurrent(playbackMedia)) {
@@ -664,7 +679,7 @@ async function playQueueAt(idx, opts) {
             syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, transitionMixed);
             notifyDesktopLyricsBeatMapReady();
             console.log('beatmap D盘缓存命中:', currentBeatMap.kicks.length, '个鼓点');
-            scheduleQueueBeatPrefetch(idx, 2600);
+            scheduleQueueBeatPrefetch(idx, onlineBackgroundAudioDelay(2600));
           } else {
             // 后台延迟分析, 避免新歌刚开始播放时抢占解码和渲染资源
             scheduleBeatAnalysis(bmKey || song.id, proxyAudioUrl, bmTok, song);
@@ -700,6 +715,16 @@ async function playQueueAt(idx, opts) {
         return settleExpiredSourceFallbackPlayback(idx, token, opts);
       }
       if (!playbackStarted) {
+        if (
+          typeof playbackMediaHasRecoverableNetworkStall === 'function'
+          && playbackMediaHasRecoverableNetworkStall(playbackMedia, token)
+        ) {
+          // This is a transient proxy/CDN starvation, not proof that the song
+          // or provider is unavailable. Keep the source and pending seek for a
+          // manual retry instead of scanning the queue and clearing ownership.
+          forcePlaybackControlsInteractive();
+          return false;
+        }
         if (playbackProvider === 'netease' && data && data.sourceMatch) {
           var sameSourceRetry = await retryNeteaseSourceMatchPlayback(song, data, idx, token, retryPlaybackOpts, requestedQuality);
           if (sameSourceRetry !== null) return sameSourceRetry === true;
@@ -791,6 +816,7 @@ async function playQueueAt(idx, opts) {
         var smartTransitionPrepareDelay = typeof smartCrossfadePostSwitchDelay === 'function'
           ? smartCrossfadePostSwitchDelay(!!opts.smartTransitionHandoff)
           : 4200;
+        smartTransitionPrepareDelay = onlineSmartTransitionPrepareDelay(smartTransitionPrepareDelay);
         scheduleSmartCrossfadePrepare(token, idx, smartTransitionPrepareDelay);
       }
       safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);

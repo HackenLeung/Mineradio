@@ -127,13 +127,33 @@ function reportListenSession(record, session, durationMs) {
   };
   if (controller) options.signal = controller.signal;
   try {
-    Promise.resolve(fetch('/api/listen/report', options)).then(function () {
+    Promise.resolve(fetch('/api/listen/report', options)).then(function (response) {
       if (timeoutId) clearTimeout(timeoutId);
-    }, function () {
+      if (!response || typeof response.json !== 'function') {
+        console.warn('[ListenReport] invalid response');
+        return;
+      }
+      return Promise.resolve(response.json()).then(function (result) {
+        window.__mineradioLastListenReport = {
+          at: Date.now(),
+          provider: payload.provider,
+          songId: payload.song && payload.song.id || '',
+          ok: !!response.ok,
+          result: result || null,
+        };
+        if (!response.ok || !result || result.accepted === false || (payload.provider === 'netease' && result.platformSubmitted !== true)) {
+          console.warn('[ListenReport] not submitted', result || { status: response.status });
+        }
+      }, function (error) {
+        console.warn('[ListenReport] invalid JSON response', error && (error.message || error));
+      });
+    }, function (error) {
       if (timeoutId) clearTimeout(timeoutId);
+      console.warn('[ListenReport] request failed', error && (error.message || error));
     });
   } catch (e) {
     if (timeoutId) clearTimeout(timeoutId);
+    console.warn('[ListenReport] request failed', e && (e.message || e));
   }
 }
 

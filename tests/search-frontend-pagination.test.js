@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const appRoot = path.resolve(__dirname, '..');
 const searchPath = path.join(appRoot, 'public', 'js', 'modules', '05-playback', '07-search.js');
 const searchSource = fs.readFileSync(searchPath, 'utf8');
+const cssSource = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
 
 function namedFunctionSource(source, name) {
   const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
@@ -153,6 +154,14 @@ test('history rendering and replay keep the currently selected tab', () => {
   assert.doesNotMatch(replaySource, /searchMode\s*=/);
   assert.match(modeSource, /else if \(!renderSearchHistory\(\)\) loadPodcastHot\(\)/);
   assert.match(podcastSource, /rememberSearchQuery\(q\)/);
+});
+
+test('search result actions use a compact group with centered icons', () => {
+  const renderSource = namedFunctionSource(searchSource, 'searchSongResultHtml');
+  assert.match(renderSource, /class="search-result-actions"/);
+  assert.match(cssSource, /\.search-result-actions\s*\{[\s\S]{0,180}gap:\s*6px/);
+  assert.match(cssSource, /\.search-result-actions>button\s*\{[\s\S]{0,260}display:\s*inline-flex;[\s\S]{0,100}align-items:\s*center;[\s\S]{0,100}justify-content:\s*center/);
+  assert.match(cssSource, /\.search-result-actions svg\s*\{[\s\S]{0,100}display:\s*block/);
 });
 
 test('catalogue search readiness is separate from login state', () => {

@@ -15,7 +15,6 @@ const storageKeys = [
   'mineradio-local-library-folders-v2',
   'mineradio-local-metadata-v1',
   'mineradio-close-behavior-v1',
-  'mineradio-startup-resume-mode-v1',
   'mineradio-account-view-mode-v1',
   'mineradio-active-account-provider-v1',
   'mineradio-controls-auto-hide-v1',

@@ -896,7 +896,7 @@ function renderHomeDashboardQuickCards() {
       label: 'CONTINUE LISTENING',
       title: continueItem && (continueItem.name || continueItem.title) || '继续听',
       sub: recentSnapshotSong
-        ? ('上次队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · ' + (homeDashboardSubtitle(recentSnapshotSong) || '恢复上次进度'))
+        ? ('上次队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · 从歌曲开头播放')
         : (continueItem ? (homeDashboardSubtitle(continueItem) || '继续最近一次有效聆听') : '完整听过一首歌后会出现在这里'),
       cover: continueItem && continueItem.cover || '',
       action: 'resumeHomeDashboardPlayback()',

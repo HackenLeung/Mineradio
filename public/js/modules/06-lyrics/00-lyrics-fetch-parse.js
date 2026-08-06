@@ -294,7 +294,7 @@ function parseLyricResponseToOriginalState(song, response) {
 function shouldRetryStartupLyricFetch(song, token, attempt) {
   if (!song || token !== trackSwitchToken || (attempt || 0) >= 3) return false;
   if (song.type === 'local' || song.source === 'local' || song.localKey || song.type === 'podcast') return false;
-  return !!(startupAutoplayPreference || restoredLastPlaybackSnapshot || pendingPlaybackResumeAt > 0);
+  return !!(startupAutoplayPreference || restoredLastPlaybackSnapshot);
 }
 function scheduleStartupLyricFetchRetry(song, token, attempt) {
   var delays = [700, 1600, 3200];
@@ -722,22 +722,18 @@ function renderLyrics(options) {
   }
   var fallbackTitleOnly = lyricsAreFallbackTitleOnly(lyricsLines);
   var warmupReason = fallbackTitleOnly ? 'renderLyrics-title' : 'renderLyrics';
-  var restoreWarmup = typeof stageLyricRestoreWarmupSeconds === 'function' && stageLyricRestoreWarmupSeconds() != null;
-  var prewarmReason = restoreWarmup ? 'startup-restore-lyrics' : warmupReason;
   if (typeof invalidateStageLyricPayloadForNewLyrics === 'function') invalidateStageLyricPayloadForNewLyrics('renderLyrics');
   else clearStageLyrics();
   if (typeof stageLyrics !== 'undefined' && stageLyrics && renderSignature) stageLyrics.renderSignature = renderSignature;
-  if (typeof requestStageLyricWarmup === 'function') requestStageLyricWarmup(prewarmReason, fallbackTitleOnly ? 120 : 900);
-  if (restoreWarmup && typeof scheduleStageLyricRestorePrewarm === 'function') {
-    scheduleStageLyricRestorePrewarm(prewarmReason, fallbackTitleOnly ? 40 : 16);
-  } else if (typeof scheduleStageLyricPrewarm === 'function') {
+  if (typeof requestStageLyricWarmup === 'function') requestStageLyricWarmup(warmupReason, fallbackTitleOnly ? 120 : 900);
+  if (typeof scheduleStageLyricPrewarm === 'function') {
     scheduleStageLyricPrewarm(warmupReason, fallbackTitleOnly ? 56 : 32);
   }
   if (!fallbackTitleOnly && typeof scheduleStageLyricSingleLineBootstrapPrewarm === 'function') {
-    scheduleStageLyricSingleLineBootstrapPrewarm(prewarmReason, restoreWarmup ? 24 : 44);
+    scheduleStageLyricSingleLineBootstrapPrewarm(warmupReason, 44);
   }
   if (!fallbackTitleOnly && typeof scheduleStageLyricFullTrackWarmup === 'function') {
-    scheduleStageLyricFullTrackWarmup(restoreWarmup ? 'track-ready-fast' : 'lyrics-ready-preload', restoreWarmup ? 120 : 24);
+    scheduleStageLyricFullTrackWarmup('lyrics-ready-preload', 24);
   }
   // v8: 歌词渲染由 stageLyrics 在每帧 tickLyricsParticles 里推动
 }

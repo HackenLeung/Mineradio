@@ -254,11 +254,10 @@ var FX_CONSOLE_LAYOUT = [
   {
     key: 'system',
     groups: [
-      { key: 'startup', title: '启动与退出', hint: '关闭窗口行为和恢复播放方式', open: true, items: [
+      { key: 'startup', title: '启动与退出', hint: '关闭窗口行为和启动播放方式', open: true, items: [
         fxConsoleItem('close-behavior-seg', '关闭窗口', '直接退出 后台托盘'),
         fxConsoleItem('t-startupAutoplay', '启动自动播放', '打开软件继续播放'),
-        fxConsoleItem('t-startupFastSkip', '秒启动跳过启动页', '快速启动'),
-        fxConsoleItem('startup-resume-mode-seg', '恢复播放位置', '按上次进度 重播整首')
+        fxConsoleItem('t-startupFastSkip', '秒启动跳过启动页', '快速启动')
       ] },
       { key: 'output', title: '播放输出', hint: '音频输出设备和路由面板', items: [
         fxConsoleItem('audio-output-panel', '播放输出设备', '声卡 耳机 扬声器 路由', false)
@@ -661,13 +660,12 @@ function captureFxConsoleState() {
   return {
     fx: snapshot || {},
     closeBehavior: typeof closeBehaviorPreference !== 'undefined' ? closeBehaviorPreference : null,
-    startupResumeMode: typeof startupResumeModePreference !== 'undefined' ? startupResumeModePreference : null,
     startupAutoplay: typeof startupAutoplayPreference !== 'undefined' ? !!startupAutoplayPreference : null,
     startupFastSkip: typeof startupFastSkipPreference !== 'undefined' ? !!startupFastSkipPreference : null
   };
 }
 
-var FX_CONSOLE_PREF_KEYS = ['closeBehavior', 'startupResumeMode', 'startupAutoplay', 'startupFastSkip'];
+var FX_CONSOLE_PREF_KEYS = ['closeBehavior', 'startupAutoplay', 'startupFastSkip'];
 var FX_CONSOLE_EXCLUDED_FX_KEYS = { backgroundAlbumCover: true };
 
 function fxConsoleValueEqual(a, b) {
@@ -799,9 +797,6 @@ function fxConsoleTryApplyInputAdapter(record, targetState, changes) {
 function fxConsoleApplyPreferences(state, changes) {
   if (changes.prefs.indexOf('closeBehavior') >= 0 && state.closeBehavior != null && typeof setCloseBehaviorPreference === 'function') {
     setCloseBehaviorPreference(state.closeBehavior, { toast: false });
-  }
-  if (changes.prefs.indexOf('startupResumeMode') >= 0 && state.startupResumeMode != null && typeof setStartupResumeModePreference === 'function') {
-    setStartupResumeModePreference(state.startupResumeMode, { toast: false });
   }
   if (changes.prefs.indexOf('startupAutoplay') >= 0 && state.startupAutoplay != null && typeof startupAutoplayPreference !== 'undefined' && startupAutoplayPreference !== state.startupAutoplay && typeof toggleStartupAutoplay === 'function') {
     toggleStartupAutoplay();
