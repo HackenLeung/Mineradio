@@ -40,9 +40,7 @@ var homePlatformRecommendationState = {
   previousFocus: null,
   neteaseLoading: false,
   feeds: {
-    qishui: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     kugou: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
-    spotify: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
   },
 };
 
@@ -1191,35 +1189,19 @@ function openHomeDashboardCharts() {
 function homePlatformRecommendationSourceLabel(source) {
   return {
     netease: '小云',
-    qishui: '小汽',
     qq: '小Q',
     kugou: '小狗',
-    spotify: 'Spotify',
   }[source] || '当前平台';
 }
 
 function homePlatformRecommendationFeedConfig(source) {
   return {
-    qishui: {
-      endpoint: '/api/qishui/feed?limit=12',
-      sectionTitle: '推荐 Feed',
-      cardLabel: '小汽推荐 Feed',
-      readyText: '来自小汽推荐 Feed',
-      playlistName: '小汽推荐 Feed',
-    },
     kugou: {
       endpoint: '/api/kugou/recommendations?limit=12',
       sectionTitle: '推荐 FM',
       cardLabel: '小狗推荐 FM',
       readyText: '来自小狗 FM 推荐',
       playlistName: '小狗推荐 FM',
-    },
-    spotify: {
-      endpoint: '/api/spotify/recommendations?limit=12',
-      sectionTitle: '个性化推荐',
-      cardLabel: 'Spotify 推荐',
-      readyText: '来自 Spotify 个性化推荐',
-      playlistName: 'Spotify 个性化推荐',
     },
   }[source] || null;
 }
@@ -1388,19 +1370,6 @@ function renderHomePlatformRecommendations() {
       var sectionTitle = feedConfig.sectionTitle;
       var cardLabel = feedConfig.cardLabel;
       var readyText = feedConfig.readyText;
-      if (source === 'qishui' && feedState.fallback) {
-        sectionTitle = '你的音乐';
-        cardLabel = '小汽喜欢 / 最近播放';
-        readyText = '小汽推荐 Feed 暂不可用，当前显示你的喜欢与最近播放';
-      } else if (source === 'spotify' && feedState.mode === 'liked-affinity') {
-        sectionTitle = '你的喜欢';
-        cardLabel = 'Spotify 喜欢的歌曲';
-        readyText = '来自 Spotify Web API 的喜欢歌曲';
-      } else if (source === 'spotify' && feedState.mode === 'personal-top') {
-        sectionTitle = '你的常听';
-        cardLabel = 'Spotify 常听歌曲';
-        readyText = '来自 Spotify Web API 的个人常听';
-      }
       status.textContent = readyText;
       list.innerHTML = '<section><h3>' + escHtml(sectionTitle) + '</h3><div class="home-platform-recommend-grid">' + feedState.songs.map(function (item, index) {
         return homePlatformRecommendationCard(source + '-song', index, item, cardLabel);
@@ -1442,9 +1411,6 @@ async function loadHomePlatformNeteaseRecommendations(force) {
   }
 }
 
-async function loadHomePlatformQishuiRecommendations(force) {
-  return loadHomePlatformFeedRecommendations('qishui', force);
-}
 
 async function loadHomePlatformFeedRecommendations(source, force) {
   var config = homePlatformRecommendationFeedConfig(source);
@@ -1548,7 +1514,7 @@ function bindHomePlatformRecommendationControls() {
     closeHomePlatformRecommendations();
     if (kind === 'netease-playlist' && typeof openHomePlaylist === 'function') openHomePlaylist(index);
     else if (kind === 'netease-song' && typeof playHomeSong === 'function') playHomeSong(index);
-    else if (/^(qishui|kugou|spotify)-song$/.test(kind)) playHomePlatformFeedSong(kind.replace(/-song$/, ''), index);
+    else if (kind === 'kugou-song') playHomePlatformFeedSong('kugou', index);
   });
   if (list) list.addEventListener('scroll', scheduleHomePlatformDailyWindowRender, { passive: true });
   window.addEventListener('resize', scheduleHomePlatformDailyWindowRender, { passive: true });
@@ -1575,12 +1541,8 @@ function openHomePlatformRecommendations(preferredSource) {
   mask.setAttribute('aria-hidden', 'false');
   var defaultSource = loginStatus && loginStatus.loggedIn
     ? 'netease'
-    : (qishuiLoginStatus && (qishuiLoginStatus.loggedIn || qishuiLoginStatus.configured)
-      ? 'qishui'
-      : (kugouLoginStatus && kugouLoginStatus.loggedIn
-        ? 'kugou'
-        : (spotifyLoginStatus && (spotifyLoginStatus.loggedIn || spotifyLoginStatus.configured) ? 'spotify' : 'netease')));
-  var source = /^(netease|qishui|qq|kugou|spotify)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
+    : (kugouLoginStatus && kugouLoginStatus.loggedIn ? 'kugou' : 'netease');
+  var source = /^(netease|qq|kugou)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
   loadHomePlatformRecommendations(source, false);
   setTimeout(function () {
     var activeTab = mask.querySelector('[data-home-recommend-source="' + source + '"]');

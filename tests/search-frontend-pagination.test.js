@@ -109,7 +109,7 @@ test('legacy search histories migrate into one list shared by every tab', () => 
   ], `
     var SEARCH_HISTORY_STORE_KEY = 'mineradio-search-history';
     var SEARCH_HISTORY_STORE_VERSION = 3;
-    var SEARCH_HISTORY_MODES = ['song', 'netease', 'qq', 'kugou', 'qishui', 'spotify', 'podcast'];
+    var SEARCH_HISTORY_MODES = ['song', 'netease', 'qq', 'kugou', 'podcast'];
   `, `
     this.readSearchHistory = readSearchHistory;
     this.writeSearchHistory = writeSearchHistory;
@@ -133,7 +133,7 @@ test('legacy search histories migrate into one list shared by every tab', () => 
       podcast: ['故事 FM'],
     },
   }));
-  assert.deepEqual(Array.from(sandbox.readSearchHistory('spotify')), ['晴天', '夜曲', '海阔天空', '稻香', '故事 FM']);
+  assert.deepEqual(Array.from(sandbox.readSearchHistory('podcast')), ['晴天', '夜曲', '海阔天空', '稻香', '故事 FM']);
   sandbox.rememberSearchQuery('一路向北', 'podcast');
   stored = JSON.parse(values.get('mineradio-search-history'));
   assert.deepEqual(stored.items, ['一路向北', '晴天', '夜曲', '海阔天空', '稻香', '故事 FM']);
@@ -166,19 +166,15 @@ test('search result actions use a compact group with centered icons', () => {
 
 test('catalogue search readiness is separate from login state', () => {
   const statuses = {
-    qishui: { loggedIn: false, searchReady: true, publicCatalog: true },
-    spotify: { loggedIn: false, searchReady: true },
-    spotifyOff: { loggedIn: false, searchReady: false },
+    offline: { loggedIn: false, searchReady: false },
   };
   const sandbox = {
     searchProviderStatus(provider) {
-      return provider === 'spotify-off' ? statuses.spotifyOff : (statuses[provider] || {});
+      return statuses[provider] || {};
     },
   };
   vm.runInNewContext(`${namedFunctionSource(searchSource, 'searchProviderCanSearch')}\nthis.canSearch = searchProviderCanSearch;`, sandbox);
-  assert.equal(sandbox.canSearch('qishui'), true);
-  assert.equal(sandbox.canSearch('spotify'), true);
-  assert.equal(sandbox.canSearch('spotify-off'), false);
+  assert.equal(sandbox.canSearch('offline'), false);
   assert.equal(sandbox.canSearch('netease'), true);
   assert.equal(sandbox.canSearch('qq'), true);
   assert.equal(sandbox.canSearch('kugou'), true);
@@ -218,7 +214,7 @@ test('search pagination carries provider offsets and ignores stale sessions', ()
   const sandbox = { encodeURIComponent };
   vm.runInNewContext(`${providerUrl}\nthis.url = searchProviderUrl;`, sandbox);
   assert.match(sandbox.url('qq', '晴天', 12, 24), /limit=12&offset=24$/);
-  assert.match(sandbox.url('spotify', 'Muse', 10, 30), /limit=10&offset=30$/);
+  assert.match(sandbox.url('kugou', 'Muse', 10, 30), /limit=10&offset=30$/);
 
   assert.match(searchSource, /fetchMusicSearchResults\(q, mode, previousPages\)/);
   assert.match(searchSource, /value\.nextOffset/);

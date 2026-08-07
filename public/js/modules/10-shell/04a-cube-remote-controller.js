@@ -49,7 +49,7 @@ function cubeRemoteIdentitySignature(includeSkinState) {
   var meta = typeof currentDesktopSongMeta === 'function' ? currentDesktopSongMeta() : {};
   var song = cubeRemoteCurrentSong();
   var identity = song
-    ? (song.localKey || song.localPath || song.mid || song.hash || song.spotifyId || song.id || '')
+    ? (song.localKey || song.localPath || song.mid || song.hash || song.id || '')
     : '';
   var parts = [
     identity || (meta.title || '') + '|' + (meta.artist || ''),

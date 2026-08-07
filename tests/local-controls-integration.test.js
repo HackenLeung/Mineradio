@@ -48,7 +48,7 @@ function createDesktopLockHarness(apiResult) {
   return { controls: factory(context), context, calls };
 }
 
-test('quick comments expose read state and writable Netease/Qishui submission', () => {
+test('quick comments expose read state and writable Netease submission', () => {
   assert.match(html, /id="comment-btn"[\s\S]*toggleCommentPanel/);
   assert.match(html, /id="comment-panel"[\s\S]*id="comment-panel-compose"[\s\S]*id="comment-panel-list"/);
   assert.doesNotMatch(html, /class="mini-queue-head"[\s\S]{0,360}onclick="closeMiniQueue\(\)"/);
@@ -58,7 +58,6 @@ test('quick comments expose read state and writable Netease/Qishui submission', 
   assert.doesNotMatch(comments, />匹配在线信息<\/button>/);
   assert.match(comments, /ensureLoggedInForAction\(config\.provider\)/);
   assert.match(comments, /writeUrl: '\/api\/song\/comments\?id='/);
-  assert.match(comments, /writeUrl: '\/api\/qishui\/song\/comments\?id='/);
   assert.match(comments, /provider: 'qq'[\s\S]*canWrite: false/);
 });
 

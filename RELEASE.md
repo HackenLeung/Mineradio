@@ -11,7 +11,7 @@
 - 修复切歌旧请求干扰新歌曲播放的问题，并完善音频代理 Range 分段处理。
 - 修复桌面歌词窗口关闭清理时启用状态被误清除的问题。
 - 更新按钮启动即显示，点击后才手动检查更新；标题栏图标统一尺寸、SVG 画布和线条样式。
-- 多平台账号、搜索和歌单流程补充到小云、小Q、小狗、小汽和 Spotify。
+- 多平台账号、搜索和歌单流程补充到小云、小Q、小狗。
 - 本地音乐文件夹、内嵌封面/歌词、匹配结果和完整播放队列继续持久保存。
 - 本地歌词匹配优先当前平台，仅使用小云、小狗、小Q；已匹配歌曲跳过重复请求，翻译/逐字/罗马音写入持久缓存。
 - 批量歌词匹配增加平台请求间隔和 405 限流冷却。
@@ -34,7 +34,7 @@
 
 - 确认 `package.json`、`package-lock.json`、运行时版本和内测配置均为 `1.3.1`。
 - 确认更新与发布仓库为 `HackenLeung/Mineradio`。
-- 确认 `.cookie`、`.qq-cookie`、`.kugou-cookie`、`.spotify-token.json`、`user-data/`、`MineradioCache/`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
+- 确认 `.cookie`、`.qq-cookie`、`.kugou-cookie`、`user-data/`、`MineradioCache/`、`dist/`、`node_modules/`、`tmp/` 和 `工作区备份/` 未进入 Git。
 - 运行 `git diff --check` 和 `node scripts/quick-check.js`。
 - 使用一份旧 main 正式版 `user-data` 副本执行覆盖升级测试，比较安装前后文件数量和关键文件。
 - 验证设置、完整队列、当前歌曲、本地库、小云/小狗/小Q登录、桌面歌词、托盘和下载设置。

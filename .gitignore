@@ -20,13 +20,6 @@ win-unpacked/
 .qq-cookie
 .kugou-cookie
 .kugou-vip-evidence.json
-.qishui-cookie
-.qishui-token
-.qishui-oauth.json
-.spotify-credentials.json
-spotify-credentials.json
-.spotify-token.json
-spotify-token.json
 listen-sync-journal.json
 current-fx-autosave.json
 cache-settings.json

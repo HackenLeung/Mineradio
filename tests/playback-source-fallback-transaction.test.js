@@ -279,7 +279,7 @@ function createSandbox(queue, statusOverrides) {
     clearTimeout,
     requestAnimationFrame(fn) { fn(); },
     normalizePlaybackProvider(provider) {
-      return ['qq', 'kugou', 'qishui', 'spotify'].includes(provider) ? provider : 'netease';
+      return ['qq', 'kugou'].includes(provider) ? provider : 'netease';
     },
     songProviderKey(song) { return song && song.provider || 'netease'; },
     platformStatus(provider) { return statuses[provider] || { loggedIn: false }; },

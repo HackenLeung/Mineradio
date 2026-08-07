@@ -170,10 +170,10 @@ assert.match(beatAnalysis, /var frameYieldInterval = options\.lowImpact \? 180 :
 assert.match(indexCss, /#local-beat-modal\s*\{\s*pointer-events:\s*none/s);
 assert.match(indexCss, /#local-beat-modal \.local-beat-modal\s*\{\s*pointer-events:\s*auto/s);
 
-const inlineBranch = lyrics.indexOf("var inlineText = String(song.localLyricText || song.embeddedLyrics || '')");
+const inlineBranch = lyrics.indexOf("var inlineText = hasManualLocalLyricMatch(song) ? '' : String(song.localLyricText || song.embeddedLyrics || '')");
 const onlineBranch = lyrics.indexOf('var onlineSong = localOnlineSongForMetadata(song)');
-const resolverBranch = lyrics.indexOf('if (typeof resolveLocalOnlineLyricMatch');
-const remoteFetch = lyrics.indexOf('var response = await apiJson(lyricEndpointForSong(onlineSong))');
+const resolverBranch = lyrics.indexOf('if (typeof resolveLocalOnlineLyricMatch', inlineBranch);
+const remoteFetch = lyrics.indexOf('var response = await apiJson(lyricEndpointForSong(onlineSong))', onlineBranch);
 assert.ok(inlineBranch >= 0 && resolverBranch > inlineBranch && onlineBranch > resolverBranch && remoteFetch > onlineBranch,
   'sidecar and embedded lyrics must win, then the verified resolver must run before legacy remote fallback');
 assert.match(lyrics, /getLocalLyricsCache\(cacheKey\)/);
@@ -184,6 +184,5 @@ assert.match(lyrics, /fallback && fallback\.payload/);
 assert.match(lyrics, /var resolved = await resolveLocalOnlineLyricMatch\(song, window\.desktopWindow\)/);
 assert.doesNotMatch(lyrics.slice(lyrics.indexOf('async function fetchLocalSongLyric'), lyrics.indexOf('async function fetchLyric')), /resolveLocalOnlineMetadata\(song, token\)/);
 assert.match(read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), /var providers = \[\{ key: 'netease'.*\{ key: 'kugou'.*\{ key: 'qq'/s);
-assert.doesNotMatch(read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), /var providers = \[[^\]]*qishui[^\]]*spotify/);
 
 console.log('OK local-library-integration');

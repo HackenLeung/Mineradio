@@ -3,8 +3,8 @@ function playbackSameAlbumCover(prevSong, nextSong) {
   var prevProvider = normalizePlaybackProvider(songProviderKey(prevSong));
   var nextProvider = normalizePlaybackProvider(songProviderKey(nextSong));
   if (prevProvider !== nextProvider) return false;
-  var prevAlbum = prevSong.albumId || prevSong.album_id || prevSong.albumMid || prevSong.albummid || prevSong.spotifyAlbumId || '';
-  var nextAlbum = nextSong.albumId || nextSong.album_id || nextSong.albumMid || nextSong.albummid || nextSong.spotifyAlbumId || '';
+  var prevAlbum = prevSong.albumId || prevSong.album_id || prevSong.albumMid || prevSong.albummid || '';
+  var nextAlbum = nextSong.albumId || nextSong.album_id || nextSong.albumMid || nextSong.albummid || '';
   if (!prevAlbum || String(prevAlbum) !== String(nextAlbum)) return false;
   var prevCover = String(prevSong.customCover || prevSong.cover || prevSong.picUrl || prevSong.albumCover || prevSong.coverUrl || '').trim();
   var nextCover = String(nextSong.customCover || nextSong.cover || nextSong.picUrl || nextSong.albumCover || nextSong.coverUrl || '').trim();
@@ -227,7 +227,6 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     startupAutoplay: !!opts.startupAutoplay,
     trackSwitch: true,
     resumeRecovery: !!opts.resumeRecovery,
-    fade: transitionHandoff ? false : opts.fade,
     preserveGain: transitionHandoff
   });
   if (!playbackStarted) {
@@ -448,8 +447,8 @@ async function playQueueAt(idx, opts) {
       var playbackProvider = normalizePlaybackProvider(songProviderKey(song));
       var isQQPlayback = playbackProvider === 'qq';
       var isKugouPlayback = playbackProvider === 'kugou';
-      var isQishuiPlayback = playbackProvider === 'qishui';
-      var isSpotifyPlayback = playbackProvider === 'spotify';
+
+
       var requestedQuality = normalizePlaybackQualityForProvider(opts.qualityOverride || getProviderPlaybackQuality(playbackProvider), playbackProvider);
       if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
       var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
@@ -475,13 +474,6 @@ async function playQueueAt(idx, opts) {
           '&vipRequired=' + encodeURIComponent(song.vipRequired || song.needVip || song.onlyVipPlayable || song.only_vip_playable ? '1' : '') +
           '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
           '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
-          qualityParam, { timeoutMs: 9000 });
-      } else if (isQishuiPlayback) {
-        data = await apiJson('/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qqPlaybackEvidenceQuery(song) + qualityParam, { timeoutMs: 9000 });
-      } else if (isSpotifyPlayback) {
-        data = await apiJson('/api/spotify/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '') +
-          '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +
-          '&uri=' + encodeURIComponent(song.spotifyUri || song.uri || '') +
           qualityParam, { timeoutMs: 9000 });
       } else {
         data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
@@ -532,7 +524,7 @@ async function playQueueAt(idx, opts) {
       var qualityDowngraded = !!(data && data.level && playbackQualityWasDowngraded(requestedQuality, data.level, playbackProvider));
       if (qualityDowngraded) markPlaybackQualityRuntimeCap(song, playbackProvider, data.level, 'resolved-lower');
       if (!opts.startupAutoplay && !isQQPlayback && qualityDowngraded) {
-        showSourceFallbackNotice((isKugouPlayback ? '小狗' : (isQishuiPlayback ? '小汽' : '小云')) + '音质自动降级', '请求 ' + playbackQualityLabel(requestedQuality, playbackProvider) + '，实际播放 ' + resolvedQualityText + '。');
+        showSourceFallbackNotice((isKugouPlayback ? '小狗' : '小云') + '音质自动降级', '请求 ' + playbackQualityLabel(requestedQuality, playbackProvider) + '，实际播放 ' + resolvedQualityText + '。');
       } else if (!opts.startupAutoplay && opts.qualitySwitch) {
         showSourceFallbackNotice('音质已切换', '实际播放: ' + resolvedQualityText + '。');
       }
@@ -693,7 +685,7 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('audio-start');
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
-      var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, fade: transitionHandoff ? false : opts.fade, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
+      var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
       // A confirmed frozen media clock may require a clean Audio element. The
       // retry keeps the same token/key, so adopt only that deliberate rebuild;
       // any other replacement is still a stale invocation and must be ignored.

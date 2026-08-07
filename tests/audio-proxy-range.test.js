@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const repoRoot = path.resolve(__dirname, '..');
 const serverText = fs.readFileSync(path.join(repoRoot, 'server.js'), 'utf8');
 const helperStart = serverText.indexOf('const AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES');
-const helperEnd = serverText.indexOf('function qishuiAudioAuthFromUrl', helperStart);
+const helperEnd = serverText.indexOf('function sendAudioBuffer', helperStart);
 
 assert.ok(helperStart >= 0, 'audio proxy range helper must exist');
 assert.ok(helperEnd > helperStart, 'audio proxy range helper boundary must exist');

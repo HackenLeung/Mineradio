@@ -4,8 +4,6 @@ function playbackProviderLabel(song) {
   var provider = songProviderKey(song);
   if (provider === 'qq') return '小Q';
   if (provider === 'kugou') return '小狗';
-  if (provider === 'qishui') return '小汽';
-  if (provider === 'spotify') return 'Spotify';
   return '小云';
 }
 function playbackLoginProvider(song) {
@@ -72,7 +70,7 @@ function playbackProviderMembershipText(provider, data) {
   var mergedStatus = Object.assign({}, status, data || {}, data && data.restriction || {});
   var level = typeof providerVipLevel === 'function' ? providerVipLevel(provider, mergedStatus) : 'none';
   if (level === 'svip') return 'SVIP';
-  if (level === 'vip') return provider === 'spotify' ? 'Premium' : 'VIP';
+  if (level === 'vip') return 'VIP';
   if (
     provider === 'qq'
     && status.loggedIn

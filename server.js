@@ -64,7 +64,6 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
-const { TrackDecryptor } = require('./qishui-audio-decryptor/track-decryptor');
 const {
   normalizeQQVipPayload: normalizeQQVipPayloadStrict,
   resolveQQVipFromProbes,
@@ -88,52 +87,13 @@ const {
   extractKugouAuth,
   kugouAudioReferer,
 } = require('./kugou-api');
-const {
-  getQishuiStatus,
-  handleQishuiStatus,
-  normalizeQishuiCookieInput,
-  qishuiCookieHasLogin,
-  saveQishuiAccessToken,
-  clearQishuiAccessToken,
-  handleQishuiSearch,
-  handleQishuiFeed,
-  handleQishuiUserPlaylists,
-  handleQishuiPlaylistTracks,
-  handleQishuiCheckTracksLiked,
-  handleQishuiSetTrackLiked,
-  handleQishuiSetPlaylistCollected,
-  handleQishuiPlaylistAddSong,
-  handleQishuiSetAlbumCollected,
-  handleQishuiReportRecentlyPlayed,
-  handleQishuiComments,
-  handleQishuiCreateComment,
-  handleQishuiLyric,
-  handleQishuiSongUrl,
-} = require('./qishui-api');
-const {
-  getSpotifyConfig,
-  clearSpotifyToken,
-  saveSpotifyConfig,
-  handleSpotifyStatus,
-  handleSpotifySearch,
-  handleSpotifyRecommendations,
-  handleSpotifyUserPlaylists,
-  handleSpotifyPlaylistTracks,
-  handleSpotifyAlbumDetail,
-  handleSpotifyLibraryCheck,
-  handleSpotifyLibrarySet,
-  handleSpotifyPlaylistAddSong,
-  handleSpotifyCreatePlaylist,
-  handleSpotifySongUrl,
-  handleSpotifyLyric,
-} = require('./spotify-api');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
 const DEFAULT_QQ_COOKIE_FILE = path.join(__dirname, '.qq-cookie');
 const DEFAULT_KUGOU_COOKIE_FILE = path.join(__dirname, '.kugou-cookie');
-const DEFAULT_QISHUI_COOKIE_FILE = path.join(__dirname, '.qishui-cookie');
+
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const MUSIC_DOWNLOAD_DIR = process.env.MINERADIO_DOWNLOAD_DIR || path.join(__dirname, 'downloads');
@@ -149,10 +109,6 @@ const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.3
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
-const qishuiAudioDecryptor = new TrackDecryptor();
-const qishuiAudioDecryptCache = new Map();
-const QISHUI_AUDIO_DECRYPT_CACHE_MAX_BYTES = 96 * 1024 * 1024;
-let qishuiAudioDecryptCacheBytes = 0;
 const PATCH_ALLOWED_FILES = new Set(['server.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
 const UPDATE_FALLBACK_NOTES = [
   '电影镜头节奏更松',
@@ -392,9 +348,6 @@ function getQQCookieFile() {
 function getKugouCookieFile() {
   return process.env.KUGOU_COOKIE_FILE || DEFAULT_KUGOU_COOKIE_FILE;
 }
-function getQishuiCookieFile() {
-  return process.env.QISHUI_COOKIE_FILE || DEFAULT_QISHUI_COOKIE_FILE;
-}
 function readConfiguredCookieFile(file) {
   try {
     if (file && fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
@@ -412,7 +365,6 @@ const configuredCookieStores = {
   netease: { file: '', value: '', getFile: getCookieFile },
   qq: { file: '', value: '', getFile: getQQCookieFile },
   kugou: { file: '', value: '', getFile: getKugouCookieFile },
-  qishui: { file: '', value: '', getFile: getQishuiCookieFile },
 };
 function refreshConfiguredCookieStore(store, force) {
   const file = store.getFile();
@@ -447,15 +399,10 @@ function saveKugouCookie(c) {
   kugouCookie = saveConfiguredCookieStore(configuredCookieStores.kugou, normalizeCookieHeader(c) || rawCookieFallback(c));
 }
 
-let qishuiCookie = '';
-function saveQishuiCookie(c) {
-  qishuiCookie = saveConfiguredCookieStore(configuredCookieStores.qishui, normalizeQishuiCookieInput(c) || normalizeCookieHeader(c) || rawCookieFallback(c));
-}
 function refreshConfiguredCookieStores(force) {
   userCookie = refreshConfiguredCookieStore(configuredCookieStores.netease, force);
   qqCookie = refreshConfiguredCookieStore(configuredCookieStores.qq, force);
   kugouCookie = refreshConfiguredCookieStore(configuredCookieStores.kugou, force);
-  qishuiCookie = refreshConfiguredCookieStore(configuredCookieStores.qishui, force);
 }
 function refreshQQConfiguredCookieStore(force) {
   qqCookie = refreshConfiguredCookieStore(configuredCookieStores.qq, force);
@@ -467,20 +414,15 @@ function clearAllRuntimeLoginCredentials(reason) {
   userCookie = '';
   qqCookie = '';
   kugouCookie = '';
-  qishuiCookie = '';
   Object.keys(configuredCookieStores).forEach((key) => {
     configuredCookieStores[key].value = '';
   });
   clearNeteaseLoginInfoCache();
   qqVipInfoCache.clear();
   clearQQLikedPlaylistCoverCache();
-  const qishui = clearQishuiAccessToken();
-  const spotify = clearSpotifyToken();
   return {
     ok: true,
     reason: String(reason || 'login-reset'),
-    qishui: !qishui || qishui.ok !== false,
-    spotify: !spotify || spotify.ok !== false,
   };
 }
 
@@ -1783,18 +1725,13 @@ function musicDownloadProviderKey(song) {
   if (song.type === 'local' || song.source === 'local' || song.provider === 'local' || song.localUrl || song.localPath) return 'local';
   if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq' || song.songmid || song.mediaMid || song.media_mid) return 'qq';
   if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.albumAudioId || song.album_audio_id) return 'kugou';
-  if (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui') return 'qishui';
-  if (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify') return 'spotify';
-  return 'netease';
+      return 'netease';
 }
 
 async function resolveMusicDownloadUrl(song, quality) {
   const provider = musicDownloadProviderKey(song);
   if (provider === 'local') return { url: null, error: '本地歌曲无需下载', trial: false };
-  if (provider === 'qishui' || provider === 'spotify') {
-    return { url: null, error: provider === 'qishui' ? '小汽暂不支持下载' : 'Spotify 暂不支持下载', trial: false };
-  }
-  if (provider === 'qq') {
+    if (provider === 'qq') {
     const mid = song.mid || song.songmid || song.id || '';
     const mediaMid = song.mediaMid || song.media_mid || song.fileMediaMid || '';
     const data = await handleQQSongUrl(mid, mediaMid, quality, song);
@@ -3832,8 +3769,7 @@ function audioProxyHeadersFor(audioUrl, range) {
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
-    if (host.includes('qishui.com') || host.includes('byteimg.com') || host.includes('douyin')) headers.Referer = 'https://www.qishui.com/';
-    const kugouReferer = kugouAudioReferer(audioUrl);
+        const kugouReferer = kugouAudioReferer(audioUrl);
     if (kugouReferer) headers.Referer = kugouReferer;
   } catch (e) {}
   if (range) headers.Range = range;
@@ -3991,54 +3927,6 @@ async function fetchAudioProxyRangeWithCache(audioUrl, headers, lifecycle) {
     .finally(() => { audioProxyRangeInFlight.delete(key); });
   audioProxyRangeInFlight.set(key, sharedPromise);
   return sharedPromise;
-}
-
-function qishuiAudioAuthFromUrl(audioUrl) {
-  const text = String(audioUrl || '');
-  const idx = text.indexOf('#auth=');
-  if (idx < 0) return { cleanUrl: text, auth: '' };
-  const authRaw = text.slice(idx + 6);
-  let auth = authRaw;
-  try { auth = decodeURIComponent(authRaw); } catch (_) {}
-  return { cleanUrl: text.slice(0, idx), auth };
-}
-
-function qishuiAudioCacheKey(cleanUrl, auth) {
-  return crypto.createHash('sha1').update(String(cleanUrl || '') + '\n' + String(auth || '')).digest('hex');
-}
-
-function rememberQishuiDecryptedAudio(key, payload) {
-  if (!payload || !Buffer.isBuffer(payload.buffer)) return;
-  qishuiAudioDecryptCache.set(key, Object.assign({ at: Date.now() }, payload));
-  qishuiAudioDecryptCacheBytes += payload.buffer.length;
-  while (qishuiAudioDecryptCacheBytes > QISHUI_AUDIO_DECRYPT_CACHE_MAX_BYTES && qishuiAudioDecryptCache.size > 1) {
-    const oldest = [...qishuiAudioDecryptCache.entries()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0))[0];
-    if (!oldest) break;
-    qishuiAudioDecryptCache.delete(oldest[0]);
-    qishuiAudioDecryptCacheBytes -= oldest[1].buffer.length;
-  }
-}
-
-async function getQishuiDecryptedAudio(audioUrl) {
-  const parsed = qishuiAudioAuthFromUrl(audioUrl);
-  if (!parsed.auth) return null;
-  const key = qishuiAudioCacheKey(parsed.cleanUrl, parsed.auth);
-  const cached = qishuiAudioDecryptCache.get(key);
-  if (cached) {
-    cached.at = Date.now();
-    return cached;
-  }
-  const up = await fetch(parsed.cleanUrl, { headers: audioProxyHeadersFor(parsed.cleanUrl, '') });
-  if (!up.ok) throw new Error('Qishui encrypted audio fetch failed: HTTP ' + up.status);
-  const encryptedBuffer = Buffer.from(await up.arrayBuffer());
-  const result = qishuiAudioDecryptor.decrypt({ encryptedBuffer, spadeA: parsed.auth });
-  const payload = {
-    buffer: result.buffer,
-    contentType: result.extension === '.flac' ? 'audio/flac' : 'audio/mp4',
-    extension: result.extension,
-  };
-  rememberQishuiDecryptedAudio(key, payload);
-  return payload;
 }
 
 function sendAudioBuffer(res, buffer, contentType, range) {
@@ -5635,17 +5523,14 @@ async function getPlaybackLoginInfo() {
 
 function normalizeListenReportProvider(value) {
   value = String(value || '').trim().toLowerCase();
-  if (value === 'qq' || value === 'kugou' || value === 'qishui' || value === 'spotify') return value;
-  return value === 'netease' || value === 'cloud' || value === 'song' ? 'netease' : '';
+    return value === 'netease' || value === 'cloud' || value === 'song' ? 'netease' : '';
 }
 
 function listenReportSongId(provider, song) {
   song = song && typeof song === 'object' ? song : {};
   if (provider === 'qq') return String(song.qqId || song.mid || song.mediaMid || song.id || '');
   if (provider === 'kugou') return String(song.hash || song.mixSongId || song.providerSongId || song.id || '');
-  if (provider === 'qishui') return String(song.providerSongId || song.trackId || song.id || '');
-  if (provider === 'spotify') return String(song.spotifyId || song.providerSongId || song.id || '').replace(/^spotify:track:/i, '');
-  return String(song.id || song.providerSongId || '');
+      return String(song.id || song.providerSongId || '');
 }
 
 function validateListenReport(body) {
@@ -5730,8 +5615,7 @@ async function handlePlatformListenReport(body) {
 
   let credential = '';
   if (report.provider === 'netease') credential = userCookie;
-  else if (report.provider === 'qishui') credential = qishuiCookie;
-  const journalKey = listenSyncJournalKey(report.provider, credential, report.sessionId);
+    const journalKey = listenSyncJournalKey(report.provider, credential, report.sessionId);
   const previous = listenSyncJournal.entries[journalKey];
   if (previous) {
     return Object.assign(base, previous, {
@@ -5790,22 +5674,6 @@ async function handlePlatformListenReport(body) {
     return submitted;
   }
 
-  if (report.provider === 'qishui') {
-    if (!qishuiCookieHasLogin(qishuiCookie)) {
-      return Object.assign(base, { accepted: true, reason: 'QISHUI_LOGIN_REQUIRED' });
-    }
-    await handleQishuiReportRecentlyPlayed(report.songId, qishuiCookie);
-    const submitted = Object.assign(base, {
-      accepted: true,
-      platformSubmitted: true,
-      historySynced: true,
-      accountDurationSync: 'unsupported',
-      note: 'Qishui accepted a recent-play item, but its PC endpoint carries no listening duration.',
-    });
-    rememberListenSyncSubmission(journalKey, submitted);
-    return submitted;
-  }
-
   return Object.assign(base, {
     accepted: true,
     reason: 'PLATFORM_DURATION_WRITE_UNAVAILABLE',
@@ -5850,7 +5718,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/platform/capabilities') {
-    const spotifyStatus = await handleSpotifyStatus().catch(() => ({ loggedIn: false, capabilities: {} }));
     sendJSON(res, {
       netease: {
         playlists: true, likeRead: true, likeWrite: true, albumRead: true,
@@ -5866,21 +5733,6 @@ const server = http.createServer(async (req, res) => {
         playlists: true, likeRead: true, likeWrite: true, albumRead: false,
         albumCollect: false, commentsRead: false, commentsWrite: false,
         listenReport: false,
-      },
-      qishui: {
-        playlists: true, likeRead: true, likeWrite: qishuiCookieHasLogin(qishuiCookie),
-        albumRead: false, albumCollect: qishuiCookieHasLogin(qishuiCookie),
-        commentsRead: qishuiCookieHasLogin(qishuiCookie), commentsWrite: qishuiCookieHasLogin(qishuiCookie),
-        recentPlayReport: qishuiCookieHasLogin(qishuiCookie), listenReport: false,
-      },
-      spotify: {
-        playlists: true, likeRead: true,
-        likeWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
-        playlistWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.playlistWrite),
-        albumRead: true,
-        albumCollect: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
-        commentsRead: false, commentsWrite: false, listenReport: false,
-        missingWriteScopes: spotifyStatus.missingWriteScopes || [],
       },
     });
     return;
@@ -6154,509 +6006,6 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[KugouRecommendations]', err);
       sendJSON(res, { provider: 'kugou', error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/status') {
-    try {
-      sendJSON(res, await handleSpotifyStatus());
-    } catch (err) {
-      console.error('[SpotifyStatus]', err);
-      sendJSON(res, { provider: 'spotify', configured: false, loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/config') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'spotify', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      const saved = saveSpotifyConfig(body);
-      const status = await handleSpotifyStatus();
-      sendJSON(res, Object.assign({}, status, saved, {
-        ok: true,
-        configured: true,
-        oauthConfigured: true,
-        message: status.loggedIn
-          ? status.message
-          : 'Spotify Client ID 已保存，可打开官方 OAuth 授权。'
-      }));
-    } catch (err) {
-      console.error('[SpotifyConfig]', err);
-      const missing = err && err.missing || [];
-      sendJSON(res, {
-        provider: 'spotify',
-        ok: false,
-        configured: getSpotifyConfig().configured,
-        loggedIn: false,
-        error: err.code || err.message,
-        message: err.code === 'SPOTIFY_CLIENT_ID_REQUIRED' || err.message === 'SPOTIFY_CLIENT_ID_REQUIRED'
-          ? '请先粘贴 Spotify Client ID。'
-          : err.message,
-        missing,
-      }, err && err.code === 'SPOTIFY_CLIENT_ID_REQUIRED' ? 400 : 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/logout') {
-    try {
-      sendJSON(res, clearSpotifyToken());
-    } catch (err) {
-      console.error('[SpotifyLogout]', err);
-      sendJSON(res, { provider: 'spotify', ok: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/user/playlists') {
-    try {
-      const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get('limit') || '300', 10) || 300));
-      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      sendJSON(res, await handleSpotifyUserPlaylists({ limit, offset }));
-    } catch (err) {
-      console.error('[SpotifyUserPlaylists]', err);
-      sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message, playlists: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/song/like/check') {
-    try {
-      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
-        .split(',').map(value => value.trim()).filter(Boolean);
-      sendJSON(res, await handleSpotifyLibraryCheck('track', ids));
-    } catch (err) {
-      console.error('[SpotifyLikeCheck]', err);
-      sendJSON(res, { provider: 'spotify', liked: {}, error: err.code || err.message, message: err.message }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/song/like') {
-    try {
-      const body = req.method === 'POST' ? await readRequestBody(req) : {};
-      const song = body.song || {
-        id: body.id || url.searchParams.get('id') || '',
-        spotifyId: body.spotifyId || url.searchParams.get('spotifyId') || '',
-        spotifyUri: body.spotifyUri || body.uri || url.searchParams.get('uri') || '',
-      };
-      const liked = String(body.like != null ? body.like : (url.searchParams.get('like') || 'true')) !== 'false';
-      sendJSON(res, await handleSpotifyLibrarySet('track', song, liked));
-    } catch (err) {
-      console.error('[SpotifyLike]', err);
-      sendJSON(res, {
-        provider: 'spotify',
-        success: false,
-        error: err.code || err.message,
-        message: err.code === 'SPOTIFY_WRITE_SCOPE_REQUIRED'
-          ? '请在账号面板重新连接 Spotify，授予资料库写入权限。'
-          : err.message,
-        missingScopes: err.missingScopes || [],
-      }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/album/like/check') {
-    try {
-      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
-        .split(',').map(value => value.trim()).filter(Boolean);
-      sendJSON(res, await handleSpotifyLibraryCheck('album', ids));
-    } catch (err) {
-      console.error('[SpotifyAlbumLikeCheck]', err);
-      sendJSON(res, { provider: 'spotify', liked: {}, error: err.code || err.message, message: err.message }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/album/like') {
-    try {
-      const body = req.method === 'POST' ? await readRequestBody(req) : {};
-      const album = body.album || {
-        id: body.id || body.albumId || url.searchParams.get('id') || '',
-        albumId: body.albumId || '',
-        spotifyUri: body.spotifyUri || body.uri || '',
-      };
-      const liked = String(body.like != null ? body.like : (url.searchParams.get('like') || 'true')) !== 'false';
-      sendJSON(res, await handleSpotifyLibrarySet('album', album, liked));
-    } catch (err) {
-      console.error('[SpotifyAlbumLike]', err);
-      sendJSON(res, { provider: 'spotify', success: false, error: err.code || err.message, message: err.message, missingScopes: err.missingScopes || [] }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/playlist/add-song') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'spotify', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      sendJSON(res, await handleSpotifyPlaylistAddSong(body.pid || body.playlistId || '', body.song || body));
-    } catch (err) {
-      console.error('[SpotifyPlaylistAddSong]', err);
-      sendJSON(res, {
-        provider: 'spotify',
-        success: false,
-        error: err.code || err.message,
-        message: err.code === 'SPOTIFY_WRITE_SCOPE_REQUIRED'
-          ? '请重新连接 Spotify，授予歌单写入权限。'
-          : err.message,
-        missingScopes: err.missingScopes || [],
-      }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/playlist/create') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'spotify', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      sendJSON(res, await handleSpotifyCreatePlaylist(body.name || '', {
-        public: body.public === true,
-        description: body.description || '',
-      }));
-    } catch (err) {
-      console.error('[SpotifyPlaylistCreate]', err);
-      sendJSON(res, { provider: 'spotify', success: false, error: err.code || err.message, message: err.message, missingScopes: err.missingScopes || [] }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/playlist/collect') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'spotify', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      const collected = String(body.collected != null ? body.collected : 'true') !== 'false';
-      const result = await handleSpotifyLibrarySet('playlist', {
-        id: body.id || body.playlistId || '',
-        spotifyUri: body.spotifyUri || body.uri || '',
-      }, collected);
-      sendJSON(res, Object.assign({ collected, success: true }, result));
-    } catch (err) {
-      console.error('[SpotifyPlaylistCollect]', err);
-      sendJSON(res, { provider: 'spotify', success: false, error: err.code || err.message, message: err.message, missingScopes: err.missingScopes || [] }, Number(err.statusCode) || 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/playlist/tracks') {
-    try {
-      const id = url.searchParams.get('id') || url.searchParams.get('playlistId') || '';
-      const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '48', 10) || 48));
-      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      sendJSON(res, await handleSpotifyPlaylistTracks(id, { limit, offset, market: url.searchParams.get('market') || '' }));
-    } catch (err) {
-      console.error('[SpotifyPlaylistTracks]', err);
-      sendJSON(res, { provider: 'spotify', error: err.message, tracks: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/album/detail') {
-    try {
-      const id = url.searchParams.get('id') || url.searchParams.get('albumId') || '';
-      const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '80', 10) || 80));
-      sendJSON(res, await handleSpotifyAlbumDetail(id, { limit, market: url.searchParams.get('market') || '' }));
-    } catch (err) {
-      console.error('[SpotifyAlbumDetail]', err);
-      sendJSON(res, { provider: 'spotify', error: err.message, album: null, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/search') {
-    try {
-      const kw = url.searchParams.get('keywords') || '';
-      const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
-      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      sendJSON(res, await handleSpotifySearch(kw, limit, offset));
-    } catch (err) {
-      console.error('[SpotifySearch]', err);
-      sendJSON(res, { provider: 'spotify', configured: getSpotifyConfig().configured, error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/recommendations') {
-    try {
-      const limit = Math.max(4, Math.min(10, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
-      sendJSON(res, await handleSpotifyRecommendations(limit));
-    } catch (err) {
-      console.error('[SpotifyRecommendations]', err);
-      sendJSON(res, { provider: 'spotify', error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/song/url') {
-    try {
-      sendJSON(res, await handleSpotifySongUrl({
-        id: url.searchParams.get('id') || '',
-        providerSongId: url.searchParams.get('providerSongId') || '',
-        spotifyId: url.searchParams.get('spotifyId') || '',
-        uri: url.searchParams.get('uri') || '',
-      }));
-    } catch (err) {
-      console.error('[SpotifySongUrl]', err);
-      sendJSON(res, { provider: 'spotify', url: '', playable: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/spotify/lyric') {
-    try {
-      const id = url.searchParams.get('id') || '';
-      sendJSON(res, await handleSpotifyLyric(id));
-    } catch (err) {
-      console.error('[SpotifyLyric]', err);
-      sendJSON(res, { provider: 'spotify', error: err.message, lyric: '', tlyric: '', yrc: '', ytlrc: '' }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/status' || pn === '/api/qishui/login/status') {
-    try {
-      sendJSON(res, await handleQishuiStatus(qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiStatus]', err);
-      sendJSON(res, { provider: 'qishui', configured: false, loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/login/token') {
-    try {
-      const body = await readRequestBody(req);
-      const token = body.token || body.accessToken || body.access_token || body.data || body.text || '';
-      sendJSON(res, saveQishuiAccessToken(token));
-    } catch (err) {
-      console.error('[QishuiLoginToken]', err);
-      const invalid = err && (err.code === 'INVALID_QISHUI_TOKEN' || err.message === 'INVALID_QISHUI_TOKEN');
-      sendJSON(res, {
-        provider: 'qishui',
-        configured: getQishuiStatus(qishuiCookie).configured,
-        loggedIn: getQishuiStatus(qishuiCookie).loggedIn,
-        error: invalid ? 'INVALID_QISHUI_TOKEN' : err.message,
-        message: invalid ? '小汽 OpenAPI token 无效或太短' : err.message,
-      }, invalid ? 400 : 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/login/cookie') {
-    try {
-      const body = await readRequestBody(req);
-      const raw = body.cookie || body.data || body.text || '';
-      const normalized = normalizeQishuiCookieInput(raw);
-      if (!qishuiCookieHasLogin(normalized)) {
-        sendJSON(res, { provider: 'qishui', loggedIn: false, error: 'INVALID_QISHUI_COOKIE', message: '小汽 cookie 无效或缺少登录态' }, 400);
-        return;
-      }
-      saveQishuiCookie(normalized);
-      sendJSON(res, { ...await handleQishuiStatus(qishuiCookie), saved: true });
-    } catch (err) {
-      console.error('[QishuiLoginCookie]', err);
-      sendJSON(res, { provider: 'qishui', loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/logout') {
-    try {
-      saveQishuiCookie('');
-      sendJSON(res, { ...clearQishuiAccessToken(), webSession: false, cookieReady: false, configured: getQishuiStatus('').configured, loggedIn: getQishuiStatus('').loggedIn });
-    } catch (err) {
-      console.error('[QishuiLogout]', err);
-      sendJSON(res, { provider: 'qishui', ok: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/search') {
-    try {
-      const kw = url.searchParams.get('keywords') || '';
-      const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
-      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      sendJSON(res, await handleQishuiSearch(kw, limit, qishuiCookie, offset));
-    } catch (err) {
-      console.error('[QishuiSearch]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/feed') {
-    try {
-      const limit = Math.max(4, Math.min(12, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
-      sendJSON(res, await handleQishuiFeed(limit, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiFeed]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/user/playlists') {
-    try {
-      sendJSON(res, await handleQishuiUserPlaylists(qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiUserPlaylists]', err);
-      sendJSON(res, { provider: 'qishui', loggedIn: getQishuiStatus(qishuiCookie).configured, configured: getQishuiStatus(qishuiCookie).configured, error: err.message, playlists: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/playlist/tracks') {
-    try {
-      const id = url.searchParams.get('id') || 'qishui-feed';
-      const limit = parseInt(url.searchParams.get('limit') || '0', 10) || 0;
-      const offset = parseInt(url.searchParams.get('offset') || '0', 10) || 0;
-      sendJSON(res, await handleQishuiPlaylistTracks(id, limit || offset ? { limit: limit || 50, offset } : {}, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiPlaylistTracks]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, tracks: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/song/like/check') {
-    try {
-      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
-        .split(',').map(value => value.trim()).filter(Boolean);
-      sendJSON(res, await handleQishuiCheckTracksLiked(ids, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiLikeCheck]', err);
-      sendJSON(res, { provider: 'qishui', liked: {}, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/song/like') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      const song = body.song || body;
-      const id = song.providerSongId || song.trackId || song.id || '';
-      const liked = String(body.like != null ? body.like : 'true') !== 'false';
-      const result = await handleQishuiSetTrackLiked(id, liked, qishuiCookie);
-      sendJSON(res, Object.assign({ success: true }, result));
-    } catch (err) {
-      console.error('[QishuiLike]', err);
-      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, /COOKIE_REQUIRED|login/i.test(String(err.message)) ? 401 : 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/playlist/collect') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      const collected = String(body.collected != null ? body.collected : 'true') !== 'false';
-      const result = await handleQishuiSetPlaylistCollected(body.id || body.playlistId || '', collected, qishuiCookie);
-      sendJSON(res, Object.assign({ success: true }, result));
-    } catch (err) {
-      console.error('[QishuiPlaylistCollect]', err);
-      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/playlist/add-song') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      sendJSON(res, await handleQishuiPlaylistAddSong(body.pid || body.playlistId || '', body.song || body, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiPlaylistAddSong]', err);
-      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/album/collect') {
-    try {
-      if (req.method !== 'POST') {
-        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
-        return;
-      }
-      const body = await readRequestBody(req);
-      const collected = String(body.collected != null ? body.collected : 'true') !== 'false';
-      const result = await handleQishuiSetAlbumCollected(body.id || body.albumId || '', collected, qishuiCookie);
-      sendJSON(res, Object.assign({ success: true }, result));
-    } catch (err) {
-      console.error('[QishuiAlbumCollect]', err);
-      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/song/comments') {
-    try {
-      const id = url.searchParams.get('id') || url.searchParams.get('trackId') || '';
-      if (req.method === 'POST') {
-        const body = await readRequestBody(req);
-        sendJSON(res, await handleQishuiCreateComment(id || body.id || body.trackId || '', body.content || body.text || '', qishuiCookie));
-      } else {
-        const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '18', 10) || 18));
-        sendJSON(res, await handleQishuiComments(id, {
-          limit,
-          cursor: url.searchParams.get('cursor') || '',
-        }, qishuiCookie));
-      }
-    } catch (err) {
-      console.error('[QishuiComments]', err);
-      sendJSON(res, { provider: 'qishui', comments: [], error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/song/url') {
-    try {
-      sendJSON(res, await handleQishuiSongUrl({
-        id: url.searchParams.get('id') || url.searchParams.get('trackId') || '',
-        quality: url.searchParams.get('quality') || '',
-        vipRequired: url.searchParams.get('vipRequired') || '',
-        needVip: url.searchParams.get('needVip') || url.searchParams.get('need_vip') || '',
-        onlyVipPlayable: url.searchParams.get('onlyVipPlayable') || url.searchParams.get('only_vip_playable') || '',
-        privilege: url.searchParams.get('privilege') || url.searchParams.get('mediaPrivilege') || url.searchParams.get('media_privilege') || '',
-        fee: url.searchParams.get('fee') || '',
-      }, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiSongUrl]', err);
-      sendJSON(res, { provider: 'qishui', url: '', playable: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/lyric') {
-    try {
-      const id = url.searchParams.get('id') || url.searchParams.get('trackId') || '';
-      sendJSON(res, await handleQishuiLyric(id, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiLyric]', err);
-      sendJSON(res, { provider: 'qishui', error: err.message, lyric: '', tlyric: '' }, 500);
     }
     return;
   }
@@ -7800,21 +7149,8 @@ const server = http.createServer(async (req, res) => {
       const audioUrl = url.searchParams.get('url');
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
-      if (audioUrl.includes('#auth=')) {
-        const decrypted = await getQishuiDecryptedAudio(audioUrl);
-        if (decrypted && decrypted.buffer) {
-          sendAudioBuffer(res, decrypted.buffer, decrypted.contentType, range);
-          return;
-        }
-      }
-      // Some NetEase FLAC URLs reject Chromium's open-ended `bytes=N-`
-      // request with HTTP 403. Ask the upstream for a bounded chunk instead;
-      // the browser will request the following ranges as it needs them.
       const upstreamRange = normalizeAudioProxyUpstreamRange(range);
       const hdr = audioProxyHeadersFor(audioUrl, upstreamRange);
-      // A bounded 206 is collected and length-checked before Chromium sees
-      // its headers. If the provider closes early, retry here instead of
-      // exposing a broken chunked response to the active media element.
       const lifecycle = { clientClosed: false, responseFinished: false, reader: null };
       const closeUpstream = () => {
         if (lifecycle.responseFinished) return;
@@ -7832,8 +7168,6 @@ const server = http.createServer(async (req, res) => {
         const fetched = await fetchAudioProxyRangeWithCache(audioUrl, hdr, lifecycle);
         const up = fetched.upstream;
         if (lifecycle.clientClosed) {
-          // A shared bounded range has already consumed its upstream body;
-          // cancel an unbuffered 200 response if a client vanished meanwhile.
           if (fetched && !fetched.buffer && up && up.body) {
             try { await up.body.cancel(); } catch (_) {}
           }

@@ -9,8 +9,6 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 - 小云登录 Cookie
 - 小Q登录 Cookie
 - 小狗登录 Cookie
-- 小汽本地登录状态
-- Spotify OAuth 配置与本地令牌
 - 搜索历史
 - 自定义专辑封面
 - 自定义歌词
@@ -29,9 +27,6 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 - `.cookie`
 - `.qq-cookie`
 - `.kugou-cookie`
-- `.qishui-cookie`
-- `.spotify-token.json`
-- `.spotify-credentials.json`
 - `user-data/`
 - `MineradioCache/`
 - `updates/`
@@ -42,4 +37,4 @@ Mineradio 是本地桌面应用。项目不应把用户登录状态、Cookie、�
 
 ## 第三方平台
 
-用户通过小云、小Q、小狗、小汽或 Spotify 等第三方平台登录时，应遵守对应平台的用户协议。Mineradio 不提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。
+用户通过小云、小Q、小狗等第三方平台登录时，应遵守对应平台的用户协议。Mineradio 不提供绕过付费、绕过会员、破解音质或重新分发音乐内容的能力。

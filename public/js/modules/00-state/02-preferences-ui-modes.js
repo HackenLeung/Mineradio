@@ -6,31 +6,6 @@ function readSavedVolume() {
     return 1.0;
   }
 }
-function normalizeAudioFadeMs(value, fallback) {
-  var ms = Math.round(Number(value));
-  if (!isFinite(ms)) ms = fallback;
-  return Math.max(AUDIO_FADE_MIN_MS, Math.min(AUDIO_FADE_MAX_MS, ms));
-}
-function readAudioFadePreference() {
-  var defaults = { fadeInMs: 460, fadeOutMs: 420 };
-  try {
-    var raw = JSON.parse(localStorage.getItem(AUDIO_FADE_STORE_KEY) || '{}') || {};
-    return {
-      fadeInMs: normalizeAudioFadeMs(raw.fadeInMs, defaults.fadeInMs),
-      fadeOutMs: normalizeAudioFadeMs(raw.fadeOutMs, defaults.fadeOutMs)
-    };
-  } catch (e) {
-    return defaults;
-  }
-}
-function saveAudioFadePreference() {
-  try {
-    localStorage.setItem(AUDIO_FADE_STORE_KEY, JSON.stringify({
-      fadeInMs: AUDIO_FADE_IN_MS,
-      fadeOutMs: AUDIO_FADE_OUT_MS
-    }));
-  } catch (e) { }
-}
 function readDiyModePreference() {
   try { return localStorage.getItem(DIY_MODE_STORE_KEY) === '1'; } catch (e) { return false; }
 }

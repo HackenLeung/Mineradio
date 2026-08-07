@@ -75,7 +75,7 @@ function currentResumeSeconds(fallback) {
 function canRefreshCurrentPlaybackUrlForResume(song) {
   if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return false;
   var provider = normalizePlaybackProvider(songProviderKey(song));
-  return provider === 'netease' || provider === 'qq' || provider === 'kugou' || provider === 'qishui';
+  return provider === 'netease' || provider === 'qq' || provider === 'kugou';
 }
 
 function playbackResumeProvider(song) {
@@ -106,59 +106,6 @@ function trackSwitchStallRecoveryAllowed(song, opts) {
   return canRefreshCurrentPlaybackUrlForResume(song);
 }
 
-function isQishuiTrackStartStalled(song, opts, media, startTime, current) {
-  opts = opts || {};
-  if (!(opts.trackSwitch || opts.manual || opts.fastResume) || opts.resumeRecovery) return false;
-  if (playbackResumeProvider(song) !== 'qishui') return false;
-  if (!media || media.seeking || media.ended) return false;
-  var start = Math.max(0, Number(startTime) || 0);
-  var now = Math.max(0, Number(current) || 0);
-  return start < 0.18 && now < 0.24;
-}
-
-function qishuiTrackStartNudgeSeconds(media) {
-  var target = 0.22;
-  var duration = media && isFinite(media.duration) ? Number(media.duration) : 0;
-  if (duration > 0) target = Math.min(target, Math.max(0.05, duration - 0.75));
-  return Math.max(0.05, target);
-}
-
-async function nudgeQishuiTrackStart(media, src, token) {
-  if (!isSameAudioPlaybackTarget(media, src) || token !== trackSwitchToken || media.paused || media.ended) return false;
-  var current = isFinite(media.currentTime) ? media.currentTime : 0;
-  if (current >= 0.24) return false;
-  try {
-    if (media.readyState < 1) await waitForAudioReadyToPlay(media, 700);
-    if (!isSameAudioPlaybackTarget(media, src) || token !== trackSwitchToken || media.paused || media.ended) return false;
-    var target = qishuiTrackStartNudgeSeconds(media);
-    media.currentTime = target;
-    if (typeof syncBeatMapPlaybackCursor === 'function') syncBeatMapPlaybackCursor(target, true);
-    if (typeof syncPodcastDjMapCursor === 'function') syncPodcastDjMapCursor(target, true);
-    updatePlaybackProgressUi();
-    await media.play();
-    return isSameAudioPlaybackTarget(media, src) && token === trackSwitchToken && !media.paused && !media.ended;
-  } catch (err) {
-    console.warn('[PlaybackResumeRecovery] qishui start nudge failed:', err && (err.message || err));
-    return false;
-  }
-}
-
-function qishuiTrackStartResumeSeconds(media, current, startTime) {
-  var target = Math.max(Number(current) || 0, Number(startTime) || 0, qishuiTrackStartNudgeSeconds(media));
-  var duration = media && isFinite(media.duration) ? Number(media.duration) : 0;
-  if (duration > 0) target = Math.min(target, Math.max(0, duration - 0.75));
-  return Math.max(0, target);
-}
-
-function showQishuiTrackStartStallNotice() {
-  var now = performance.now();
-  if (now - (playbackResumeRecovery.lastQishuiStartNoticeAt || 0) < 8000) return;
-  playbackResumeRecovery.lastQishuiStartNoticeAt = now;
-  var title = '小汽播放未响应';
-  var body = '音频开头解码卡住，已尝试重新接入；如果仍不播放，请拖动一下进度或切换音质。';
-  if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice(title, body);
-  else if (typeof showToast === 'function') showToast(title + '：' + body);
-}
 
 function playbackFreshUrlRecoverySongKey(song) {
   if (typeof queueItemKey === 'function') return queueItemKey(song);
@@ -290,21 +237,9 @@ function schedulePlaybackStallRecovery(reason, opts) {
       var current = isFinite(media.currentTime) ? media.currentTime : 0;
       var minAdvance = delayMs > 2000 ? 0.28 : 0.08;
       if (current >= startTime + minAdvance) return;
-      var qishuiStartStall = isQishuiTrackStartStalled(song, opts, media, startTime, current);
-      if (qishuiStartStall && delayMs < 3000) {
-        try {
-          await ensurePlaybackAudioGraph('qishui-start-stall-before-nudge');
-          ensureAudiblePlaybackGain('qishui-start-stall-before-nudge');
-        } catch (nudgeGraphErr) {
-          console.warn('[PlaybackResumeRecovery] qishui graph precheck failed:', nudgeGraphErr);
-        }
-        if (!playbackStallRecoveryOwnerStillCurrent(media, src, token, recoverySerial, queueKey)) return;
-        if (await nudgeQishuiTrackStart(media, src, token)) return;
-        return;
-      }
       if (delayMs < 3000 && audioPlaybackWaitingForNetwork(media)) return;
       if (delayMs < 3000 && media.readyState >= 2 && media.networkState !== media.NETWORK_NO_SOURCE) return;
-      if (!qishuiStartStall && audioPlaybackHasTransientNetworkFailure(media)) {
+      if (audioPlaybackHasTransientNetworkFailure(media)) {
         if (audioPlaybackWaitingForNetwork(media)) {
           var networkRecovered = await waitForAudioPlaybackProgress(
             media,
@@ -328,13 +263,11 @@ function schedulePlaybackStallRecovery(reason, opts) {
       if (!playbackStallRecoveryOwnerStillCurrent(media, src, token, recoverySerial, queueKey)) return;
       current = isFinite(media.currentTime) ? media.currentTime : 0;
       if (current >= startTime + minAdvance) return;
-      qishuiStartStall = isQishuiTrackStartStalled(song, opts, media, startTime, current);
-      var recovered = await recoverCurrentTrackPlaybackFromFreshUrl(qishuiStartStall ? 'qishui-track-start-stalled' : (reason || 'resume-stalled'), {
-        resumeAt: qishuiStartStall ? qishuiTrackStartResumeSeconds(media, current, startTime) : (current || startTime),
+      var recovered = await recoverCurrentTrackPlaybackFromFreshUrl(reason || 'resume-stalled', {
+        resumeAt: current || startTime,
         silent: opts.silent
       });
       if (!playbackStallRecoveryOwnerStillCurrent(media, src, token, recoverySerial, queueKey)) return;
-      if (!recovered && qishuiStartStall) showQishuiTrackStartStallNotice();
     }, delayMs);
     playbackResumeRecovery.timerIds.push(timerId);
   });
@@ -554,8 +487,7 @@ async function completeAudioPlayStart(opts, reason, expectedMedia, expectedToken
     resetPlaybackFreshUrlRecoveryBudget(startedSong);
   }
   schedulePlaybackAnalyserRecovery(reason || 'playback-started');
-  if (opts.fade !== false) startPlaybackFadeIn();
-  else if (!opts.preserveGain) restorePlaybackGain();
+  if (!opts.preserveGain) restorePlaybackGain();
   schedulePlaybackStallRecovery(reason || 'playback-started', opts);
   forcePlaybackControlsInteractive();
   hideLoading();
@@ -734,7 +666,6 @@ async function attemptAudioPlay(opts) {
     }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
     if (!audioGraphHealthy()) initAudio();
-    if (opts.fade !== false) preparePlaybackFadeIn();
     if (opts.manual || opts.trackSwitch) {
       var directStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
       var directPlay = expectedMedia.play();
@@ -812,7 +743,7 @@ async function attemptAudioPlay(opts) {
 }
 async function playAudio(opts) {
   opts = opts || {};
-  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, fade: opts.fade, preserveGain: !!opts.preserveGain, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery, expectedMedia: opts.expectedMedia || audio, expectedToken: opts.expectedToken == null ? trackSwitchToken : opts.expectedToken });
+  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, preserveGain: !!opts.preserveGain, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery, expectedMedia: opts.expectedMedia || audio, expectedToken: opts.expectedToken == null ? trackSwitchToken : opts.expectedToken });
 }
 async function togglePlay() {
   if (playToggleBusy) return;
@@ -838,7 +769,7 @@ async function togglePlay() {
       if (typeof smartCrossfadeExecuting !== 'undefined' && smartCrossfadeExecuting && typeof resetSmartCrossfade === 'function') {
         resetSmartCrossfade('manual-pause');
       }
-      await fadeOutAndPauseAudio();
+      try { audio.pause(); } catch (pauseErr) { console.warn('[TogglePlayPause]', pauseErr); }
       playing = false;
       setPlayIcon(false);
       hideLoading();

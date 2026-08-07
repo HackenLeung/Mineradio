@@ -415,7 +415,6 @@ function clearAudioAudibilityRecoveryTimers() {
   audioAudibilityRecoveryTimers = [];
 }
 function currentAudioOutputGain() {
-  if (isFinite(audioFadeEnvelope)) return clampRange(targetVolume * audioFadeEnvelope, 0, 1);
   if (audio && isFinite(audio.volume)) return clampRange(Number(audio.volume), 0, 1);
   if (gainNode && gainNode.gain && isFinite(gainNode.gain.value)) return clampRange(Number(gainNode.gain.value), 0, 1);
   return clampRange(targetVolume, 0, 1);
@@ -423,13 +422,12 @@ function currentAudioOutputGain() {
 function audioSilentFloor() {
   return targetVolume > 0.001 ? AUDIO_SILENCE_GAIN : 0;
 }
-function normalizeAudioFadeTarget(value) {
+function normalizeAudioOutputGain(value) {
   value = clampRange(Number(value) || 0, 0, 1);
   return value <= 0.001 ? audioSilentFloor() : value;
 }
 function writeAudioOutputGain(value) {
-  value = normalizeAudioFadeTarget(value);
-  audioFadeEnvelope = targetVolume > 0.001 ? clampRange(value / targetVolume, 0, 1) : (value > 0.001 ? 1 : 0);
+  value = normalizeAudioOutputGain(value);
   var branchValue = (gainNode && audioCtx) ? Math.sqrt(value) : value;
   if (audio) {
     audio.muted = false;
@@ -463,12 +461,12 @@ function holdAudioOutputGain(now) {
   return current;
 }
 function setAudioOutputGainImmediate(value) {
-  value = normalizeAudioFadeTarget(value);
+  value = normalizeAudioOutputGain(value);
   clearAudioFadeTimers();
   writeAudioOutputGain(value);
 }
 function rampAudioOutputGain(value, durationMs) {
-  value = normalizeAudioFadeTarget(value);
+  value = normalizeAudioOutputGain(value);
   durationMs = Math.max(0, Number(durationMs) || 0);
   clearAudioFadeTimers();
   var serial = audioFadeSerial;
@@ -489,18 +487,6 @@ function rampAudioOutputGain(value, durationMs) {
   }
   audioElementFadeFrame = requestAnimationFrame(tickAudioFade);
 }
-function isBackgroundAudioFadeConstrained() {
-  try {
-    if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return true;
-  } catch (e) { }
-  try {
-    if (document && document.hidden) return true;
-  } catch (e2) { }
-  try {
-    if (typeof desktopRuntimeState !== 'undefined' && (desktopRuntimeState.minimized || desktopRuntimeState.visible === false)) return true;
-  } catch (e3) { }
-  return false;
-}
 function ensureAudiblePlaybackGain(reason) {
   if (!audio || audio.paused || audio.ended || !audio.src) return false;
   if (targetVolume <= 0.001) return false;
@@ -517,63 +503,14 @@ function ensureAudiblePlaybackGain(reason) {
   console.warn('[AudioFade] restored silent playback gain:', reason || 'playback');
   return true;
 }
-function scheduleAudioAudibilityRecovery(reason) {
-  clearAudioAudibilityRecoveryTimers();
-  if (targetVolume <= 0.001) return;
-  var serial = audioFadeSerial;
-  var token = trackSwitchToken;
-  [520, 1400, 3200].forEach(function (delay) {
-    var timer = setTimeout(function () {
-      if (serial !== audioFadeSerial || token !== trackSwitchToken) return;
-      ensureAudiblePlaybackGain(reason || 'track-switch');
-    }, delay);
-    audioAudibilityRecoveryTimers.push(timer);
-  });
-}
-function preparePlaybackFadeIn() {
-  audioFadeSerial++;
-  setAudioOutputGainImmediate(0);
-}
-function startPlaybackFadeIn() {
-  audioFadeSerial++;
-  if (targetVolume <= 0.001) {
-    setAudioOutputGainImmediate(0);
-    return;
-  }
-  if (isBackgroundAudioFadeConstrained()) {
-    setAudioOutputGainImmediate(targetVolume);
-    return;
-  }
-  rampAudioOutputGain(targetVolume, AUDIO_FADE_IN_MS);
-  scheduleAudioAudibilityRecovery('fade-in-watchdog');
-}
 function restorePlaybackGain() {
   audioFadeSerial++;
   setAudioOutputGainImmediate(targetVolume);
 }
-function fadeOutAndPauseAudio() {
-  if (!audio || audio.paused) return Promise.resolve(false);
-  var serial = ++audioFadeSerial;
-  rampAudioOutputGain(0, AUDIO_FADE_OUT_MS);
-  return new Promise(function (resolve) {
-    audioFadeTimer = setTimeout(function () {
-      audioFadeTimer = null;
-      if (serial !== audioFadeSerial || !audio) {
-        resolve(false);
-        return;
-      }
-      try { audio.pause(); } catch (pauseErr) { console.warn('[TogglePlayPause]', pauseErr); }
-      setAudioOutputGainImmediate(0);
-      resolve(true);
-    }, AUDIO_FADE_OUT_MS + 80);
-  });
-}
 
-function applyVolumeToAudio(opts) {
-  opts = opts || {};
+function applyVolumeToAudio() {
   if (typeof configurePlaybackAudioElement === 'function') configurePlaybackAudioElement(audio);
-  if (opts.restoreEnvelope && targetVolume > 0.001) audioFadeEnvelope = 1;
-  writeAudioOutputGain(targetVolume * clampRange(audioFadeEnvelope, 0, 1));
+  writeAudioOutputGain(targetVolume);
 }
 
 function updateVolumeUi() {
@@ -592,42 +529,14 @@ function updateVolumeUi() {
         ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15 10.5a2 2 0 0 1 0 3"/>'
         : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15 9.5a4 4 0 0 1 0 5"/><path d="M18 7a7 7 0 0 1 0 10"/>';
   }
-  updateAudioFadeUi();
-}
-function audioFadeSecondsLabel(ms) {
-  ms = normalizeAudioFadeMs(ms, 0);
-  return (ms / 1000).toFixed(ms % 1000 ? 2 : 1).replace(/0$/, '') + 's';
-}
-function updateAudioFadeUi() {
-  var fadeInSlider = document.getElementById('fade-in-slider');
-  var fadeOutSlider = document.getElementById('fade-out-slider');
-  var fadeInValue = document.getElementById('fade-in-value');
-  var fadeOutValue = document.getElementById('fade-out-value');
-  var inSeconds = (AUDIO_FADE_IN_MS / 1000).toFixed(2);
-  var outSeconds = (AUDIO_FADE_OUT_MS / 1000).toFixed(2);
-  if (fadeInSlider && Math.abs(Number(fadeInSlider.value) - Number(inSeconds)) > 0.001) fadeInSlider.value = inSeconds;
-  if (fadeOutSlider && Math.abs(Number(fadeOutSlider.value) - Number(outSeconds)) > 0.001) fadeOutSlider.value = outSeconds;
-  if (fadeInValue) fadeInValue.textContent = audioFadeSecondsLabel(AUDIO_FADE_IN_MS);
-  if (fadeOutValue) fadeOutValue.textContent = audioFadeSecondsLabel(AUDIO_FADE_OUT_MS);
-}
-function setAudioFadeSetting(kind, seconds, silent) {
-  var ms = normalizeAudioFadeMs(Number(seconds) * 1000, kind === 'in' ? 460 : 420);
-  if (kind === 'in') AUDIO_FADE_IN_MS = ms;
-  else AUDIO_FADE_OUT_MS = ms;
-  saveAudioFadePreference();
-  updateAudioFadeUi();
-  if (!silent) showToast((kind === 'in' ? '淡入 ' : '淡出 ') + audioFadeSecondsLabel(ms));
 }
 
 function setVolume(value, silent) {
   var next = Math.max(0, Math.min(1, Number(value) || 0));
-  var previous = targetVolume;
-  var shouldRestoreAudibleEnvelope = next > 0.001 && !audioFadeTimer && (previous <= 0.001 || clampRange(audioFadeEnvelope, 0, 1) <= 0.0015);
   targetVolume = next;
   if (next > 0.01) lastNonZeroVolume = next;
   try { localStorage.setItem('apex-player-volume', String(next)); } catch (e) { }
-  if (shouldRestoreAudibleEnvelope) cancelAudioElementFadeFrame();
-  applyVolumeToAudio({ restoreEnvelope: shouldRestoreAudibleEnvelope });
+  applyVolumeToAudio();
   updateVolumeUi();
   if (!silent) showToast('音量 ' + Math.round(next * 100) + '%');
 }
@@ -704,8 +613,6 @@ function toggleMute() {
 
 function bindVolumeControls() {
   var slider = document.getElementById('volume-slider');
-  var fadeInSlider = document.getElementById('fade-in-slider');
-  var fadeOutSlider = document.getElementById('fade-out-slider');
   var btn = document.getElementById('volume-btn');
   var wrap = document.getElementById('volume-control');
   function keepVolumePanelOpen() {
@@ -729,18 +636,6 @@ function bindVolumeControls() {
     slider.addEventListener('blur', closeVolumePanelSoon);
     slider.addEventListener('change', function () { showToast('音量 ' + Math.round(targetVolume * 100) + '%'); });
   }
-  if (fadeInSlider) {
-    fadeInSlider.addEventListener('input', function () { setAudioFadeSetting('in', fadeInSlider.value, true); });
-    fadeInSlider.addEventListener('focus', keepVolumePanelOpen);
-    fadeInSlider.addEventListener('blur', closeVolumePanelSoon);
-    fadeInSlider.addEventListener('change', function () { setAudioFadeSetting('in', fadeInSlider.value, false); });
-  }
-  if (fadeOutSlider) {
-    fadeOutSlider.addEventListener('input', function () { setAudioFadeSetting('out', fadeOutSlider.value, true); });
-    fadeOutSlider.addEventListener('focus', keepVolumePanelOpen);
-    fadeOutSlider.addEventListener('blur', closeVolumePanelSoon);
-    fadeOutSlider.addEventListener('change', function () { setAudioFadeSetting('out', fadeOutSlider.value, false); });
-  }
   if (btn) {
     btn.addEventListener('dblclick', function (e) { e.stopPropagation(); toggleMute(); });
   }
@@ -755,7 +650,6 @@ function bindVolumeControls() {
     }
   });
   updateVolumeUi();
-  updateAudioFadeUi();
   applyVolumeToAudio();
 }
 

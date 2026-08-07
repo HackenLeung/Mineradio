@@ -359,7 +359,7 @@ function primeProgressSeekPlayback(media, mediaSrc, serial) {
   if (!progressSeekMediaStillCurrent(media, mediaSrc)) return false;
   progressDragState.resumePlaySerial = serial;
   if (typeof attemptAudioPlay === 'function') {
-    attemptAudioPlay({ manual: true, silent: true, fade: true });
+    attemptAudioPlay({ manual: true, silent: true });
     return true;
   }
   try {
@@ -367,8 +367,7 @@ function primeProgressSeekPlayback(media, mediaSrc, serial) {
     if (playResult && playResult.then) {
       playResult.then(function () {
         if (serial !== progressDragState.commitSerial || !progressSeekMediaStillCurrent(media, mediaSrc)) return;
-        if (typeof startPlaybackFadeIn === 'function') startPlaybackFadeIn();
-        else if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+        if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
       }).catch(function () {
         if (serial !== progressDragState.commitSerial || !progressSeekMediaStillCurrent(media, mediaSrc)) return;
         if (typeof restorePlaybackGain === 'function') restorePlaybackGain();

@@ -25,7 +25,6 @@ test('music download queue resolves Netease, QQ and Kugou without advertising un
   assert.match(server, /async function resolveMusicDownloadUrl\(song, quality\)/);
   assert.match(server, /provider === 'qq'[\s\S]*handleQQSongUrl\(mid, mediaMid, quality, song\)/);
   assert.match(server, /provider === 'kugou'[\s\S]*handleKugouSongUrl/);
-  assert.match(server, /provider === 'qishui' \|\| provider === 'spotify'[\s\S]*暂不支持下载/);
   assert.match(server, /if \(pn === '\/api\/download'\)/);
   assert.match(server, /if \(pn === '\/api\/download\/status'\)/);
   assert.match(server, /if \(pn === '\/api\/download\/cancel'\)/);

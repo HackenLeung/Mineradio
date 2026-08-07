@@ -65,7 +65,7 @@ async function downloadSingleSong(song, opts) {
     return;
   }
   if (!canDownloadSong(song)) {
-    showToast(downloadSongProvider(song) === 'qishui' ? '小汽暂不支持下载' : '当前音源暂不支持下载');
+    showToast('当前音源暂不支持下载');
     return;
   }
   if (!(song.id || song.mid || song.songmid || song.hash)) {

@@ -1110,8 +1110,7 @@ async function executeSmartCrossfade(pending) {
       preloadedProxyAudioUrl: descriptor && descriptor.proxyUrl || '',
       smartTransitionHandoff: true,
       smartTransition: isSmartTransition,
-      coverCommitted: coverCommitted,
-      fade: false
+      coverCommitted: coverCommitted
     });
     handoffSucceeded = !!(handoffResult === true && audio === nextMedia && currentIdx === pending.nextIndex && nextMedia.src && !nextMedia.paused && !nextMedia.ended);
     if (handoffSucceeded) {

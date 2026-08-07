@@ -18,7 +18,7 @@ const logout = fs.readFileSync(path.join(root, 'public', 'js', 'modules', '08-ac
   assert(!/login[-A-Za-z]*easter|LoginEaster|LOGIN_EASTER/i.test(source), 'login easter egg code must be removed');
 });
 
-['netease', 'qq', 'kugou', 'qishui', 'spotify'].forEach((provider) => {
+['netease', 'qq', 'kugou'].forEach((provider) => {
   const marker = `ipcMain.handle('${provider}-music-open-login'`;
   const start = main.indexOf(marker);
   assert(start >= 0, `${provider} login IPC missing`);

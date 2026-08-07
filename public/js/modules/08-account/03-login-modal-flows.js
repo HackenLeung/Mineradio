@@ -1,31 +1,27 @@
 var loginRefreshRequestSeq = 0;
 var loginWorkflowDrag = null;
 var LOGIN_WORKFLOW_CONNECTION_STORE_KEY = 'mineradio-login-workflow-connections-v1';
-var LOGIN_WORKFLOW_PROVIDERS = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var LOGIN_WORKFLOW_PROVIDERS = ['netease', 'qq', 'kugou'];
 var loginWorkflowPendingProvider = '';
 var loginWorkflowVerifiedSession = {};
 var loginProviderPointer = null;
 var loginProviderClickSuppressed = false;
 var loginWorkflowEdgeRenderFrame = 0;
 var loginWorkflowEdgeRenderTimers = [];
-var SPOTIFY_DEVELOPER_DASHBOARD_URL = 'https://developer.spotify.com/dashboard';
-var SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:43879/callback';
 
 function isLoginRefreshCurrent(provider, seq) {
   return loginProvider === provider && loginRefreshRequestSeq === seq;
 }
 
 function normalizeLoginProviderKey(provider) {
-  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : 'netease');
 }
 function loginProviderSupportsCookieMode(provider) {
   provider = normalizeLoginProviderKey(provider);
-  return provider !== 'spotify';
+  return true;
 }
 function loginProviderOfficialModeText(provider) {
   provider = normalizeLoginProviderKey(provider);
-  if (provider === 'spotify') return { title: 'OAuth', sub: '弹出 Spotify 授权窗口' };
-  if (provider === 'qishui') return { title: '本地会话', sub: '读取小汽 PC 登录态' };
   if (provider === 'kugou') return { title: '官网', sub: '弹出小狗官方窗口' };
   return { title: '扫码', sub: '连接后弹出官方窗口' };
 }
@@ -34,14 +30,12 @@ function setManualCookieOpenForProvider(provider, open) {
   if (provider === 'netease') neteaseManualCookieOpen = !!open;
   else if (provider === 'qq') qqManualCookieOpen = !!open;
   else if (provider === 'kugou') kugouManualCookieOpen = !!open;
-  else if (provider === 'qishui') qishuiManualCookieOpen = !!open;
 }
 function isManualCookieOpenForProvider(provider) {
   provider = normalizeLoginProviderKey(provider);
   if (provider === 'netease') return !!neteaseManualCookieOpen;
   if (provider === 'qq') return !!qqManualCookieOpen;
   if (provider === 'kugou') return !!kugouManualCookieOpen;
-  if (provider === 'qishui') return !!qishuiManualCookieOpen;
   return false;
 }
 function readLoginWorkflowConnections() {
@@ -466,7 +460,7 @@ function updateLoginNodeGraphUi() {
   if (cookie) {
     var cookieTitle = cookie.querySelector('b');
     var cookieSub = cookie.querySelector('small');
-    if (cookieTitle) cookieTitle.textContent = loginProvider === 'qishui' ? 'Token' : 'Cookie';
+    if (cookieTitle) cookieTitle.textContent = 'Cookie';
     if (cookieSub) cookieSub.textContent = loginProviderSupportsCookieMode(loginProvider) ? '连接后打开手动导入' : '该平台不支持 Cookie 导入';
     cookie.disabled = !loginProviderSupportsCookieMode(loginProvider);
     cookie.classList.toggle('active', isManualCookieOpenForProvider(loginProvider));
@@ -488,10 +482,6 @@ function connectLoginProvider(provider) {
   selectLoginProviderNode(provider);
 }
 function selectLoginMode(mode) {
-  if (mode === 'cookie' && !loginProviderSupportsCookieMode(loginProvider)) {
-    showToast('Spotify 使用官方 OAuth 登录');
-    return;
-  }
   setManualCookieOpenForProvider(loginProvider, mode === 'cookie');
   updateLoginProviderUi();
   setLoginAuthDrawerOpen(hasLoginWorkflowConnection(loginProvider) || loginWorkflowPendingProvider === loginProvider);
@@ -508,10 +498,6 @@ function connectLoginMode(mode) {
   setLoginAuthDrawerOpen(true);
   markLoginNodeConnecting();
   if (mode === 'cookie') {
-    if (!loginProviderSupportsCookieMode(loginProvider)) {
-      showToast('Spotify 使用官方 OAuth 登录');
-      return;
-    }
     setManualCookieOpenForProvider(loginProvider, true);
     updateLoginProviderUi();
     var input = document.getElementById('qq-cookie-input');
@@ -527,7 +513,7 @@ var pendingCookieExportProvider = '';
 function providerCookieExportLabel(provider) {
   provider = normalizeLoginProviderKey(provider);
   var meta = platformMeta(provider);
-  return meta && meta.label || (provider === 'spotify' ? 'Spotify' : provider);
+  return meta && meta.label || provider;
 }
 function offerLoginCookieExport(provider, info) {
   provider = normalizeLoginProviderKey(provider);
@@ -590,112 +576,11 @@ function setLoginProvider(provider, silent) {
   updateLoginProviderUi();
   if (!silent && document.getElementById('login-modal').classList.contains('show')) refreshQr();
 }
-function qishuiPublicSearchReady() {
-  return !!(qishuiLoginStatus && (qishuiLoginStatus.searchReady || qishuiLoginStatus.publicCatalog));
-}
-function qishuiLoginStatusText(info) {
-  info = info || qishuiLoginStatus || {};
-  if (info.webSession) return '已导入本机小汽 PC 登录态 · 可同步我的喜欢、歌单并直接播放';
-  if (info.loggedIn) return '已保存小汽 OpenAPI 授权 · ' + (info.userId || info.playbackMode || '');
-  return '请先在本机小汽 PC 客户端完成登录，再点击“读取本机小汽”';
-}
-function spotifyLoginStatusText(info) {
-  info = info || spotifyLoginStatus || {};
-  if (info.loggedIn) return 'Spotify 已连接 / ' + (info.product === 'premium' ? 'Premium' : (info.product ? String(info.product).toUpperCase() : '方案未知')) + ' / 可同步歌单和 Liked Songs';
-  if (info.reauthRequired) return 'Spotify 长期授权已到期，请重新连接官方 OAuth';
-  if (info.stale) return 'Spotify 登录已过期，请重新连接官方 OAuth';
-  if (info.localConfigMissing) return 'Spotify 未连接：粘贴 Spotify Client ID 后点击“保存并授权”';
-  if (info.oauthConfigured) return 'Spotify Client ID 已保存，点击“连接 Spotify”打开官方授权窗口';
-  if (info.configured || info.searchReady) return 'Spotify 搜索已可用；登录后可同步会员状态、歌单和红心歌单';
-  var missing = info.oauthMissing && info.oauthMissing.length ? (' 缺少: ' + info.oauthMissing.join(', ')) : '';
-  return '粘贴 Spotify Client ID，并在 Spotify Developer Dashboard 登记回调地址 http://127.0.0.1:43879/callback' + missing;
-}
-function parseSpotifyConfigInput(text) {
-  text = String(text || '').trim();
-  if (!text) return {};
-  var parsed = null;
-  if (/^\s*\{/.test(text)) {
-    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
-  }
-  if (parsed && typeof parsed === 'object') {
-    var source = parsed.spotify && typeof parsed.spotify === 'object' ? parsed.spotify : parsed;
-    return {
-      clientId: source.clientId || source.client_id || source.id || '',
-      redirectUri: source.redirectUri || source.redirect_uri || source.callbackUrl || source.callback_url || '',
-      market: source.market || source.country || '',
-      scope: source.scope || source.scopes || ''
-    };
-  }
-  var payload = {};
-  var loose = [];
-  text.split(/[\r\n;]+/).forEach(function (part) {
-    part = String(part || '').trim();
-    if (!part) return;
-    var pair = part.match(/^([A-Za-z0-9_\-\s]+)\s*[:=]\s*(.+)$/);
-    if (!pair) {
-      loose.push(part);
-      return;
-    }
-    var key = pair[1].toLowerCase().replace(/[\s_-]+/g, '');
-    var value = pair[2].trim();
-    if (key === 'clientid' || key === 'spotifyclientid' || key === 'id') payload.clientId = value;
-    else if (key === 'redirecturi' || key === 'callbackurl' || key === 'callback') payload.redirectUri = value;
-    else if (key === 'market' || key === 'country') payload.market = value;
-    else if (key === 'scope' || key === 'scopes') payload.scope = value;
-  });
-  if (!payload.clientId && loose.length) payload.clientId = loose[0];
-  return payload;
-}
-function openSpotifyDeveloperDashboard() {
-  try { window.open(SPOTIFY_DEVELOPER_DASHBOARD_URL, '_blank'); } catch (e) { }
-  showToast('已打开 Spotify 开发者网页');
-}
-async function copySpotifyRedirectUri() {
-  var ok = false;
-  try {
-    var api = window.desktopWindow;
-    if (api && typeof api.copyText === 'function') {
-      var res = await Promise.resolve(api.copyText(SPOTIFY_REDIRECT_URI));
-      ok = !res || res.ok !== false;
-    }
-  } catch (e) { ok = false; }
-  if (!ok && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    try {
-      await navigator.clipboard.writeText(SPOTIFY_REDIRECT_URI);
-      ok = true;
-    } catch (e) { ok = false; }
-  }
-  if (!ok) {
-    var helper = document.createElement('textarea');
-    helper.value = SPOTIFY_REDIRECT_URI;
-    helper.setAttribute('readonly', 'readonly');
-    helper.style.position = 'fixed';
-    helper.style.left = '-9999px';
-    document.body.appendChild(helper);
-    helper.select();
-    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-    document.body.removeChild(helper);
-  }
-  showToast(ok ? '已复制 Spotify 回调地址' : '复制失败，请手动复制回调地址');
-}
-function openQishuiPublicSearch() {
-  closeLoginModal();
-  if (typeof setSearchMode === 'function') setSearchMode('qishui');
-  var input = document.getElementById('search-input');
-  if (input) {
-    setTimeout(function () {
-      try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) { } }
-    }, 60);
-  }
-  showToast('小汽搜索已切换为匹配源');
-}
 function updateLoginProviderUi() {
   var meta = platformMeta(loginProvider);
   var isQQ = loginProvider === 'qq';
   var isKugou = loginProvider === 'kugou';
-  var isQishui = loginProvider === 'qishui';
   var isNetease = loginProvider === 'netease';
-  var isManualCookieProvider = isNetease || isQQ || isKugou || isQishui;
   var title = document.getElementById('login-modal-title');
   var desc = document.getElementById('login-modal-desc');
   var shell = document.getElementById('qr-shell');
@@ -705,152 +590,71 @@ function updateLoginProviderUi() {
   var qqCookieToggle = document.getElementById('qq-cookie-toggle-btn');
   var qqCookieInput = document.getElementById('qq-cookie-input');
   var qqCookieNote = qqPanel ? qqPanel.querySelector('.qq-cookie-note') : null;
+  var qqCookieSaveBtn = document.getElementById('qq-cookie-save-btn');
   var qqCard = document.getElementById('qq-web-login-card');
   var neteaseBtn = document.getElementById('login-provider-netease');
   var qqBtn = document.getElementById('login-provider-qq');
   var kugouBtn = document.getElementById('login-provider-kugou');
-  var qishuiBtn = document.getElementById('login-provider-qishui');
-  var qqCookieSaveBtn = document.getElementById('qq-cookie-save-btn');
   var canOpenNeteaseWeb = !!(window.desktopWindow && typeof window.desktopWindow.openNeteaseMusicLogin === 'function');
-  var hasQishuiLocalImportBridge = !!(window.desktopWindow && typeof window.desktopWindow.openQishuiMusicLogin === 'function');
-  var canOpenQishuiOfficialWindow = hasQishuiLocalImportBridge;
-  var qishuiSearchReady = qishuiPublicSearchReady();
-  var qishuiBusy = !!(qishuiTokenBusy || qishuiOAuthBusy);
-  var isSpotify = loginProvider === 'spotify';
-  var spotifyBtn = document.getElementById('login-provider-spotify');
-  var canOpenSpotifyOAuth = !!(window.desktopWindow && typeof window.desktopWindow.openSpotifyMusicLogin === 'function');
-  var spotifyBusy = !!(spotifyConfigBusy || spotifyOAuthBusy);
+  var manualCookieOpen = isManualCookieOpenForProvider(loginProvider);
   updateLoginNodeGraphUi();
-  if (isSpotify) {
-    if (neteaseBtn) neteaseBtn.classList.toggle('active', false);
-    if (qqBtn) qqBtn.classList.toggle('active', false);
-    if (kugouBtn) kugouBtn.classList.toggle('active', false);
-    if (qishuiBtn) qishuiBtn.classList.toggle('active', false);
-    if (spotifyBtn) spotifyBtn.classList.toggle('active', true);
-    if (title) title.textContent = '连接 Spotify';
-    if (desc) desc.innerHTML = canOpenSpotifyOAuth
-      ? '粘贴 <b>Spotify Client ID</b> 后保存并授权，用于同步 Premium/Free 状态、歌单和 Liked Songs；播放仍按匹配源自动换源。'
-      : '当前环境不支持桌面授权桥；请在 Mineradio 桌面版中连接 Spotify。';
-    if (shell) {
-      shell.classList.add('web-login-preview');
-      shell.classList.remove('qq-preview', 'netease-preview');
-    }
-    if (qqPanel) {
-      qqPanel.classList.add('show', 'spotify-guide-panel');
-    }
-    if (qqCookieToggle) qqCookieToggle.classList.remove('show');
-    if (qqCookieInput) qqCookieInput.placeholder = spotifyLoginStatus.oauthConfigured
-      ? '已保存 Client ID；可粘贴新的 Client ID 覆盖'
-      : '粘贴 Spotify Client ID';
-    if (qqCookieNote) qqCookieNote.innerHTML =
-      '<div class="spotify-guide-title">Spotify 玩家接入三步</div>' +
-      '<div class="spotify-guide-steps">' +
-        '<span>1. 打开网页，创建 App</span>' +
-        '<span>2. 回调填 <code>' + SPOTIFY_REDIRECT_URI + '</code></span>' +
-        '<span>3. 复制 Client ID，粘到这里</span>' +
-      '</div>' +
-      '<div class="spotify-guide-actions">' +
-        '<button type="button" class="spotify-guide-link" onclick="openSpotifyDeveloperDashboard()">打开网页</button>' +
-        '<button type="button" class="spotify-guide-link" onclick="copySpotifyRedirectUri()">复制回调</button>' +
-        '<span>PKCE 不用填 Client Secret</span>' +
-      '</div>';
-    if (qqCookieSaveBtn) {
-      qqCookieSaveBtn.disabled = spotifyBusy;
-      qqCookieSaveBtn.textContent = spotifyConfigBusy ? '保存中…' : (spotifyOAuthBusy ? '等待授权…' : '保存并授权');
-    }
-    if (qqCard) {
-      qqCard.style.display = '';
-      qqCard.disabled = spotifyBusy || !canOpenSpotifyOAuth || !spotifyLoginStatus.oauthConfigured;
-      var spCardMark = qqCard.querySelector('b');
-      var spCardLabel = qqCard.querySelector('span');
-      if (spCardMark) spCardMark.textContent = 'SP';
-      if (spCardLabel) spCardLabel.textContent = spotifyOAuthBusy ? '等待 Spotify 授权' : (spotifyLoginStatus.oauthConfigured ? '打开 Spotify 授权' : '先保存 Client ID');
-    }
-    if (st) {
-      st.className = 'preview';
-      st.textContent = spotifyLoginStatusText();
-    }
-    if (refreshBtn) {
-      refreshBtn.disabled = spotifyBusy || !canOpenSpotifyOAuth;
-      refreshBtn.textContent = spotifyConfigBusy ? '保存中…' : (spotifyOAuthBusy ? '等待授权…' : (spotifyLoginStatus.oauthConfigured ? '连接 Spotify' : '保存并授权'));
-      refreshBtn.onclick = spotifyLoginStatus.oauthConfigured ? openSpotifyWebLogin : submitSpotifyConfigLogin;
-    }
-    updateLoginNodeGraphUi();
-    return;
-  }
-  if (qqPanel) qqPanel.classList.remove('spotify-guide-panel');
-  if (spotifyBtn) spotifyBtn.classList.toggle('active', false);
-  if (neteaseBtn) neteaseBtn.classList.toggle('active', loginProvider === 'netease');
+  if (neteaseBtn) neteaseBtn.classList.toggle('active', isNetease);
   if (qqBtn) qqBtn.classList.toggle('active', isQQ);
   if (kugouBtn) kugouBtn.classList.toggle('active', isKugou);
-  if (qishuiBtn) qishuiBtn.classList.toggle('active', isQishui);
-  if (title) title.textContent = isQishui ? '导入小汽' : ('扫码登录' + meta.label);
+  if (title) title.textContent = '扫码登录' + meta.label;
   if (desc) desc.innerHTML = isQQ
     ? '打开 <b>小Q官方网页登录窗口</b> 扫码，成功后会自动同步账号会话。'
     : (isKugou
       ? '打开 <b>小狗官方网页登录窗口</b> 登录，成功后会自动同步账号会话。'
-    : (isQishui
-      ? (hasQishuiLocalImportBridge
-        ? '读取本机 <b>小汽 PC 客户端</b> 的当前登录态，导入后可同步我的喜欢、歌单并解析播放地址。'
-        : '本地小汽登录态只能由 Mineradio 桌面版读取；请在桌面版中完成导入。')
-    : (canOpenNeteaseWeb
-      ? '打开 <b>小云官方网页登录窗口</b> 扫码，避开接口二维码风控；成功后会自动同步账号会话。'
-      : '使用 <b>小云 App</b> 扫码，可同步歌单、红心与播客。')));
-  var manualCookieOpen = isManualCookieOpenForProvider(loginProvider);
+      : (canOpenNeteaseWeb
+        ? '打开 <b>小云官方网页登录窗口</b> 扫码，避开接口二维码风控；成功后会自动同步账号会话。'
+        : '使用 <b>小云 App</b> 扫码，可同步歌单、红心与播客。'));
   if (shell) {
-    var useWebPreview = isQQ || isKugou || isQishui || (isNetease && (canOpenNeteaseWeb || manualCookieOpen));
+    var useWebPreview = isQQ || isKugou || (isNetease && (canOpenNeteaseWeb || manualCookieOpen));
     shell.classList.toggle('web-login-preview', useWebPreview);
     shell.classList.toggle('qq-preview', isQQ);
     shell.classList.toggle('netease-preview', isNetease && canOpenNeteaseWeb);
   }
-  if (qqPanel) qqPanel.classList.toggle('show', isManualCookieProvider && manualCookieOpen);
+  if (qqPanel) qqPanel.classList.toggle('show', manualCookieOpen);
   if (qqCookieToggle) {
-    qqCookieToggle.classList.toggle('show', isManualCookieProvider);
-    qqCookieToggle.textContent = manualCookieOpen ? '收起导入' : (isQishui ? 'Token 导入' : 'Cookie 导入');
+    qqCookieToggle.classList.add('show');
+    qqCookieToggle.textContent = manualCookieOpen ? '收起导入' : 'Cookie 导入';
   }
-  if (qqCookieInput) qqCookieInput.placeholder = isQishui ? 'access-token / Bearer ...' : (isKugou ? 'KuGoo=...; token=...; userid=...; kg_mid=...' : (isNetease ? 'MUSIC_U=...; __csrf=...' : 'uin=...; qqmusic_key=...; qm_keyst=...'));
-  if (qqCookieNote) qqCookieNote.textContent = isQishui ? (qishuiLoginStatus.oauthConfigured ? '备用入口：也可以粘贴抖音开放平台 access-token，需要 luna.openapi.platform.play_core 权限。' : '可选：粘贴 access-token 后增强官方推荐；不粘贴也能用小汽搜索匹配。') : (isKugou ? '从 kugou.com 的登录会话导入。' : (isNetease ? '从 music.163.com 的登录会话导入。' : '从 y.qq.com 的登录会话导入。'));
-  if (qqCookieSaveBtn) qqCookieSaveBtn.textContent = isQishui ? '保存授权' : '保存 Cookie';
+  if (qqCookieInput) qqCookieInput.placeholder = isKugou
+    ? 'KuGoo=...; token=...; userid=...; kg_mid=...'
+    : (isNetease ? 'MUSIC_U=...; __csrf=...' : 'uin=...; qqmusic_key=...; qm_keyst=...');
+  if (qqCookieNote) qqCookieNote.textContent = isKugou
+    ? '从 kugou.com 的登录会话导入。'
+    : (isNetease ? '从 music.163.com 的登录会话导入。' : '从 y.qq.com 的登录会话导入。');
+  if (qqCookieSaveBtn) qqCookieSaveBtn.textContent = '保存 Cookie';
   if (qqCard) {
     qqCard.style.display = '';
-    qqCard.disabled = isQishui ? (qishuiBusy || !canOpenQishuiOfficialWindow) : (isQQ ? !!qqWebLoginBusy : (isKugou ? !!kugouWebLoginBusy : !!neteaseWebLoginBusy));
+    qqCard.disabled = isQQ ? !!qqWebLoginBusy : (isKugou ? !!kugouWebLoginBusy : !!neteaseWebLoginBusy);
     var cardMark = qqCard.querySelector('b');
     var cardLabel = qqCard.querySelector('span');
-    if (cardMark) cardMark.textContent = isQQ ? '小Q' : (isKugou ? '小狗' : (isQishui ? '小汽' : '小云'));
+    if (cardMark) cardMark.textContent = isQQ ? '小Q' : (isKugou ? '小狗' : '小云');
     if (cardLabel) cardLabel.textContent = isQQ
       ? (qqWebLoginBusy ? '等待扫码确认' : (qqLoginStatus.loggedIn ? '重新打开官方窗口同步会员' : '打开官方扫码窗口'))
-      : (isKugou ? (kugouWebLoginBusy ? '等待登录确认' : '打开官方登录窗口') : (isQishui ? (qishuiOAuthBusy ? '正在读取本机会话' : '读取本机小汽') : (neteaseWebLoginBusy ? '等待扫码确认' : '打开官方登录窗口')));
+      : (isKugou ? (kugouWebLoginBusy ? '等待登录确认' : '打开官方登录窗口') : (neteaseWebLoginBusy ? '等待扫码确认' : '打开官方登录窗口'));
   }
   if (st) {
-    st.className = isManualCookieProvider ? 'preview' : '';
+    st.className = 'preview';
     st.textContent = isQQ
       ? qqLoginStatusText(qqLoginStatus)
       : (isKugou
         ? (kugouLoginStatus.loggedIn ? ('已保存小狗会话 · ' + (kugouLoginStatus.nickname || '')) : '点击“登录”打开小狗官方窗口')
-        : (isQishui
-          ? qishuiLoginStatusText()
-        : (canOpenNeteaseWeb ? '点击“网页登录”打开小云官方窗口' : '正在生成二维码…')));
+        : (canOpenNeteaseWeb ? '点击“网页登录”打开小云官方窗口' : '正在生成二维码…'));
   }
   if (refreshBtn) {
-    refreshBtn.disabled = isQishui ? (qishuiBusy || !canOpenQishuiOfficialWindow) : (isQQ ? !!qqWebLoginBusy : (isKugou ? !!kugouWebLoginBusy : !!neteaseWebLoginBusy));
     var qqNeedsAuthRefresh = isQQ && qqLoginNeedsAuthorizationRefresh(qqLoginStatus);
     var qqNeedsMembershipSync = isQQ && qqLoginStatus.loggedIn && !hasProviderVip('qq', qqLoginStatus);
-    refreshBtn.textContent = isQishui ? (qishuiOAuthBusy ? '正在读取…' : (qishuiTokenBusy ? '保存中…' : '读取本机小汽')) : (isQQ ? (qqWebLoginBusy ? '等待扫码…' : (qqNeedsAuthRefresh ? '重新授权' : (qqNeedsMembershipSync ? '同步会员' : (qqLoginStatus.loggedIn ? '刷新状态' : '扫码登录')))) : (isKugou ? (kugouWebLoginBusy ? '等待登录…' : '登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码')));
-    refreshBtn.onclick = isQishui ? openQishuiWebLogin : (isQQ ? ((qqNeedsAuthRefresh || qqNeedsMembershipSync) ? openQQWebLogin : (qqLoginStatus.loggedIn ? refreshQr : openQQWebLogin)) : (isKugou ? openKugouWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr)));
-  }
-  if (isQishui && canOpenQishuiOfficialWindow) {
-    if (qqCard) {
-      var qishuiCardLabel = qqCard.querySelector('span');
-      if (qishuiCardLabel) qishuiCardLabel.textContent = qishuiOAuthBusy
-        ? '正在读取本机会话'
-        : '读取本机小汽';
-    }
-    if (refreshBtn) {
-      refreshBtn.textContent = qishuiOAuthBusy
-        ? '正在读取…'
-        : '读取本机小汽';
-      refreshBtn.onclick = openQishuiWebLogin;
-    }
+    refreshBtn.disabled = isQQ ? !!qqWebLoginBusy : (isKugou ? !!kugouWebLoginBusy : !!neteaseWebLoginBusy);
+    refreshBtn.textContent = isQQ
+      ? (qqWebLoginBusy ? '等待扫码…' : (qqNeedsAuthRefresh ? '重新授权' : (qqNeedsMembershipSync ? '同步会员' : (qqLoginStatus.loggedIn ? '刷新状态' : '扫码登录'))))
+      : (isKugou ? (kugouWebLoginBusy ? '等待登录…' : '登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码'));
+    refreshBtn.onclick = isQQ
+      ? ((qqNeedsAuthRefresh || qqNeedsMembershipSync) ? openQQWebLogin : (qqLoginStatus.loggedIn ? refreshQr : openQQWebLogin))
+      : (isKugou ? openKugouWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr));
   }
   updateLoginNodeGraphUi();
 }
@@ -859,34 +663,6 @@ async function refreshQr() {
   updateLoginProviderUi();
   var refreshProvider = loginProvider;
   var refreshSeq = ++loginRefreshRequestSeq;
-  if (loginProvider === 'spotify') {
-    qrKey = null;
-    var spotifyStatus = document.getElementById('qr-status');
-    var spotifyImg = document.getElementById('qr-img');
-    if (spotifyImg) spotifyImg.src = '';
-    var spotifyInfo = await refreshSpotifyLoginStatus();
-    if (!isLoginRefreshCurrent(refreshProvider, refreshSeq)) return;
-    updateLoginProviderUi();
-    if (spotifyStatus) {
-      spotifyStatus.textContent = spotifyLoginStatusText(spotifyInfo);
-      spotifyStatus.className = 'preview';
-    }
-    return;
-  }
-  if (loginProvider === 'qishui') {
-    qrKey = null;
-    var qishuiStatus = document.getElementById('qr-status');
-    var qishuiImg = document.getElementById('qr-img');
-    if (qishuiImg) qishuiImg.src = '';
-    var qishuiInfo = await refreshQishuiLoginStatus();
-    if (!isLoginRefreshCurrent(refreshProvider, refreshSeq)) return;
-    updateLoginProviderUi();
-    if (qishuiStatus) {
-      qishuiStatus.textContent = qishuiLoginStatusText(qishuiInfo);
-      qishuiStatus.className = 'preview';
-    }
-    return;
-  }
   if (loginProvider === 'qq') {
     qrKey = null;
     var qqStatus = document.getElementById('qr-status');
@@ -944,106 +720,13 @@ async function refreshQr() {
 function startQrPoll() { if (qrPollTimer) clearInterval(qrPollTimer); qrPollTimer = setInterval(checkQr, 2000); }
 function stopQrPoll() { if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; } }
 function toggleQQCookiePanel() {
-  if (loginProvider === 'spotify') return;
   setManualCookieOpenForProvider(loginProvider, !isManualCookieOpenForProvider(loginProvider));
   updateLoginProviderUi();
 }
 function openProviderWebLogin() {
   if (loginProvider === 'qq') return openQQWebLogin();
   if (loginProvider === 'kugou') return openKugouWebLogin();
-  if (loginProvider === 'qishui') return (window.desktopWindow && typeof window.desktopWindow.openQishuiMusicLogin === 'function') ? openQishuiWebLogin() : openQishuiPublicSearch();
-  if (loginProvider === 'spotify') return openSpotifyWebLogin();
   return openNeteaseWebLogin();
-}
-async function openSpotifyWebLogin() {
-  if (spotifyOAuthBusy) return;
-  var statusEl = document.getElementById('qr-status');
-  var api = window.desktopWindow;
-  if (!api || !api.isDesktop || typeof api.openSpotifyMusicLogin !== 'function') {
-    updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = '当前环境不支持 Spotify 本地授权桥，请使用 Mineradio 桌面版。'; statusEl.className = 'fail'; }
-    return;
-  }
-  if (!spotifyLoginStatus.oauthConfigured && !spotifyLoginStatus.tokenConfigured) {
-    var latestStatus = await refreshSpotifyLoginStatus();
-    if (!latestStatus.oauthConfigured && !latestStatus.tokenConfigured) {
-      updateLoginProviderUi();
-      if (statusEl) { statusEl.textContent = '先粘贴 Spotify Client ID，然后点击“保存并授权”。'; statusEl.className = 'fail'; }
-      return;
-    }
-  }
-  spotifyOAuthBusy = true;
-  updateLoginProviderUi();
-  if (statusEl) { statusEl.textContent = '正在打开 Spotify 官方授权窗口…'; statusEl.className = 'preview'; }
-  var failText = '';
-  try {
-    var result = await api.openSpotifyMusicLogin();
-    if (!result || !result.ok) {
-      if (result && result.error === 'SPOTIFY_OAUTH_NOT_CONFIGURED') {
-        throw new Error((result.message || '请先保存 Spotify Client ID') + (result.redirectUri ? (' / 回调地址: ' + result.redirectUri) : ''));
-      }
-      throw new Error((result && (result.message || result.error)) || 'Spotify 授权未完成');
-    }
-    if (statusEl) { statusEl.textContent = '正在同步 Spotify 账号、会员状态和歌单…'; statusEl.className = 'preview'; }
-    var info = await refreshSpotifyLoginStatus();
-    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'Spotify 登录态不可用');
-    activeAccountProvider = 'spotify';
-    renderUserBtn();
-    await refreshUserPlaylists(true);
-    loadHomeDiscover(true);
-    if (statusEl) { statusEl.textContent = 'Spotify 已连接'; statusEl.className = 'scan'; }
-    offerLoginCookieExport('spotify', info);
-    setTimeout(function () {
-      closeLoginModal();
-      showToast('Spotify 已连接: ' + (info.nickname || info.userId || ''));
-    }, 420);
-  } catch (e) {
-    failText = e && e.message ? e.message : 'Spotify 授权失败';
-    if (statusEl) { statusEl.textContent = failText; statusEl.className = 'fail'; }
-  } finally {
-    spotifyOAuthBusy = false;
-    updateLoginProviderUi();
-    if (failText && statusEl) { statusEl.textContent = failText; statusEl.className = 'fail'; }
-  }
-}
-async function submitSpotifyConfigLogin() {
-  if (spotifyConfigBusy || spotifyOAuthBusy) return;
-  var input = document.getElementById('qq-cookie-input');
-  var statusEl = document.getElementById('qr-status');
-  var saveBtn = document.getElementById('qq-cookie-save-btn');
-  var config = parseSpotifyConfigInput(input ? input.value : '');
-  if (!config.clientId && spotifyLoginStatus.oauthConfigured) return openSpotifyWebLogin();
-  if (!config.clientId) {
-    if (statusEl) { statusEl.textContent = '先粘贴 Spotify Client ID'; statusEl.className = 'fail'; }
-    if (input) {
-      try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) { } }
-    }
-    return;
-  }
-  spotifyConfigBusy = true;
-  if (saveBtn) saveBtn.classList.add('busy');
-  if (statusEl) { statusEl.textContent = '正在保存 Spotify Client ID…'; statusEl.className = 'preview'; }
-  updateLoginProviderUi();
-  var shouldOpenOAuth = false;
-  try {
-    var info = await apiJson('/api/spotify/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
-    });
-    if (!info || info.error || info.ok === false) throw new Error((info && (info.message || info.error)) || 'Spotify Client ID 保存失败');
-    spotifyLoginStatus = normalizeSpotifyLoginStatus(info);
-    if (input) input.value = '';
-    if (statusEl) { statusEl.textContent = 'Spotify Client ID 已保存，正在打开官方授权…'; statusEl.className = 'preview'; }
-    shouldOpenOAuth = true;
-  } catch (e) {
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : 'Spotify Client ID 保存失败'; statusEl.className = 'fail'; }
-  } finally {
-    spotifyConfigBusy = false;
-    if (saveBtn) saveBtn.classList.remove('busy');
-    updateLoginProviderUi();
-  }
-  if (shouldOpenOAuth) await openSpotifyWebLogin();
 }
 async function openNeteaseWebLogin() {
   if (neteaseWebLoginBusy) return;
@@ -1197,97 +880,7 @@ async function openKugouWebLogin() {
     }
   }
 }
-async function openQishuiWebLogin() {
-  if (qishuiOAuthBusy || qishuiTokenBusy) return;
-  var statusEl = document.getElementById('qr-status');
-  var api = window.desktopWindow;
-  if (!api || !api.isDesktop || typeof api.openQishuiMusicLogin !== 'function') {
-    updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = '当前环境不能读取本机小汽 PC 登录态，请使用 Mineradio 桌面版。'; statusEl.className = 'fail'; }
-    return;
-  }
-  qishuiOAuthBusy = true;
-  updateLoginProviderUi();
-  if (statusEl) { statusEl.textContent = '正在读取本机小汽 PC 客户端登录态…'; statusEl.className = 'preview'; }
-  var failText = '';
-  try {
-    var result = await api.openQishuiMusicLogin();
-    if (!result || !result.ok || !result.cookie || !result.webSession) {
-      throw new Error((result && (result.message || result.error)) || '没有读取到可用的本机小汽登录态');
-    }
-    if (statusEl) { statusEl.textContent = '正在保存本机会话并验证小汽歌单…'; statusEl.className = 'preview'; }
-    var info = await apiJson('/api/qishui/login/cookie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookie: result.cookie })
-    });
-    if (!info || !info.loggedIn || !info.webSession) {
-      throw new Error((info && (info.message || info.error)) || '本机小汽登录态导入后验证失败');
-    }
-    qishuiLoginStatus = normalizeQishuiLoginStatus(info);
-    activeAccountProvider = 'qishui';
-    renderUserBtn();
-    await refreshUserPlaylists(true);
-    loadHomeDiscover(true);
-    if (statusEl) { statusEl.textContent = '本机小汽登录态已导入，可同步歌单并直接播放'; statusEl.className = 'scan'; }
-    setTimeout(function () {
-      closeLoginModal();
-      showToast('小汽本机会话已导入');
-    }, 420);
-  } catch (e) {
-    failText = e && e.message ? e.message : '本机小汽登录态导入失败';
-    if (statusEl) { statusEl.textContent = failText; statusEl.className = 'fail'; }
-  } finally {
-    qishuiOAuthBusy = false;
-    updateLoginProviderUi();
-    if (failText && statusEl) { statusEl.textContent = failText; statusEl.className = 'fail'; }
-  }
-}
-async function submitQishuiTokenLogin() {
-  if (qishuiTokenBusy || qishuiOAuthBusy) return;
-  var input = document.getElementById('qq-cookie-input');
-  var statusEl = document.getElementById('qr-status');
-  var saveBtn = document.getElementById('qq-cookie-save-btn');
-  var token = input ? input.value.trim() : '';
-  if (!token) {
-    if (statusEl) { statusEl.textContent = '先粘贴小汽 OpenAPI access-token'; statusEl.className = 'fail'; }
-    return;
-  }
-  qishuiTokenBusy = true;
-  if (saveBtn) saveBtn.classList.add('busy');
-  if (statusEl) { statusEl.textContent = '正在保存小汽授权…'; statusEl.className = 'preview'; }
-  updateLoginProviderUi();
-  try {
-    var info = await apiJson('/api/qishui/login/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: token })
-    });
-    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || '小汽授权不可用');
-    qishuiLoginStatus = normalizeQishuiLoginStatus(info);
-    activeAccountProvider = 'qishui';
-    if (input) input.value = '';
-    renderUserBtn();
-    refreshUserPlaylists(true);
-    loadHomeDiscover(true);
-    if (statusEl) { statusEl.textContent = '小汽 OpenAPI 授权已保存'; statusEl.className = 'scan'; }
-    qishuiManualCookieOpen = false;
-    offerLoginCookieExport('qishui', info);
-    setTimeout(function () {
-      closeLoginModal();
-      showToast('小汽已授权为匹配源');
-    }, 420);
-  } catch (e) {
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : '小汽授权保存失败'; statusEl.className = 'fail'; }
-  } finally {
-    qishuiTokenBusy = false;
-    if (saveBtn) saveBtn.classList.remove('busy');
-    updateLoginProviderUi();
-  }
-}
 async function submitQQCookieLogin() {
-  if (loginProvider === 'spotify') return submitSpotifyConfigLogin();
-  if (loginProvider === 'qishui') return submitQishuiTokenLogin();
   if (loginProvider === 'netease') return submitNeteaseCookieLogin();
   var isKugou = loginProvider === 'kugou';
   if (isKugou ? kugouCookieBusy : qqCookieBusy) return;

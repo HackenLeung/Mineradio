@@ -35,11 +35,6 @@ assert(
 );
 
 [
-  '/api/spotify/song/like',
-  '/api/spotify/playlist/add-song',
-  '/api/qishui/song/like',
-  '/api/qishui/playlist/add-song',
-  '/api/qishui/song/comments',
   '/api/album/subscribe',
   '/api/playlist/subscribe',
   '/api/song/comments',
@@ -58,10 +53,8 @@ assert(
   'liked-state identity must remain provider scoped'
 );
 assert(
-  /\/api\/spotify\/playlist\/collect/.test(playlistDetail)
-    && /\/api\/qishui\/playlist\/collect/.test(playlistDetail)
-    && /\/api\/playlist\/subscribe/.test(playlistDetail),
-  'playlist collection must remain wired for each supported provider'
+  /\/api\/playlist\/subscribe/.test(playlistDetail),
+  'playlist collection must remain wired for the supported providers'
 );
 
 console.log('[OK] Platform account actions, provider-affine listen reports, and truthful duration-sync boundaries are guarded.');
