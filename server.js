@@ -117,7 +117,6 @@ const UPDATE_FALLBACK_NOTES = [
 ];
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
-const WEATHER_IP_LOCATION_URL = 'http://ip-api.com/json/';
 const WEATHER_DEFAULT_LOCATION = {
   name: '上海',
   country: 'China',
@@ -125,6 +124,57 @@ const WEATHER_DEFAULT_LOCATION = {
   longitude: 121.4737,
   timezone: 'Asia/Shanghai',
 };
+
+// IP geolocation sources, tried in order. All but the last use https; ip-api is
+// kept as a cleartext last resort because it is the one historically known to be
+// reachable from mainland networks. Each source gets a short timeout so a dead
+// one costs little before the chain moves on.
+const WEATHER_IP_LOCATION_TIMEOUT_MS = 3500;
+const WEATHER_IP_LOCATION_SOURCES = [
+  {
+    provider: 'ipwho.is',
+    url: 'https://ipwho.is/',
+    parse: (b) => (b && b.success !== false ? {
+      city: b.city,
+      region: b.region,
+      country: b.country,
+      latitude: b.latitude,
+      longitude: b.longitude,
+      timezone: b.timezone && b.timezone.id,
+      ip: b.ip,
+    } : null),
+  },
+  {
+    // Direct host: freeipapi.com answers with a 302 here and requestText does not
+    // follow redirects.
+    provider: 'freeipapi.com',
+    url: 'https://free.freeipapi.com/api/json',
+    parse: (b) => (b ? {
+      city: b.cityName,
+      region: b.regionName,
+      country: b.countryName,
+      latitude: b.latitude,
+      longitude: b.longitude,
+      timezone: Array.isArray(b.timeZones) ? b.timeZones[0] : b.timeZone,
+      ip: b.ipAddress,
+    } : null),
+  },
+  {
+    provider: 'ip-api',
+    url: 'http://ip-api.com/json/?fields=status,message,country,regionName,city,lat,lon,timezone,query&lang=zh-CN',
+    parse: (b) => (b && b.status === 'success' ? {
+      city: b.city,
+      region: b.regionName,
+      country: b.country,
+      latitude: b.lat,
+      longitude: b.lon,
+      timezone: b.timezone,
+      ip: b.query,
+    } : null),
+  },
+];
+const WEATHER_IP_LOCATION_CACHE_TTL_MS = 10 * 60 * 1000;
+let weatherIpLocationCache = null;
 
 const updateDownloadJobs = new Map();
 
@@ -146,15 +196,18 @@ function registerLocalMediaPath(filePath) {
   return id;
 }
 
-function streamRegisteredLocalMedia(req, res, target) {
+async function streamRegisteredLocalMedia(req, res, target) {
   let stat;
   try {
-    stat = fs.statSync(target);
+    stat = await fs.promises.stat(target);
   } catch (_) {
     res.writeHead(404);
     res.end('Not found');
     return;
   }
+  // The await above yields the event loop, so the client may have gone away
+  // (seek, skip, window closed) before we get here.
+  if (res.destroyed || res.writableEnded) return;
   if (!stat.isFile()) {
     res.writeHead(404);
     res.end('Not found');
@@ -212,17 +265,66 @@ function listenSyncJournalKey(provider, credential, sessionId) {
   return listenSyncAccountKey(provider, credential) + ':' + String(sessionId || '');
 }
 
-function persistListenSyncJournal() {
+const LISTEN_SYNC_JOURNAL_FLUSH_DELAY_MS = 1500;
+let listenSyncJournalFlushTimer = null;
+let listenSyncJournalDirty = false;
+
+function trimListenSyncJournal() {
   const entries = Object.entries(listenSyncJournal.entries || {})
     .sort((a, b) => Number(b[1] && b[1].submittedAt || 0) - Number(a[1] && a[1].submittedAt || 0))
     .slice(0, LISTEN_SYNC_JOURNAL_LIMIT);
   listenSyncJournal.entries = Object.fromEntries(entries);
-  const dir = path.dirname(LISTEN_SYNC_JOURNAL_FILE);
-  const temp = LISTEN_SYNC_JOURNAL_FILE + '.tmp-' + process.pid;
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(temp, JSON.stringify(listenSyncJournal, null, 2), 'utf8');
-  fs.renameSync(temp, LISTEN_SYNC_JOURNAL_FILE);
 }
+
+function listenSyncJournalPaths() {
+  return {
+    dir: path.dirname(LISTEN_SYNC_JOURNAL_FILE),
+    temp: LISTEN_SYNC_JOURNAL_FILE + '.tmp-' + process.pid,
+  };
+}
+
+// A single track reports several times (startplay, progress, finish), so writing
+// the whole journal on each call meant repeated multi-KB sync writes on the
+// request path. Coalesce them and write off the hot path; flushListenSyncJournalSync
+// guarantees durability when the process is going away.
+function persistListenSyncJournal() {
+  trimListenSyncJournal();
+  listenSyncJournalDirty = true;
+  if (listenSyncJournalFlushTimer) return;
+  listenSyncJournalFlushTimer = setTimeout(() => {
+    listenSyncJournalFlushTimer = null;
+    const payload = JSON.stringify(listenSyncJournal, null, 2);
+    listenSyncJournalDirty = false;
+    const { dir, temp } = listenSyncJournalPaths();
+    fs.promises.mkdir(dir, { recursive: true })
+      .then(() => fs.promises.writeFile(temp, payload, 'utf8'))
+      .then(() => fs.promises.rename(temp, LISTEN_SYNC_JOURNAL_FILE))
+      .catch((err) => {
+        listenSyncJournalDirty = true;
+        console.warn('[ListenSyncJournal] deferred write failed:', err.message);
+      });
+  }, LISTEN_SYNC_JOURNAL_FLUSH_DELAY_MS);
+  if (listenSyncJournalFlushTimer.unref) listenSyncJournalFlushTimer.unref();
+}
+
+function flushListenSyncJournalSync() {
+  if (listenSyncJournalFlushTimer) {
+    clearTimeout(listenSyncJournalFlushTimer);
+    listenSyncJournalFlushTimer = null;
+  }
+  if (!listenSyncJournalDirty) return;
+  try {
+    const { dir, temp } = listenSyncJournalPaths();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(temp, JSON.stringify(listenSyncJournal, null, 2), 'utf8');
+    fs.renameSync(temp, LISTEN_SYNC_JOURNAL_FILE);
+    listenSyncJournalDirty = false;
+  } catch (err) {
+    console.warn('[ListenSyncJournal] flush failed:', err.message);
+  }
+}
+
+process.on('exit', flushListenSyncJournalSync);
 
 function rememberListenSyncSubmission(key, result) {
   listenSyncJournal.entries[key] = {
@@ -764,13 +866,30 @@ async function fetchManifestUpdateInfo(ref) {
     return localUpdateFallback(err.message || 'Update manifest failed', { configured: true });
   }
 }
+// BEATMAP_CACHE_DIR is a module-load constant, so the derived path/drive fields
+// never change while this module is loaded. Only `available` can flip at runtime
+// (removable drive unplugged), so the probe result gets a short TTL instead of
+// being cached for the process lifetime.
+const BEAT_CACHE_ROOT_PROBE_TTL_MS = 5000;
+let beatCacheRootStatic = null;
+let beatCacheRootProbe = { available: false, checkedAt: 0 };
+let beatCacheDirEnsured = false;
+
 function beatCacheRootInfo() {
-  const dir = path.resolve(BEATMAP_CACHE_DIR);
-  const root = path.parse(dir).root;
-  const drive = root ? root.replace(/[\\\/]+$/, '').toUpperCase() : '';
-  const allowed = !!root && !/^C:$/i.test(drive);
-  const available = allowed && fs.existsSync(root);
-  return { dir, root, drive, allowed, available };
+  if (!beatCacheRootStatic) {
+    const dir = path.resolve(BEATMAP_CACHE_DIR);
+    const root = path.parse(dir).root;
+    const drive = root ? root.replace(/[\\\/]+$/, '').toUpperCase() : '';
+    beatCacheRootStatic = { dir, root, drive, allowed: !!root && !/^C:$/i.test(drive) };
+  }
+  const info = beatCacheRootStatic;
+  if (!info.allowed) return { ...info, available: false };
+  const now = Date.now();
+  if (now - beatCacheRootProbe.checkedAt >= BEAT_CACHE_ROOT_PROBE_TTL_MS) {
+    beatCacheRootProbe = { available: fs.existsSync(info.root), checkedAt: now };
+    if (!beatCacheRootProbe.available) beatCacheDirEnsured = false;
+  }
+  return { ...info, available: beatCacheRootProbe.available };
 }
 function ensureBeatMapCacheDir() {
   const info = beatCacheRootInfo();
@@ -786,7 +905,10 @@ function ensureBeatMapCacheDir() {
     err.info = info;
     throw err;
   }
-  fs.mkdirSync(info.dir, { recursive: true });
+  if (!beatCacheDirEnsured) {
+    fs.mkdirSync(info.dir, { recursive: true });
+    beatCacheDirEnsured = true;
+  }
   return info.dir;
 }
 function safeBeatMapCacheFile(key) {
@@ -813,20 +935,39 @@ function compactBeatMapCachePayload(body) {
     map,
   };
 }
-function readBeatMapCache(key) {
+async function readBeatMapCache(key) {
   const file = safeBeatMapCacheFile(key);
-  if (!file || !fs.existsSync(file)) return null;
-  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!file) return null;
+  // Read directly and treat a missing file as a miss: this drops one stat call
+  // per lookup and avoids the exists/read race.
+  let text;
+  try {
+    text = await fs.promises.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  const raw = JSON.parse(text);
   return raw && raw.map ? raw : null;
 }
-function writeBeatMapCache(body) {
+async function writeBeatMapCache(body) {
   const payload = compactBeatMapCachePayload(body);
   if (!payload) return { ok: false, error: 'INVALID_BEATMAP_CACHE_PAYLOAD' };
   const file = safeBeatMapCacheFile(payload.key);
   if (!file) return { ok: false, error: 'INVALID_BEATMAP_CACHE_KEY' };
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(payload));
-  fs.renameSync(tmp, file);
+  const data = JSON.stringify(payload);
+  try {
+    await fs.promises.writeFile(tmp, data);
+  } catch (err) {
+    // The cache dir is only created once per process. If it was removed while the
+    // drive stayed mounted, rebuild it and retry once before giving up.
+    if (err.code !== 'ENOENT') throw err;
+    beatCacheDirEnsured = false;
+    ensureBeatMapCacheDir();
+    await fs.promises.writeFile(tmp, data);
+  }
+  await fs.promises.rename(tmp, file);
   return { ok: true, key: payload.key, savedAt: payload.savedAt, dir: path.dirname(file) };
 }
 function localUpdateFallback(reason, opts) {
@@ -2919,25 +3060,42 @@ async function fetchOpenMeteoWeather(params) {
 }
 
 async function fetchIpWeatherLocation() {
-  const u = new URL(WEATHER_IP_LOCATION_URL);
-  u.searchParams.set('fields', 'status,message,country,regionName,city,lat,lon,timezone,query');
-  u.searchParams.set('lang', 'zh-CN');
-  const body = await requestJson(u.toString(), { headers: { 'User-Agent': UA } });
-  if (!body || body.status !== 'success' || !Number.isFinite(Number(body.lat)) || !Number.isFinite(Number(body.lon))) {
-    const err = new Error(body && body.message || 'IP_LOCATION_FAILED');
-    err.body = body;
-    throw err;
+  if (weatherIpLocationCache && Date.now() - weatherIpLocationCache.at < WEATHER_IP_LOCATION_CACHE_TTL_MS) {
+    return weatherIpLocationCache.value;
   }
-  return {
-    provider: 'ip-api',
-    city: body.city || WEATHER_DEFAULT_LOCATION.name,
-    region: body.regionName || '',
-    country: body.country || '',
-    latitude: Number(body.lat),
-    longitude: Number(body.lon),
-    timezone: body.timezone || 'auto',
-    ip: body.query || '',
-  };
+  const failures = [];
+  for (const source of WEATHER_IP_LOCATION_SOURCES) {
+    try {
+      const body = await requestJson(source.url, {
+        headers: { 'User-Agent': UA },
+        timeoutMs: WEATHER_IP_LOCATION_TIMEOUT_MS,
+      });
+      const parsed = source.parse(body);
+      const latitude = Number(parsed && parsed.latitude);
+      const longitude = Number(parsed && parsed.longitude);
+      if (!parsed || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        failures.push(source.provider + ': unusable payload');
+        continue;
+      }
+      const value = {
+        provider: source.provider,
+        city: parsed.city || WEATHER_DEFAULT_LOCATION.name,
+        region: parsed.region || '',
+        country: parsed.country || '',
+        latitude,
+        longitude,
+        timezone: parsed.timezone || 'auto',
+        ip: parsed.ip || '',
+      };
+      weatherIpLocationCache = { at: Date.now(), value };
+      return value;
+    } catch (err) {
+      failures.push(source.provider + ': ' + (err && err.message || 'failed'));
+    }
+  }
+  const err = new Error('IP_LOCATION_FAILED');
+  err.failures = failures;
+  throw err;
 }
 
 function weatherRadioSeedQueries(mood) {
@@ -5696,7 +5854,7 @@ const server = http.createServer(async (req, res) => {
       res.end(target ? 'Method not allowed' : 'Not found');
       return;
     }
-    streamRegisteredLocalMedia(req, res, target);
+    await streamRegisteredLocalMedia(req, res, target);
     return;
   }
 
@@ -5878,7 +6036,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       const key = url.searchParams.get('key') || '';
       try {
-        const entry = readBeatMapCache(key);
+        const entry = await readBeatMapCache(key);
         sendJSON(res, entry
           ? { ok: true, hit: true, key: entry.key || key, map: entry.map, meta: entry.meta || {}, savedAt: entry.savedAt || 0 }
           : { ok: true, hit: false, key });
@@ -5900,7 +6058,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST') {
       try {
         const body = await readRequestBody(req);
-        sendJSON(res, writeBeatMapCache(body));
+        sendJSON(res, await writeBeatMapCache(body));
       } catch (err) {
         const info = err.info || beatCacheRootInfo();
         sendJSON(res, {
@@ -5953,8 +6111,13 @@ const server = http.createServer(async (req, res) => {
     try {
       sendJSON(res, { ok: true, location: await fetchIpWeatherLocation() });
     } catch (err) {
-      console.error('[WeatherIpLocation]', err);
-      sendJSON(res, { ok: false, error: err.message, location: null }, 500);
+      console.error('[WeatherIpLocation]', err.failures || err);
+      sendJSON(res, {
+        ok: false,
+        error: err.message,
+        failures: err.failures || [],
+        location: null,
+      }, 500);
     }
     return;
   }
@@ -7255,5 +7418,6 @@ server.listen(PORT, HOST, () => {
 
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
 server.registerLocalMediaPath = registerLocalMediaPath;
+server.flushListenSyncJournal = flushListenSyncJournalSync;
 
 module.exports = server;

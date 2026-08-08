@@ -5350,6 +5350,9 @@ if (!gotSingleInstanceLock) {
     desktopLyricsWindowState.dispose();
     closeDesktopLyricsWindow({ preserveEnabled: true, silent: true });
     cubeRemoteRuntime.dispose();
+    if (localServer && localServer.flushListenSyncJournal) {
+      try { localServer.flushListenSyncJournal(); } catch (e) {}
+    }
     if (localServer && localServer.close) localServer.close();
     if (tray) {
       try { tray.destroy(); } catch (e) {}
