@@ -15,6 +15,7 @@
   <script src="vendor/qrcode-generator.js"></script>
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync">
+  <link rel="stylesheet" href="css/music-library-wall.css?v=20260809-library-wall-v3">
 </head>
 
 <body>
@@ -196,7 +197,7 @@
             <div class="home-card-sub">从最近一次有效聆听继续</div>
             <div class="home-card-art"></div>
           </button>
-          <button class="home-card home-card-quick" data-home-tone="library" type="button"
+          <button id="home-library-card" class="home-card home-card-quick" data-home-tone="library" type="button"
             onclick="openHomeDashboardLibrary()">
             <div class="home-card-label">LIBRARY</div>
             <div class="home-card-title">音乐库</div>
@@ -297,6 +298,33 @@
             <div id="home-tile-row" class="home-tile-row"></div>
           </div>
         </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 音乐库封面墙：透明叠加在现有舞台上，沿用 3D 歌单架的空间语言。 -->
+    <section id="music-library-wall" aria-hidden="true" aria-label="音乐库">
+      <div class="music-library-wall-shell">
+        <header class="music-library-wall-topbar">
+          <button id="music-library-wall-back" class="music-library-wall-icon-btn" type="button" aria-label="返回">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+          </button>
+          <div class="music-library-wall-heading">
+            <div id="music-library-wall-kicker" class="music-library-wall-kicker">LIBRARY</div>
+            <h1 id="music-library-wall-title">音乐库</h1>
+            <p id="music-library-wall-subtitle">用户歌单与本地音乐</p>
+          </div>
+          <div class="music-library-wall-actions">
+            <span id="music-library-wall-status" class="music-library-wall-status" role="status" aria-live="polite"></span>
+            <button id="music-library-wall-play-all" class="music-library-wall-play-all" type="button" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+              播放全部
+            </button>
+          </div>
+        </header>
+        <div id="music-library-wall-content" class="music-library-wall-content" tabindex="-1">
+          <div id="music-library-wall-grid" class="music-library-wall-grid" role="list"></div>
+          <div id="music-library-wall-footer" class="music-library-wall-footer" aria-live="polite"></div>
         </div>
       </div>
     </section>

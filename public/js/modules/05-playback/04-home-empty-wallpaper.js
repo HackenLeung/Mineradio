@@ -10,6 +10,7 @@ if (emptyHomeStartEl) {
 }
 function shouldShowEmptyHomeCore(ignoreSplash) {
   if (!ignoreSplash && document.body.classList.contains('splash-active')) return false;
+  if (document.body.classList.contains('music-library-wall-active')) return false;
   if (immersiveMode) return false;
   if (homeForcedOpen) return true;
   if (homeSuppressed) return false;
@@ -308,6 +309,10 @@ function openHomeLibrary() {
   refreshUserPlaylists(true);
 }
 function goHome() {
+  if (typeof isMusicLibraryWallOpen === 'function' && isMusicLibraryWallOpen()) {
+    closeMusicLibraryWall({ toHome: true, reason: 'home-button' });
+    return;
+  }
   if (homeForcedOpen || emptyHomeActive) {
     dismissHomePage({ toast: true });
     showToast('已关闭 Home');

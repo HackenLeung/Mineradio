@@ -70,6 +70,7 @@ var queueHydrationState = {
   warmPagesRemaining: 0,
   pausedForBuffer: false
 };
+var playlistLoadRequestState = { token: 0, controller: null, timer: 0 };
 var CUSTOM_COVER_STORE_KEY = 'mineradio-custom-covers';
 var CUSTOM_LYRIC_STORE_KEY = 'mineradio-custom-lyrics-v1';
 var CUSTOM_LYRIC_PREF_STORE_KEY = 'mineradio-custom-lyric-prefs-v1';

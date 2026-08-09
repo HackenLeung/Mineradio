@@ -708,6 +708,7 @@ function renderLocalLibraryPanel() {
   var query = simpleSearchNorm(localLibrarySearchQuery || '');
   if (!localFolderPlaylists.length) {
     list.innerHTML = '<div class="local-library-empty">添加音乐文件夹后会在这里显示，并在下次启动时自动恢复。</div>';
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     return;
   }
   if (query) {
@@ -721,6 +722,7 @@ function renderLocalLibraryPanel() {
         (cover ? '<img class="local-library-cover" src="' + escHtml(cover) + '" alt="">' : '<span class="local-library-cover"></span>') +
         '<span class="local-library-meta"><span class="local-library-name">' + escHtml(song.name) + '</span><span class="local-library-sub">' + escHtml(song.artist || song.localFolderName) + '</span></span></button>';
     }).join('') : '<div class="local-library-empty">没有匹配的本地音乐</div>';
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     return;
   }
   list.innerHTML = localFolderPlaylists.map(function (folder, folderIndex) {
@@ -732,6 +734,7 @@ function renderLocalLibraryPanel() {
       '<span class="local-library-meta"><span class="local-library-name">' + escHtml(folder.name) + '</span><span class="local-library-sub">' + escHtml(folder.restoreError ? ('读取失败 · ' + folder.folderPath) : ((folder.songs || []).length + ' 首 · ' + folder.folderPath)) + '</span></span>' +
       '<button id="folder-lyric-match-' + folderIndex + '" class="folder-lyric-match-btn' + (localFolderLyricMatchState.active && localFolderLyricMatchState.folderIndex === folderIndex ? ' matching' : '') + '" type="button" onclick="event.stopPropagation();matchLocalFolderLyrics(' + folderIndex + ')"' + (localFolderLyricMatchState.active || folder.restoreError ? ' disabled' : '') + '>' + (localFolderLyricMatchState.active && localFolderLyricMatchState.folderIndex === folderIndex ? (localFolderLyricMatchState.done + '/' + localFolderLyricMatchState.total) : '匹配歌词') + '</button></div></div>';
   }).join('');
+  if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
 }
 function localLibraryDetailHtml() {
   var folderIndex = localLibraryDetailState.folderIndex;

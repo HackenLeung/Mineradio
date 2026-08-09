@@ -206,6 +206,12 @@ function requestPlaylistQueueHydrationForBrowse() {
 async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
   if (!id) return false;
   opts = opts || {};
+  if (playlistLoadRequestState.controller) {
+    try { playlistLoadRequestState.controller.abort(); } catch (e) { }
+  }
+  if (playlistLoadRequestState.timer) clearTimeout(playlistLoadRequestState.timer);
+  var loadRequestToken = playlistLoadRequestState.token + 1;
+  playlistLoadRequestState = { token: loadRequestToken, controller: null, timer: 0 };
   if (!opts.preserveHomeState) {
     homeForcedOpen = false;
     homeSuppressed = false;
@@ -214,12 +220,22 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
   showLoading();
   cancelPlaylistQueueHydration('new-playlist');
   var source = playlistQueueSource(id);
-  var token = (queueHydrationState && queueHydrationState.token || 0) + 1;
+  var hydrationToken = (queueHydrationState && queueHydrationState.token || 0) + 1;
   var r = null;
   var seedTracks = Array.isArray(opts.seedTracks) && opts.seedTracks.length ? opts.seedTracks.map(cloneSong) : [];
   try {
     if (!seedTracks.length) {
-      r = await apiJson(playlistQueuePageUrl(source, 0, playlistQueuePageSize(source.provider, true)), { timeoutMs: 16000 });
+      var firstPageController = window.AbortController ? new AbortController() : null;
+      playlistLoadRequestState.controller = firstPageController;
+      if (firstPageController) playlistLoadRequestState.timer = setTimeout(function () { firstPageController.abort(); }, 16000);
+      r = await apiJson(
+        playlistQueuePageUrl(source, 0, playlistQueuePageSize(source.provider, true)),
+        firstPageController ? { signal: firstPageController.signal } : { timeoutMs: 16000 }
+      );
+      if (playlistLoadRequestState.token !== loadRequestToken) return false;
+      if (playlistLoadRequestState.timer) clearTimeout(playlistLoadRequestState.timer);
+      playlistLoadRequestState.timer = 0;
+      playlistLoadRequestState.controller = null;
       seedTracks = (r && r.tracks || []).map(cloneSong);
     } else {
       r = {
@@ -231,12 +247,17 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
       };
     }
   } catch (e) {
+    if (playlistLoadRequestState.token !== loadRequestToken) return false;
     console.warn('[PlaylistLoadFirstPage]', id, e);
     showToast('歌单首批加载失败');
+    if (playlistLoadRequestState.timer) clearTimeout(playlistLoadRequestState.timer);
+    playlistLoadRequestState.timer = 0;
+    playlistLoadRequestState.controller = null;
     hideLoading();
     return false;
   }
   try {
+    if (playlistLoadRequestState.token !== loadRequestToken) return false;
     if (!seedTracks.length) {
       showToast(r && (r.message || r.error) || '歌单为空');
       return false;
@@ -253,7 +274,7 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
     if (liked) markSongsLiked(playQueue, true);
     else if (source.provider === 'netease') syncLikeStatusForSongs(playQueue);
     queueHydrationState = {
-      token: token,
+      token: hydrationToken,
       active: hasMore,
       loading: false,
       provider: source.provider,
@@ -281,11 +302,14 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
     if (autoplay) {
       try {
         await playQueueAt(currentIdx, { preserveHomeState: !!opts.preserveHomeState });
+        if (playlistLoadRequestState.token !== loadRequestToken) return false;
       } catch (playErr) {
+        if (playlistLoadRequestState.token !== loadRequestToken) return false;
         console.warn('[PlaylistAutoplay]', id, playErr);
         showToast('歌单已载入，播放启动失败');
       }
     }
+    if (playlistLoadRequestState.token !== loadRequestToken) return false;
     forcePlaybackControlsInteractive();
     if (queueHydrationState.active) {
       showToast('已开始播放，后续歌曲会按需流式加入队列');
@@ -298,12 +322,18 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
     }
     return true;
   } catch (e) {
+    if (playlistLoadRequestState.token !== loadRequestToken) return false;
     console.warn('[PlaylistLoadState]', id, e);
     forcePlaybackControlsInteractive();
     showToast('歌单已载入，界面刷新失败');
     return false;
   } finally {
-    hideLoading();
+    if (playlistLoadRequestState.token === loadRequestToken) {
+      if (playlistLoadRequestState.timer) clearTimeout(playlistLoadRequestState.timer);
+      playlistLoadRequestState.timer = 0;
+      playlistLoadRequestState.controller = null;
+      hideLoading();
+    }
   }
 }
 

@@ -165,6 +165,7 @@ async function logoutAllAccounts() {
       throw new Error('LOGOUT_ALL_INCOMPLETE:' + failures.join('|'));
     }
     resetAllProviderRendererLoginState();
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     closeCollectModal();
     closeUserModal();
     closeLoginModal();
@@ -208,6 +209,7 @@ async function logoutActiveAccount() {
     kugouPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'kugou'; });
     playlistCatalogRevision += 1;
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     dualAccountMode = false;
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
@@ -228,6 +230,7 @@ async function logoutActiveAccount() {
     qqPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qq'; });
     playlistCatalogRevision += 1;
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     dualAccountMode = false;
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
@@ -251,6 +254,7 @@ async function doLogout() {
   activeAccountProvider = firstLoggedProvider();
   userPlaylists = qqPlaylists.concat(kugouPlaylists || []);
   playlistCatalogRevision += 1;
+  if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
   myPodcastCollections = [];
   myPodcastItems = {};
   likedSongMap = {};

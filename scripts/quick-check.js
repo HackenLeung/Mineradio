@@ -169,6 +169,21 @@ function runHomeDailyRecommendationRegressionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runMusicLibraryWallRegressionCheck() {
+  logStep('Full-window music library wall regression');
+  const testFile = path.join(appRoot, 'tests', 'music-library-wall.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`music library wall regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 
 function parseCombinedIndexModules() {
   logStep('Combined index module parse');
@@ -4940,6 +4955,7 @@ async function main() {
   runDirectLoginFlowRegressionCheck();
   runPlatformAccountSyncGuardCheck();
   runHomeDailyRecommendationRegressionCheck();
+  runMusicLibraryWallRegressionCheck();
   parseCombinedIndexModules();
   scanForbiddenMarkers();
   checkMainWindowChrome();

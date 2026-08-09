@@ -536,6 +536,7 @@ function rebuildUserPlaylistsFromCatalog(opts) {
   if (typeof applyUserPlaylistOrder === 'function') applyUserPlaylistOrder();
   playlistCatalogRevision += 1;
   renderUserPlaylistsList({ animate: !!opts.animate, reset: !!opts.reset, preserveScroll: opts.preserveScroll !== false });
+  if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
   if (emptyHomeActive) renderHomeDiscover();
   scheduleShelfRebuild(opts.reason || 'playlist-catalog-page', true);
 }
@@ -616,6 +617,7 @@ async function refreshUserPlaylists(force) {
     document.getElementById('pl-list').innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">登录后显示个人歌单</div>';
     var podcastListLoggedOut = document.getElementById('podcast-list');
     if (podcastListLoggedOut) podcastListLoggedOut.innerHTML = '<div style="text-align:center;padding:14px 0;color:rgba(255,255,255,.28);font-size:11.5px">登录后显示我的播客</div>';
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     return;
   }
   var catalogNeedsNewProvider = playlistCatalogSyncState.loading && ['netease', 'qq', 'kugou'].some(function (provider) {
