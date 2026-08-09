@@ -4383,6 +4383,28 @@ ipcMain.handle('mineradio-export-json-file', async (event, payload = {}) => {
   }
 });
 
+ipcMain.handle('mineradio-export-png-file', async (event, payload = {}) => {
+  try {
+    const owner = getSenderWindow(event);
+    const defaultName = String(payload.defaultName || 'Mineradio-listening-report.png').replace(/[\\/:*?"<>|]+/g, '-');
+    const dataUrl = String(payload.dataUrl || '');
+    const match = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(dataUrl);
+    if (!match) return { ok: false, error: 'PNG_DATA_INVALID' };
+    const buffer = Buffer.from(match[1], 'base64');
+    if (!buffer.length || buffer.length > 24 * 1024 * 1024) return { ok: false, error: 'PNG_DATA_TOO_LARGE' };
+    const result = await dialog.showSaveDialog(owner, {
+      title: '导出听歌报告',
+      defaultPath: defaultName.toLowerCase().endsWith('.png') ? defaultName : `${defaultName}.png`,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, buffer);
+    return { ok: true, filePath: result.filePath };
+  } catch (e) {
+    return { ok: false, error: e.message || 'PNG_EXPORT_FAILED' };
+  }
+});
+
 ipcMain.handle('mineradio-import-json-file', async (event) => {
   try {
     const owner = getSenderWindow(event);

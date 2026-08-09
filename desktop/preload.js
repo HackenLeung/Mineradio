@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   readText: () => ({ ok: true, text: clipboard.readText() || '' }),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
+  exportPngFile: (payload) => ipcRenderer.invoke('mineradio-export-png-file', payload || {}),
   exportLoginCookie: (provider) => ipcRenderer.invoke('mineradio-export-login-cookie', provider || ''),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   chooseLocalMusicFolder: () => ipcRenderer.invoke('mineradio-local-music-choose-folder'),

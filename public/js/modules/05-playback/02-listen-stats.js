@@ -221,6 +221,30 @@ function listenStatsSafeMetadata(metadata) {
   });
   return Object.keys(safe).length ? safe : null;
 }
+function listenStatsArtistRefs(song) {
+  song = song || {};
+  var provider = String(song.provider || song.source || song.type || '').trim().toLowerCase();
+  var rawArtists = Array.isArray(song.artists) ? song.artists : (Array.isArray(song.ar) ? song.ar : []);
+  var refs = rawArtists.map(function (artist) {
+    artist = artist && typeof artist === 'object' ? artist : {};
+    return {
+      name: String(artist.name || artist.title || '').trim(),
+      id: String(artist.id || '').trim(),
+      mid: String(artist.mid || '').trim(),
+      provider: provider,
+      avatar: listenStatsSafeCover(artist.avatar || artist.cover || artist.picUrl || artist.img1v1Url),
+    };
+  }).filter(function (artist) { return artist.name; });
+  var names = String(song.artist || '').split(/\s*\/\s*|\s*,\s*|、|&/).map(function (name) { return name.trim(); }).filter(Boolean);
+  if (!refs.length) {
+    refs = names.map(function (name) { return { name: name, id: '', mid: '', provider: provider, avatar: '' }; });
+  }
+  if (refs[0]) {
+    refs[0].id = String(song.artistId || refs[0].id || '').trim();
+    refs[0].mid = String(song.artistMid || song.singerMid || refs[0].mid || '').trim();
+  }
+  return refs.slice(0, 12);
+}
 function listenSongSnapshot(song) {
   song = song || {};
   var isLocal = song.type === 'local' || song.source === 'local' || !!song.localKey;
@@ -234,9 +258,13 @@ function listenSongSnapshot(song) {
     albumId: song.albumId || song.album_id || (song.album && song.album.id) || '',
     providerSongId: song.providerSongId || song.provider_song_id || '',
     type: isLocal ? 'local' : (song.type || 'song'),
+    sourceType: song.sourceType || '',
+    itemType: song.itemType || '',
+    kind: song.kind || '',
     sourceKey: isLocal ? 'local' : (song.source || song.provider || ''),
     name: song.name || song.title || '未知歌曲',
     artist: song.artist || '',
+    artistRefs: listenStatsArtistRefs(song),
     cover: listenStatsSafeCover(songCoverSrc(song, 220) || song.cover || ''),
     source: songSourceLabel(song),
     provider: isLocal ? 'local' : (song.provider || song.source || song.type || ''),
@@ -265,6 +293,7 @@ function beginListenSession(song, context) {
     lastAudioTime: audio && isFinite(audio.currentTime) ? audio.currentTime : 0,
     listenMs: 0,
     maxProgress: 0,
+    listenStatsV3Periods: {},
   };
 }
 function tickListenSessionSnapshot(session, force) {
@@ -275,10 +304,14 @@ function tickListenSessionSnapshot(session, force) {
   var deltaByWall = Math.max(0, now - (session.lastWallAt || now));
   var delta = deltaByAudio > 0 ? Math.min(deltaByAudio, deltaByWall || deltaByAudio, 4200) : 0;
   if (force && delta <= 0) delta = Math.min(deltaByWall, 1500);
-  if (delta > 0 && delta < 8000) session.listenMs += delta;
+  if (delta > 0 && delta < 8000) {
+    session.listenMs += delta;
+    if (typeof trackListenStatsV3Delta === 'function') trackListenStatsV3Delta(session, now, delta);
+  }
   session.lastWallAt = now;
   session.lastAudioTime = audioTime;
   session.maxProgress = Math.max(session.maxProgress || 0, audio.duration ? audioTime / audio.duration : 0);
+  if (typeof recordListenStatsV3Tick === 'function') recordListenStatsV3Tick(session);
 }
 function updateListenStatsTick(force) {
   if (!audio || !audio.duration || audio.paused) return;
@@ -323,6 +356,7 @@ function finalizeListenSession(completed) {
     onlineMetadata: snap.onlineMetadata || null,
     name: snap.name || '未知歌曲',
     artist: snap.artist || '',
+    artistRefs: Array.isArray(snap.artistRefs) ? snap.artistRefs : [],
     cover: snap.cover || '',
     source: snap.source || '',
     playedAt: now,
@@ -330,6 +364,7 @@ function finalizeListenSession(completed) {
     completed: !!completed,
     context: session.context || null,
   };
+  if (typeof recordListenStatsV3Final === 'function') recordListenStatsV3Final(session, !!completed);
   listenStatsState.history = [record].concat((listenStatsState.history || []).filter(function (item) { return item && item.key !== record.key; })).slice(0, 180);
   var songStat = listenStatsState.songs[record.key] || { key: record.key, name: record.name, artist: record.artist, cover: record.cover, source: record.source, plays: 0, listenMs: 0, completed: 0, lastPlayedAt: 0 };
   songStat.name = record.name;

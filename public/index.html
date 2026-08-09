@@ -225,7 +225,7 @@
             <section class="home-insight-card home-listen-card" aria-labelledby="home-listen-heading">
               <div class="home-insight-head">
                 <div id="home-listen-heading" class="home-insight-kicker">LISTENING TODAY · 今日聆听</div>
-                <button class="home-insight-link" type="button" onclick="openHomeInsight()">查看偏好</button>
+                <button class="home-insight-link" type="button" onclick="openHomeInsight()">查看报告</button>
               </div>
               <div class="home-listen-metrics">
                 <div class="home-listen-metric"><strong id="home-today-time" class="home-listen-value">0 分钟</strong><span
@@ -328,6 +328,139 @@
         </div>
       </div>
     </section>
+
+    <div id="listen-report-view" class="modal-mask listen-report-mask" role="dialog" aria-modal="true"
+      aria-hidden="true" aria-labelledby="listen-report-title">
+      <div class="modal listen-report-modal">
+        <div class="listen-report-shell">
+          <header class="listen-report-topbar">
+          <div class="listen-report-heading">
+            <span>LISTENING REPORT</span>
+            <h1 id="listen-report-title">听歌报告</h1>
+          </div>
+          <div class="listen-report-actions">
+            <div id="listen-report-mode-tabs" class="listen-report-mode-tabs" role="tablist" aria-label="报告周期">
+              <button type="button" role="tab" data-listen-report-mode="month" aria-selected="true">月度</button>
+              <button type="button" role="tab" data-listen-report-mode="year" aria-selected="false">年度</button>
+            </div>
+            <label class="listen-report-period-field" aria-label="选择报告周期">
+              <select id="listen-report-period-select"></select>
+            </label>
+            <button id="listen-report-export" class="listen-report-command" type="button" title="导出报告图片">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14" /></svg>
+              <span>导出图片</span>
+            </button>
+            <button id="listen-report-clear" class="listen-report-icon-btn" type="button" aria-label="清空报告数据"
+              title="清空报告数据">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg>
+            </button>
+          </div>
+          <button id="listen-report-back" class="home-platform-recommend-close listen-report-close" type="button"
+            aria-label="关闭听歌报告">×</button>
+          </header>
+
+          <main id="listen-report-scroll" class="listen-report-content" tabindex="-1">
+          <div id="listen-report-loading" class="listen-report-loading" role="status">正在整理听歌记录</div>
+          <div id="listen-report-empty" class="listen-report-empty" hidden>
+            <span>NO LISTENING DATA</span>
+            <strong>这个周期还没有听歌记录</strong>
+            <small id="listen-report-empty-start"></small>
+          </div>
+          <div id="listen-report-body" hidden>
+            <section class="listen-report-summary-band" aria-labelledby="listen-report-period-title">
+              <div class="listen-report-summary-copy">
+                <span id="listen-report-period-kicker" class="listen-report-kicker"></span>
+                <h2 id="listen-report-period-title"></h2>
+                <p id="listen-report-cutoff"></p>
+              </div>
+              <div class="listen-report-total">
+                <span>收听时长</span>
+                <strong id="listen-report-total-time">0 分钟</strong>
+              </div>
+              <div class="listen-report-metrics" aria-label="报告摘要">
+                <div><strong id="listen-report-song-count">0</strong><span>听过歌曲</span></div>
+                <div><strong id="listen-report-day-count">0</strong><span>聆听天数</span></div>
+              </div>
+            </section>
+
+            <section class="listen-report-time-band" aria-labelledby="listen-report-time-heading">
+              <div class="listen-report-section-head">
+                <div><span class="listen-report-kicker">ACTIVE HOURS</span><h2 id="listen-report-time-heading">最常听歌时段</h2></div>
+                <strong id="listen-report-active-window">--:-- - --:--</strong>
+              </div>
+              <div id="listen-report-hour-chart" class="listen-report-hour-chart" aria-label="24 小时听歌分布"></div>
+              <div class="listen-report-hour-axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+            </section>
+
+            <div class="listen-report-rankings">
+              <section class="listen-report-ranking-section" aria-labelledby="listen-report-songs-heading">
+                <div class="listen-report-section-head">
+                  <div><span class="listen-report-kicker">TOP TRACKS</span><h2 id="listen-report-songs-heading">常听歌曲</h2></div>
+                  <span>按收听时长</span>
+                </div>
+                <div id="listen-report-song-list" class="listen-report-song-list"></div>
+              </section>
+              <section class="listen-report-ranking-section listen-report-artist-section" aria-labelledby="listen-report-artists-heading">
+                <div class="listen-report-section-head">
+                  <div><span class="listen-report-kicker">TOP ARTISTS</span><h2 id="listen-report-artists-heading">常听歌手</h2></div>
+                  <span>按收听时长</span>
+                </div>
+                <div id="listen-report-artist-list" class="listen-report-artist-list"></div>
+              </section>
+            </div>
+          </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <div id="listen-report-clear-mask" class="modal-mask listen-report-clear-mask" role="dialog" aria-modal="true"
+      aria-hidden="true" aria-labelledby="listen-report-clear-title">
+      <div class="modal listen-report-clear-dialog">
+        <span>LOCAL DATA</span>
+        <h2 id="listen-report-clear-title">清空听歌报告数据？</h2>
+        <p>月度和年度报告会从现在重新开始统计，此操作无法撤销。</p>
+        <div class="listen-report-clear-actions">
+          <button id="listen-report-clear-cancel" type="button">取消</button>
+          <button id="listen-report-clear-confirm" class="danger" type="button">确认清空</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="listen-report-preview-mask" class="modal-mask listen-report-preview-mask" role="dialog" aria-modal="true"
+      aria-hidden="true" aria-labelledby="listen-report-preview-title">
+      <div class="modal listen-report-preview-dialog">
+        <div class="listen-report-preview-head">
+          <div>
+            <span>IMAGE PREVIEW</span>
+            <h2 id="listen-report-preview-title">预览报告图片</h2>
+            <p>1080 × 1920 PNG</p>
+          </div>
+          <button id="listen-report-preview-close" class="home-platform-recommend-close" type="button"
+            aria-label="关闭报告图片预览">×</button>
+        </div>
+        <div id="listen-report-template-picker" class="listen-report-template-picker" role="radiogroup"
+          aria-label="选择报告图片模板">
+          <button class="active" type="button" role="radio" aria-checked="true"
+            data-listen-report-template="night">
+            <span><strong>封面矩阵</strong><small>排名 · 全幅拼贴</small></span>
+          </button>
+          <button type="button" role="radio" aria-checked="false" data-listen-report-template="particle">
+            <span><strong>霓虹切片</strong><small>封面 · 动态排版</small></span>
+          </button>
+          <button type="button" role="radio" aria-checked="false" data-listen-report-template="glass">
+            <span><strong>主角登场</strong><small>歌手 · 杂志主视觉</small></span>
+          </button>
+        </div>
+        <div id="listen-report-preview-stage" class="listen-report-preview-stage" aria-busy="false">
+          <img id="listen-report-preview-image" alt="听歌报告导出图片预览">
+        </div>
+        <div class="listen-report-preview-actions">
+          <button id="listen-report-preview-cancel" type="button">取消</button>
+          <button id="listen-report-preview-confirm" class="primary" type="button">导出图片</button>
+        </div>
+      </div>
+    </div>
 
     <div id="home-platform-recommend-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
       aria-labelledby="home-platform-recommend-title">

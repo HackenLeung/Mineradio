@@ -80,16 +80,8 @@ async function playHomeRecentQueue(record) {
   return started;
 }
 function openHomeInsight() {
-  var summary = homeListenSummary();
-  if (summary.topArtist && summary.topArtist.name) {
-    runHomeSearch(summary.topArtist.name);
-    return;
-  }
-  if (summary.topSong && summary.topSong.name) {
-    runHomeSearch(summary.topSong.name);
-    return;
-  }
-  showToast('播放几首歌后会生成听歌画像');
+  if (typeof openListenReportView === 'function') return openListenReportView();
+  showToast('听歌报告暂时不可用');
 }
 function handleHomeTileClick(index) {
   var row = document.getElementById('home-tile-row');

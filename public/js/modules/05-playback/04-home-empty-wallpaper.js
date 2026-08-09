@@ -309,6 +309,10 @@ function openHomeLibrary() {
   refreshUserPlaylists(true);
 }
 function goHome() {
+  if (typeof listenReportViewState !== 'undefined' && listenReportViewState.open && typeof closeListenReportView === 'function') {
+    closeListenReportView();
+    return;
+  }
   if (typeof isMusicLibraryWallOpen === 'function' && isMusicLibraryWallOpen()) {
     closeMusicLibraryWall({ toHome: true, reason: 'home-button' });
     return;
