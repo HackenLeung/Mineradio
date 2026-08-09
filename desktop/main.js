@@ -340,6 +340,8 @@ function normalizeCacheSettings(value) {
     beatmapsPath: path.join(rootPath, 'beatmaps'),
     updatesPath: path.join(rootPath, 'updates'),
     nativePath: path.join(rootPath, 'native-helper-temp'),
+    diagnosticsPath: path.join(rootPath, 'diagnostics'),
+    remotePath: path.join(rootPath, 'remote'),
   };
 }
 
@@ -4906,6 +4908,10 @@ function configureLocalServerEnvironment(port) {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
   process.env.MINERADIO_BEAT_CACHE_DIR = cacheSettings.beatmapsPath;
+  // 显式注入这两个：server.js 自己算的话会落到 node_modules/electron/dist 下
+  // （npm install 会删掉重建），诊断日志和已配对设备都会莫名消失。
+  process.env.MINERADIO_DIAG_DIR = cacheSettings.diagnosticsPath;
+  process.env.MINERADIO_REMOTE_DIR = cacheSettings.remotePath;
   process.env.COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.qq-cookie');
   process.env.KUGOU_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.kugou-cookie');
@@ -4927,6 +4933,16 @@ async function ensureLocalServerStarted() {
     const serverModulePath = path.join(__dirname, '..', 'server.js');
     try { delete require.cache[require.resolve(serverModulePath)]; } catch (_) {}
     localServer = require(serverModulePath);
+    // 局域网遥控的命令转成渲染进程已有的遥控频道，不新开播放链入口：
+    // handleCubeRemoteCommand 那条路径已经被魔方遥控器验证过。
+    if (typeof localServer.setRemoteCommandSink === 'function') {
+      localServer.setRemoteCommandSink((payload) => {
+        if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) {
+          throw new Error('MAIN_WINDOW_UNAVAILABLE');
+        }
+        mainWindow.webContents.send('mineradio-cube-remote-command', payload);
+      });
+    }
     await waitForServer(localServer, STARTUP_SERVER_TIMEOUT_MS);
     await waitForLocalHttpReady(port, STARTUP_HTTP_TIMEOUT_MS);
     writeStartupState('server-ready', { serverReadyAt: Date.now(), port });

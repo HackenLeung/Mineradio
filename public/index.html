@@ -12,6 +12,7 @@
   <script src="vendor/three.r128.min.js"></script>
   <script src="vendor/music-tempo.min.js"></script>
   <script src="vendor/gsap.min.js"></script>
+  <script src="vendor/qrcode-generator.js"></script>
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync">
 </head>
@@ -840,6 +841,28 @@
             <button type="button" data-cube-remote-skin="moon">月白</button>
           </div>
           <div class="desktop-mode-note">开启后可在右上控制器显示或隐藏 Windows 桌面图标；按 Esc 直接退出。重启默认关闭。</div>
+          <div class="fx-toggle-grid">
+            <div class="fx-toggle" id="t-lanRemote" onclick="toggleLanRemote()" title="允许同一网络的手机浏览器遥控播放">
+              <span>局域网遥控</span><span class="dot"></span></div>
+          </div>
+          <div id="lan-remote-box" class="lan-remote-box" hidden>
+            <div id="lan-remote-code-row" class="lan-remote-code-row">
+              <div>
+                <div class="lan-remote-code-label">配对码</div>
+                <div id="lan-remote-code" class="lan-remote-code">------</div>
+                <div id="lan-remote-code-hint" class="lan-remote-hint"></div>
+              </div>
+              <button id="lan-remote-refresh" class="fx-mini-btn ghost" type="button"
+                onclick="refreshLanRemotePairing(true)">换码</button>
+            </div>
+            <div id="lan-remote-qr" class="lan-remote-qr" hidden></div>
+            <div id="lan-remote-reach" class="lan-remote-reach" hidden></div>
+            <div id="lan-remote-urls" class="lan-remote-urls"></div>
+            <div id="lan-remote-devices" class="lan-remote-hint"></div>
+            <button id="lan-remote-revoke" class="fx-mini-btn ghost lan-remote-revoke" type="button"
+              onclick="revokeLanRemoteDevices()">移除所有已配对设备</button>
+            <div class="lan-remote-note">手机浏览器打开上面地址即可遥控。配对码 10 分钟有效、配对一次即换；连续输错 5 次自动作废。只有遥控接口对局域网开放，本地音乐和账号接口仍只有本机可访问。</div>
+          </div>
           <div class="fx-section-label" hidden>壁纸帧数</div>
           <div class="fx-seg" id="wallpaper-fps-seg" hidden>
             <button data-wallpaper-fps="24">24</button>
@@ -1117,7 +1140,7 @@
                 <path d="M14 4l-2 5-4 4-3 2 4 4 2-3 4-4 5-2z" />
                 <path d="M9 19l-4 4" />
               </svg></button>
-            <button class="fx-mini-btn ghost" onclick="shuffleQueue()">随机</button>
+            <button class="fx-mini-btn ghost queue-shuffle-btn" onclick="shuffleQueue()">随机</button>
           </div>
         </div>
         <div class="panel-tabs">
@@ -1507,7 +1530,9 @@
           <div><b>登录接入</b><small>拖接口端口到 MR</small></div>
           <button id="login-reset-all-btn" class="login-reset-all-btn" type="button" hidden
             onclick="logoutAllAccounts()" title="退出所有平台账号并清除登录 Cookie">退出登录</button>
-          <button class="login-panel-close" type="button" onclick="closeLoginModal()">×</button>
+          <button class="login-panel-close" type="button" onclick="closeLoginModal()" aria-label="关闭"><svg
+              width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+              stroke-linecap="round"><path d="M5.5 5.5l13 13M18.5 5.5l-13 13"/></svg></button>
         </div>
         <div id="login-node-graph" class="login-node-graph" data-provider="netease">
           <svg id="login-workflow-svg" class="workflow-link-layer login-link-layer" aria-hidden="true"></svg>
@@ -1568,7 +1593,9 @@
       <div class="modal audio-output-workflow-modal">
         <div class="login-panel-head">
           <div><b>音频路由</b><small>Patch Bay</small></div>
-          <button class="login-panel-close" type="button" onclick="closeAudioOutputWorkflowPanel()">×</button>
+          <button class="login-panel-close" type="button" onclick="closeAudioOutputWorkflowPanel()"
+            aria-label="关闭"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.4" stroke-linecap="round"><path d="M5.5 5.5l13 13M18.5 5.5l-13 13"/></svg></button>
         </div>
         <div class="audio-output-workflow-title">
           <b>音频路由</b>

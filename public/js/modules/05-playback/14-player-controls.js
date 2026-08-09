@@ -238,7 +238,16 @@ function schedulePlaybackStallRecovery(reason, opts) {
       var minAdvance = delayMs > 2000 ? 0.28 : 0.08;
       if (current >= startTime + minAdvance) return;
       if (delayMs < 3000 && audioPlaybackWaitingForNetwork(media)) return;
-      if (delayMs < 3000 && media.readyState >= 2 && media.networkState !== media.NETWORK_NO_SOURCE) return;
+      // 「数据够就别打扰」这条不能一刀切：起播冻结的实测形态是
+      // readyState=4 + networkState=1(IDLE) + 缓冲几十秒 + currentTime 恒为 0，
+      // 此条件恒成立，1600ms 那档被整档 return 掉，只剩 3600ms 兜底 —— 白等 2 秒。
+      // 真正在缓冲的情况由上一行的 audioPlaybackWaitingForNetwork 负责（它只在
+      // networkState=2 LOADING 时为真），所以这里只需排除仍在取数据的状态。
+      if (
+        delayMs < 3000
+        && media.readyState >= 2
+        && Number(media.networkState) === Number(media.NETWORK_LOADING || 2)
+      ) return;
       if (audioPlaybackHasTransientNetworkFailure(media)) {
         if (audioPlaybackWaitingForNetwork(media)) {
           var networkRecovered = await waitForAudioPlaybackProgress(

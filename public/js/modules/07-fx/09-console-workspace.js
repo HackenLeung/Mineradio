@@ -123,7 +123,9 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-desktoplyricsy', '桌面歌词高度', '桌面位置'),
         fxConsoleItem('desktop-lyrics-fps-seg', '桌面歌词帧率', '24 30 60 120 无上限 FPS'),
         fxConsoleItem('t-cubeRemote', '音乐遥控器', '悬浮 魔方 条形 月白 播放控制'),
-        fxConsoleItem('cube-remote-skin-seg', '遥控器样式', '魔方 条形 月白')
+        fxConsoleItem('cube-remote-skin-seg', '遥控器样式', '魔方 条形 月白'),
+        fxConsoleItem('t-lanRemote', '局域网遥控', '手机 扫码 遥控 配对码 二维码 局域网 WiFi'),
+        fxConsoleItem('lan-remote-box', '遥控配对', '配对码 二维码 局域网地址 已配对设备 换码')
       ] }
     ]
   },
@@ -307,7 +309,13 @@ function fxConsoleMakeToolbar(panel) {
   toolbar.id = 'fx-console-toolbar';
   toolbar.innerHTML =
     '<div class="fx-console-search-row" role="search">' +
-    '<span class="fx-console-search-icon" aria-hidden="true">⌕</span>' +
+    // 用 SVG 而不是 ⌕ 文字字形：字形在 em 盒里的垂直位置由字体决定，
+    // 而 --font-sans 里没有 U+2315，实际由系统回退字体渲染，各机器不一致，
+    // 只能靠魔法 translateY 硬补且补不准（实测偏下 3.7px）。SVG 由几何居中，无字体依赖。
+    '<span class="fx-console-search-icon" aria-hidden="true">'
+    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">'
+    + '<circle cx="11" cy="11" r="7.5"/><path d="m20.5 20.5-4.2-4.2"/></svg>'
+    + '</span>' +
     '<input id="fx-console-search" class="fx-console-search" type="search" autocomplete="off" spellcheck="false" aria-label="搜索视觉控制台功能" aria-controls="fx-console-search-results" aria-expanded="false" placeholder="搜索功能，如：粒子、缓存、歌词">' +
     '<button id="fx-console-undo" class="fx-console-tool-btn" type="button" disabled aria-label="撤销上一步设置" title="撤销上一步设置">↶<span>撤销</span></button>' +
     '<button id="fx-console-history-toggle" class="fx-console-tool-btn" type="button" aria-label="最近操作" aria-controls="fx-console-history" aria-haspopup="true" aria-expanded="false" title="最近操作">◷<span>历史</span></button>' +

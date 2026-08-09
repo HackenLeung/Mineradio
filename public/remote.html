@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0c">
+  <!-- 这是唯一对局域网开放的页面，收紧到只允许同源脚本与同源图片：
+       封面统一经 /api/remote/cover 转发，不需要放开外部图床。 -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Mineradio 遥控</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --panel: rgba(255, 255, 255, .045);
+      --panel-line: rgba(255, 255, 255, .10);
+      --text: rgba(255, 255, 255, .92);
+      --text-dim: rgba(255, 255, 255, .46);
+      --champagne: #f4d28a;
+      --danger: #ff8f8f;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", system-ui, sans-serif;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 22px 18px calc(28px + env(safe-area-inset-bottom));
+      gap: 18px
+    }
+
+    .card {
+      width: 100%;
+      max-width: 420px;
+      padding: 20px;
+      border: 1px solid var(--panel-line);
+      border-radius: 18px;
+      background: var(--panel)
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 680;
+      letter-spacing: .04em
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      letter-spacing: .06em
+    }
+
+    [hidden] {
+      display: none !important
+    }
+
+    /* ---------- 配对 ---------- */
+    #code-input {
+      width: 100%;
+      height: 52px;
+      margin-bottom: 12px;
+      padding: 0 16px;
+      border: 1px solid var(--panel-line);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, .30);
+      color: var(--text);
+      font-size: 22px;
+      font-family: inherit;
+      letter-spacing: .34em;
+      text-align: center
+    }
+
+    #code-input:focus {
+      outline: 0;
+      border-color: rgba(244, 210, 138, .46)
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 46px;
+      border: 1px solid var(--panel-line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .06);
+      color: var(--text);
+      font-size: 13.5px;
+      font-family: inherit;
+      cursor: pointer
+    }
+
+    .btn.primary {
+      border-color: rgba(244, 210, 138, .44);
+      background: rgba(244, 210, 138, .12);
+      color: var(--champagne)
+    }
+
+    .btn:active {
+      transform: translateY(1px)
+    }
+
+    .btn:disabled {
+      opacity: .5
+    }
+
+    .msg {
+      margin-top: 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-dim);
+      min-height: 19px
+    }
+
+    .msg.error {
+      color: var(--danger)
+    }
+
+    /* ---------- 播放 ---------- */
+    #cover-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      margin-bottom: 16px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .04)
+    }
+
+    #cover {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block
+    }
+
+    #cover-fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 12px
+    }
+
+    #title {
+      font-size: 15.5px;
+      font-weight: 640;
+      line-height: 1.4;
+      word-break: break-word
+    }
+
+    #artist {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-dim);
+      word-break: break-word
+    }
+
+    #progress-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 10.5px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums
+    }
+
+    #progress-track {
+      flex: 1;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .12);
+      overflow: hidden
+    }
+
+    #progress-fill {
+      height: 100%;
+      width: 0;
+      border-radius: 999px;
+      background: var(--champagne);
+      transition: width .3s linear
+    }
+
+    .transport {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 18px
+    }
+
+    .transport .btn {
+      height: 56px
+    }
+
+    .transport .btn svg {
+      width: 22px;
+      height: 22px
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px
+    }
+
+    .row .btn {
+      width: auto;
+      flex: 1;
+      height: 40px;
+      font-size: 12px
+    }
+
+    #volume {
+      flex: 1;
+      accent-color: var(--champagne)
+    }
+
+    .vol-label {
+      width: 38px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: right;
+      font-variant-numeric: tabular-nums
+    }
+
+    #stale-note {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 143, 143, .28);
+      border-radius: 10px;
+      background: rgba(92, 25, 31, .22);
+      font-size: 11.5px;
+      line-height: 1.6;
+      color: rgba(255, 226, 226, .82)
+    }
+
+    .link-btn {
+      margin-top: 16px;
+      border: 0;
+      background: none;
+      color: var(--text-dim);
+      font-size: 11.5px;
+      font-family: inherit;
+      text-decoration: underline;
+      cursor: pointer
+    }
+  </style>
+</head>
+
+<body>
+  <!-- 配对 -->
+  <section id="pair-view" class="card">
+    <h1>连接 Mineradio</h1>
+    <p class="sub">输入电脑上显示的 6 位配对码</p>
+    <input id="code-input" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="------"
+      aria-label="配对码">
+    <button id="pair-btn" class="btn primary" type="button">配对</button>
+    <p id="pair-msg" class="msg"></p>
+  </section>
+
+  <!-- 遥控 -->
+  <section id="control-view" class="card" hidden>
+    <div id="cover-wrap">
+      <img id="cover" alt="" hidden>
+      <div id="cover-fallback">未播放</div>
+    </div>
+    <div id="title">未播放</div>
+    <div id="artist"></div>
+
+    <div id="progress-row">
+      <span id="time-now">0:00</span>
+      <div id="progress-track">
+        <div id="progress-fill"></div>
+      </div>
+      <span id="time-total">0:00</span>
+    </div>
+
+    <div class="transport">
+      <button id="btn-prev" class="btn" type="button" aria-label="上一首"><svg viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="19 20 9 12 19 4 19 20" fill="currentColor" />
+          <line x1="5" y1="19" x2="5" y2="5" />
+        </svg></button>
+      <button id="btn-play" class="btn primary" type="button" aria-label="播放或暂停"><svg id="play-icon"
+          viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <polygon points="6 3 20 12 6 21 6 3" />
+        </svg></button>
+      <button id="btn-next" class="btn" type="button" aria-label="下一首"><svg viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" />
+          <line x1="19" y1="5" x2="19" y2="19" />
+        </svg></button>
+    </div>
+
+    <div class="row">
+      <input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="音量">
+      <span id="volume-label" class="vol-label">0%</span>
+    </div>
+
+    <div class="row">
+      <button id="btn-mute" class="btn" type="button">静音</button>
+      <button id="btn-lyrics" class="btn" type="button">桌面歌词</button>
+    </div>
+
+    <div id="stale-note" hidden></div>
+    <button id="unpair-btn" class="link-btn" type="button">断开此设备</button>
+  </section>
+
+  <script src="/remote-assets/remote.js"></script>
+</body>
+
+</html>

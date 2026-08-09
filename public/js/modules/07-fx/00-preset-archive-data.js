@@ -1007,15 +1007,23 @@ function addImportedUserFxArchiveSlot(slot, toastLabel) {
 function getArchiveClipboardApi() {
   return typeof getDesktopWindowApi === 'function' ? getDesktopWindowApi() : null;
 }
-async function writeUserFxArchiveClipboard(text) {
+// 三级降级：preload 的 Electron 原生剪贴板 → navigator.clipboard → execCommand。
+// 第一级是主路径 —— `clipboard-write` 不在 LOCAL_APP_PERMISSION_ALLOWLIST 里
+// （desktop/main.js），所以在本应用里 navigator.clipboard 会被权限处理器直接拒掉。
+// 任何需要复制的地方都该走这个函数，别直接调 navigator.clipboard。
+async function writeAppClipboardText(text) {
   var api = getArchiveClipboardApi();
   if (api && typeof api.copyText === 'function') {
-    var res = await Promise.resolve(api.copyText(text));
-    if (!res || res.ok !== false) return true;
+    try {
+      var res = await Promise.resolve(api.copyText(text));
+      if (!res || res.ok !== false) return true;
+    } catch (e) { /* 落到下一级 */ }
   }
   if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    await navigator.clipboard.writeText(text);
-    return true;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* 落到下一级 */ }
   }
   var area = document.createElement('textarea');
   area.value = text;
@@ -1028,6 +1036,9 @@ async function writeUserFxArchiveClipboard(text) {
   try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
   document.body.removeChild(area);
   return ok;
+}
+async function writeUserFxArchiveClipboard(text) {
+  return writeAppClipboardText(text);
 }
 async function readUserFxArchiveClipboard() {
   var api = getArchiveClipboardApi();

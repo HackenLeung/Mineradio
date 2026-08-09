@@ -8143,14 +8143,16 @@ body.login-guide-active #login-guide-canvas {
 }
 
 .login-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 29px;
   height: 29px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, .085);
   background: rgba(255, 255, 255, .040);
   color: rgba(255, 255, 255, .58);
-  font-size: 18px;
-  font-family: inherit;
   cursor: pointer;
   transition: background .18s ease, color .18s ease, transform .18s ease
 }
@@ -13807,6 +13809,201 @@ html:fullscreen body.desktop-shell #playlist-detail-panel {
   padding: 0
 }
 
+.lan-remote-box {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .028)
+}
+
+.lan-remote-code-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px
+}
+
+.lan-remote-code-label {
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: rgba(255, 255, 255, .38)
+}
+
+.lan-remote-code {
+  margin-top: 2px;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  color: var(--champagne);
+  font-variant-numeric: tabular-nums
+}
+
+.lan-remote-code-row .fx-mini-btn {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap
+}
+
+.lan-remote-hint {
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, .42)
+}
+
+.lan-remote-note {
+  margin-top: 10px;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, .38)
+}
+
+/* 作者样式里的 display 会盖掉 hidden 属性自带的 display:none，
+   而本项目没有全局 [hidden] 兜底规则 —— 所以凡是带 display 的类都要自己补这一条，
+   否则 hidden=true 完全不生效（表现为一个空占位框）。 */
+.lan-remote-qr[hidden],
+.lan-remote-code-row[hidden],
+.lan-remote-urls[hidden],
+.lan-remote-revoke[hidden] {
+  display: none !important
+}
+
+.lan-remote-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92)
+}
+
+/* 不强制尺寸：让 SVG 按原生像素渲染（模块数随 URL 长度变，版本 4 是 136px）。
+   写死宽高会产生非整数模块缩放，边缘发虚、扫码成功率下降。 */
+.lan-remote-qr svg {
+  display: block;
+  max-width: 100%;
+  height: auto
+}
+
+.lan-remote-qr-note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(0, 0, 0, .56);
+  text-align: center
+}
+
+.lan-remote-reach {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 143, 143, .26);
+  border-radius: 9px;
+  background: rgba(92, 25, 31, .22);
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: rgba(255, 226, 226, .82)
+}
+
+.lan-remote-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px
+}
+
+.lan-remote-url {
+  position: relative;
+  padding: 7px 46px 7px 9px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .22);
+  font-size: 11px;
+  color: rgba(255, 255, 255, .74);
+  word-break: break-all;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease
+}
+
+.lan-remote-url:hover {
+  border-color: rgba(244, 210, 138, .32);
+  color: #fff
+}
+
+.lan-remote-url:focus-visible {
+  outline: 1px solid rgba(244, 210, 138, .5);
+  outline-offset: 1px
+}
+
+/* 选中态要一眼看出来：二维码编的就是这一条 */
+.lan-remote-url.active {
+  border-color: rgba(244, 210, 138, .5);
+  background: rgba(244, 210, 138, .09);
+  color: #fff
+}
+
+.lan-remote-url.active .lan-remote-url-text::before {
+  content: '✓ ';
+  color: var(--champagne)
+}
+
+.lan-remote-url-meta {
+  margin-top: 2px;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, .34)
+}
+
+.lan-remote-url-copy {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .05);
+  color: rgba(255, 255, 255, .56);
+  font-size: 9.5px;
+  font-family: inherit;
+  cursor: pointer
+}
+
+.lan-remote-url-copy:hover {
+  background: rgba(255, 255, 255, .11);
+  color: #fff
+}
+
+.lan-remote-revoke {
+  width: 100%;
+  margin-top: 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: rgba(255, 118, 118, .22);
+  color: rgba(255, 214, 214, .72)
+}
+
+/* .queue-head 是 space-between，.queue-head-act 由内容定宽，所以 .fx-mini-btn 的
+   flex:1 没有可伸展的空间，按钮会塌缩到恰好文字宽度。基类没有水平 padding，
+   文字就贴住边框。这里单独给随机按钮补上，横向留白对齐下方 .panel-tab 的 12px。
+   注意不能用 .queue-head-act .fx-mini-btn：那个选择器会盖过 .playlist-pin-btn
+   的 padding:0，把 30×30 的图钉按钮一起撑大。 */
+.queue-shuffle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  line-height: 1;
+  white-space: nowrap
+}
+
 .playlist-pin-btn.active {
   border-color: rgba(var(--fc-accent-rgb), .38);
   background: rgba(var(--fc-accent-rgb), .10);
@@ -16268,11 +16465,10 @@ body.panel-reordering .mini-queue-item.is-reordering {
 }
 
 .fx-console-search-icon {
-  color: rgba(255, 255, 255, .44);
-  font-size: 19px;
-  line-height: 1;
-  text-align: center;
-  transform: translateY(-1px)
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, .44)
 }
 
 .fx-console-search {

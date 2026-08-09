@@ -8,6 +8,7 @@ Mineradio 使用了以下第三方项目或服务。各项目版权归其原作�
 - Three.js
 - GSAP
 - music-tempo
+- qrcode-generator (Kazuhiko Arase, MIT)
 - NeteaseCloudMusicApi
 - mpg123-decoder
 

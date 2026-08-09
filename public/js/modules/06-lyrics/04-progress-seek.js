@@ -218,6 +218,14 @@ function bindPlaybackProgressEvents(audioEl) {
       }
     });
   });
+  // `waiting` 只记时间戳，不参与恢复调度：它在正常起播、seek、切歌时都会触发，
+  // 而 schedulePlaybackStallRecovery 进来就 clearPlaybackResumeWatchdogs()，
+  // 直接接上去会让 waiting 反复重置定时器、把已武装的恢复无限推后。
+  // 这个时间戳供冻结检测器区分「网络饥饿」和「时钟冻结」。
+  audioEl.addEventListener('waiting', function () {
+    if (audioEl !== audio) return;
+    audioEl.__mineradioLastWaitingAt = performance.now();
+  });
 }
 function emitProgressDragParticles(x, y) {
   var now = performance.now();
@@ -471,15 +479,149 @@ function endProgressDrag(e, commit) {
 progressBar.addEventListener('pointerup', function (e) { endProgressDrag(e, true); });
 progressBar.addEventListener('pointercancel', function (e) { endProgressDrag(e, false); });
 progressBar.addEventListener('lostpointercapture', function (e) { endProgressDrag(e, true); });
+// ============================================================
+//  媒体时钟冻结检测（只观测并上报，不执行恢复）
+// ============================================================
+// 现有恢复已覆盖起播、手动恢复和 error/stalled 事件三个入口。剩下的缺口是
+// 「稳态播放中途冻结、且浏览器不发任何事件」——起播 watchdog 早已到期。
+// 这里先只落一条日志到本机 /api/diag/stall-log，用真实字段判断该恢复到哪一层，
+// 再决定是否值得加第三层 watchdog（多层 watchdog 互相重入本身就是 bug 来源）。
+var PLAYBACK_FREEZE_TICKS_REQUIRED = 5;   // 5 × 200ms = 1s 无推进
+var PLAYBACK_FREEZE_MIN_ADVANCE = 0.02;
+var PLAYBACK_FREEZE_PENDING_STALE_MS = 10000;
+var playbackFreezeWatch = {
+  lastTime: -1, stuckTicks: 0, reportedAt: 0, reportedTime: -1, pending: false,
+  // 只记「检测到冻结」判断不出恢复有没有生效、花了多久，也就无法定位是哪一层救回来的。
+  // 冻结未平息时保留这两个字段，时钟重新推进时补一条 clock-resumed。
+  awaitingResume: false, frozenAt: 0, frozenTime: -1,
+};
+function resetPlaybackFreezeWatch() {
+  playbackFreezeWatch.lastTime = -1;
+  playbackFreezeWatch.stuckTicks = 0;
+  playbackFreezeWatch.reportedTime = -1;
+  playbackFreezeWatch.awaitingResume = false;
+  playbackFreezeWatch.frozenAt = 0;
+  playbackFreezeWatch.frozenTime = -1;
+}
+function playbackFreezeBufferedEnd(media) {
+  try {
+    if (!media.buffered || !media.buffered.length) return null;
+    return media.buffered.end(media.buffered.length - 1);
+  } catch (err) { return null; }
+}
+function reportPlaybackFreeze(media) {
+  // 上报若卡在飞行中（请求 hang 住、.then 永不执行），不能让 pending 永久锁死，
+  // 否则整个诊断会静默失效 —— 这个机制要连跑几天，静默失效等于没做。
+  if (playbackFreezeWatch.pending) {
+    if (performance.now() - playbackFreezeWatch.reportedAt < PLAYBACK_FREEZE_PENDING_STALE_MS) return;
+    playbackFreezeWatch.pending = false;
+  }
+  var current = isFinite(media.currentTime) ? media.currentTime : 0;
+  // 同一次冻结只报一条：位置没变过就不重复上报，等 currentTime 恢复推进后才允许下一条。
+  if (playbackFreezeWatch.reportedTime >= 0 && Math.abs(current - playbackFreezeWatch.reportedTime) < PLAYBACK_FREEZE_MIN_ADVANCE) return;
+  playbackFreezeWatch.pending = true;
+  playbackFreezeWatch.reportedAt = performance.now();
+  playbackFreezeWatch.reportedTime = current;
+  playbackFreezeWatch.awaitingResume = true;
+  playbackFreezeWatch.frozenAt = performance.now();
+  playbackFreezeWatch.frozenTime = current;
+  var song = (typeof playQueue !== 'undefined' && playQueue) ? playQueue[currentIdx] : null;
+  var lastWaitingAt = Number(media.__mineradioLastWaitingAt) || 0;
+  var payload = {
+    reason: 'clock-frozen',
+    currentTime: current,
+    duration: isFinite(media.duration) ? media.duration : null,
+    readyState: media.readyState,
+    networkState: media.networkState,
+    paused: !!media.paused,
+    seeking: !!media.seeking,
+    bufferedEnd: playbackFreezeBufferedEnd(media),
+    audioCtxState: (typeof audioCtx !== 'undefined' && audioCtx) ? String(audioCtx.state || '') : 'none',
+    lastWaitingAgoMs: lastWaitingAt ? (performance.now() - lastWaitingAt) : null,
+    smartTransition: typeof playbackTransitionHasAudibleNextDeck === 'function' ? playbackTransitionHasAudibleNextDeck() : false,
+    songKey: String(media.__mineradioQueueItemKey || ''),
+    title: song ? String(song.name || song.title || '') : '',
+    src: String(media.currentSrc || media.src || '')
+  };
+  console.warn('[PlaybackFreeze]', payload);
+  fetch('/api/diag/stall-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(function () { /* 诊断上报失败不影响播放 */ })
+    .then(function () { playbackFreezeWatch.pending = false; });
+}
+// 冻结平息时补记一条。frozenForMs 是真正要看的数字：它直接反映恢复链
+// 有没有生效、以及改动有没有把卡顿时长压下来。
+function reportPlaybackFreezeResume(media, current) {
+  var frozenAt = Number(playbackFreezeWatch.frozenAt) || 0;
+  var frozenTime = Number(playbackFreezeWatch.frozenTime);
+  playbackFreezeWatch.awaitingResume = false;
+  playbackFreezeWatch.frozenAt = 0;
+  playbackFreezeWatch.frozenTime = -1;
+  if (!frozenAt) return;
+  var payload = {
+    reason: 'clock-resumed',
+    currentTime: current,
+    duration: isFinite(media.duration) ? media.duration : null,
+    readyState: media.readyState,
+    networkState: media.networkState,
+    bufferedEnd: playbackFreezeBufferedEnd(media),
+    audioCtxState: (typeof audioCtx !== 'undefined' && audioCtx) ? String(audioCtx.state || '') : 'none',
+    // 检测本身要 1 秒,所以实际卡顿时长约为 frozenForMs + 1000。
+    frozenForMs: Math.round(performance.now() - frozenAt),
+    // 位置有没有跳变:恢复链换了 URL 或做了 seek 会让位置不等于冻结点。
+    resumedFromSameTime: isFinite(frozenTime) && Math.abs(current - frozenTime) < 0.5,
+    songKey: String(media.__mineradioQueueItemKey || ''),
+    src: String(media.currentSrc || media.src || '')
+  };
+  console.warn('[PlaybackFreeze] resumed after', payload.frozenForMs, 'ms');
+  fetch('/api/diag/stall-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(function () { /* 诊断上报失败不影响播放 */ });
+}
+
+function tickPlaybackFreezeWatch(media) {
+  if (!media || media !== audio || !media.src) { resetPlaybackFreezeWatch(); return; }
+  if (media.paused || media.ended || media.seeking) { resetPlaybackFreezeWatch(); return; }
+  // 过渡期间 B deck 可能才是出声的那个，A deck 停住是正常的。
+  if (typeof playbackTransitionHasAudibleNextDeck === 'function' && playbackTransitionHasAudibleNextDeck()) { resetPlaybackFreezeWatch(); return; }
+  if (typeof playbackMediaMatchesCurrentQueueItem === 'function' && !playbackMediaMatchesCurrentQueueItem(media)) { resetPlaybackFreezeWatch(); return; }
+  var current = isFinite(media.currentTime) ? media.currentTime : 0;
+  if (playbackFreezeWatch.lastTime < 0) { playbackFreezeWatch.lastTime = current; return; }
+  // 用绝对值:恢复链换 URL 后时钟会从 0 附近重新走,这个「倒跳」也是时钟在动。
+  // 只认前进方向会把倒跳当成还在冻结,在新位置再报一条假冻结。
+  // 主动 seek 不会走到这里 —— seeking 状态在上面已经 reset 掉了。
+  if (Math.abs(current - playbackFreezeWatch.lastTime) >= PLAYBACK_FREEZE_MIN_ADVANCE) {
+    // 刚从一次已上报的冻结里恢复：补一条,记录卡了多久。
+    // 没有这条就判断不出是哪一层救回来的,也看不出修改有没有缩短卡顿时长。
+    if (playbackFreezeWatch.awaitingResume) {
+      reportPlaybackFreezeResume(media, current);
+    }
+    playbackFreezeWatch.lastTime = current;
+    playbackFreezeWatch.stuckTicks = 0;
+    playbackFreezeWatch.reportedTime = -1;
+    return;
+  }
+  playbackFreezeWatch.lastTime = current;
+  playbackFreezeWatch.stuckTicks++;
+  if (playbackFreezeWatch.stuckTicks < PLAYBACK_FREEZE_TICKS_REQUIRED) return;
+  reportPlaybackFreeze(media);
+}
 setInterval(function () {
   if (!audio) {
+    resetPlaybackFreezeWatch();
     updatePlaybackProgressUi();
     return;
   }
   if (progressDragState.active) {
+    resetPlaybackFreezeWatch();
     updatePlaybackProgressUi();
     return;
   }
+  tickPlaybackFreezeWatch(audio);
   updateListenStatsTick(false);
   updatePlaybackProgressUi();
   if (audio.currentTime) updateLyricsHighlight();

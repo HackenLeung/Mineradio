@@ -216,4 +216,5 @@ function bindCubeRemoteController() {
   }, 320);
   pushTrayPlaybackState(true);
   hydrateCubeRemote();
+  if (typeof hydrateLanRemote === 'function') hydrateLanRemote();
 }

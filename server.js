@@ -60,6 +60,7 @@ const https = require('https');
 const fs   = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
@@ -88,7 +89,11 @@ const {
   kugouAudioReferer,
 } = require('./kugou-api');
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+// 默认只监听回环：74 个 /api/* 端点没有逐个鉴权，绑 0.0.0.0 会把本地音乐流和
+// 账号相关接口暴露给同一局域网内的任何设备。需要局域网遥控时显式设
+// MINERADIO_HOST=0.0.0.0，此时非回环来源只能访问 /api/remote/*（见 requestIsLoopback）。
+// 仍读旧的 HOST 以兼容既有启动脚本，但不再作为默认值。
+const HOST = process.env.MINERADIO_HOST || process.env.HOST || '127.0.0.1';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
 const DEFAULT_QQ_COOKIE_FILE = path.join(__dirname, '.qq-cookie');
@@ -551,6 +556,473 @@ function sendJSON(res, data, status) {
     'Expires': '0',
   });
   res.end(JSON.stringify(data));
+}
+function sendPrivateJSON(res, data, status) {
+  res.writeHead(status || 200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.end(JSON.stringify(data));
+}
+function sendText(res, text, status) {
+  res.writeHead(status || 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.end(String(text == null ? '' : text));
+}
+// 只有回环来源算「本机」。IPv6 映射形式（::ffff:127.0.0.1）和 ::1 都要认，
+// 否则 Windows 上双栈监听时本机请求会被误判成外部来源。
+function requestIsLoopback(req) {
+  // 遥控监听器绑在 0.0.0.0 上，它上面的请求一律不算本机 —— 否则本机回环连到
+  // 遥控端口就能访问管理面，把「管理面只服务本机」这层降级成「谁能连上都算本机」。
+  if (req && req.__mineradioForceRemote === true) return false;
+  const raw = String((req && req.socket && req.socket.remoteAddress) || '');
+  if (!raw) return false;
+  const addr = raw.replace(/^::ffff:/i, '');
+  return addr === '127.0.0.1' || addr === '::1' || addr.startsWith('127.');
+}
+function requestHasTrustedLocalOrigin(req) {
+  if (!requestIsLoopback(req)) return false;
+  const fetchSite = String((req && req.headers && req.headers['sec-fetch-site']) || '').toLowerCase();
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') return false;
+  const rawOrigin = String((req && req.headers && req.headers.origin) || '').trim();
+  // Native clients and local regression tests do not send Origin. Browsers do send it for
+  // cross-origin fetch/form POSTs, which is the caller class this guard must distinguish.
+  if (!rawOrigin) return true;
+  try {
+    const origin = new URL(rawOrigin);
+    const host = String(origin.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+    const port = Number(origin.port || (origin.protocol === 'http:' ? 80 : 0));
+    return origin.protocol === 'http:'
+      && (host === '127.0.0.1' || host === 'localhost' || host === '::1')
+      && port === mainBoundPort();
+  } catch (_) {
+    return false;
+  }
+}
+function requireTrustedLocalManagementRequest(req, res) {
+  if (!requestIsLoopback(req)) {
+    sendPrivateJSON(res, { ok: false, error: 'LOOPBACK_ONLY' }, 403);
+    return false;
+  }
+  if (!requestHasTrustedLocalOrigin(req)) {
+    sendPrivateJSON(res, { ok: false, error: 'LOCAL_ORIGIN_FORBIDDEN' }, 403);
+    return false;
+  }
+  return true;
+}
+function requireJSONRequest(req, res) {
+  const type = String((req && req.headers && req.headers['content-type']) || '')
+    .split(';', 1)[0].trim().toLowerCase();
+  if (type === 'application/json') return true;
+  sendPrivateJSON(res, { ok: false, error: 'JSON_CONTENT_TYPE_REQUIRED' }, 415);
+  return false;
+}
+// 诊断和遥控数据不能跟着 DEFAULT_CACHE_ROOT：那个值在 Electron 下解析到
+// node_modules/electron/dist/MineradioCache（npm install 或升级 Electron 会整个删掉重建），
+// 裸跑 node 时又解析到项目根目录 —— 同一台机器两个位置，数据看起来会「凭空消失」。
+// 这两类数据要长期累积，固定放项目/安装目录旁边的 MineradioCache。
+const STABLE_CACHE_ROOT = path.join(__dirname, 'MineradioCache');
+const DIAGNOSTICS_DIR = process.env.MINERADIO_DIAG_DIR || path.join(STABLE_CACHE_ROOT, 'diagnostics');
+const STALL_LOG_FILE = path.join(DIAGNOSTICS_DIR, 'stall.jsonl');
+const STALL_LOG_MAX_LINES = 500;
+const STALL_LOG_MAX_BYTES = 1024 * 1024;
+
+// ====================================================================
+//  局域网遥控：配对鉴权
+// ====================================================================
+// 配对码只有 6 位数字（100 万组合），局域网内高速爆破是几分钟的事，
+// 所以「限速 + 失败即废码」是这套机制的必要条件，不是可选加固。
+const REMOTE_DIR = process.env.MINERADIO_REMOTE_DIR || path.join(STABLE_CACHE_ROOT, 'remote');
+const REMOTE_TOKEN_FILE = path.join(REMOTE_DIR, 'remote-tokens.json');
+const REMOTE_PAIRING_TTL_MS = 10 * 60 * 1000;
+const REMOTE_PAIRING_MAX_FAILURES = 5;
+const REMOTE_TOKEN_LIMIT = 16;
+const REMOTE_STATE_STALE_MS = 8000;
+
+const remoteAuth = {
+  code: '',
+  issuedAt: 0,
+  failures: 0,
+  tokens: new Map(),
+  loaded: false,
+  lastLockoutAt: 0,
+  preferredPort: 0,
+};
+
+function normalizeRemoteListenerPort(value) {
+  const port = Number(value);
+  return Number.isInteger(port) && port > 1024 && port <= 65535 ? port : 0;
+}
+
+function generateRemotePairingCode() {
+  // 用 CSPRNG 而不是 Math.random：配对码是这套鉴权唯一的准入凭据。
+  // 取模到 900000 再加 100000，保证恒为 6 位且不以 0 开头。
+  return String(100000 + (crypto.randomBytes(4).readUInt32BE(0) % 900000));
+}
+
+function rotateRemotePairingCode(reason) {
+  remoteAuth.code = generateRemotePairingCode();
+  remoteAuth.issuedAt = Date.now();
+  remoteAuth.failures = 0;
+  // 只有用户显式换码才消掉「被爆破过」的提示。自动补码（过期/配对后）不能消，
+  // 否则那条提示会在下一次读取时立刻被抹掉，用户永远看不到。
+  if (reason === 'requested') remoteAuth.lastLockoutAt = 0;
+  if (reason) console.log('[Remote] pairing code issued:', reason);
+  return remoteAuth.code;
+}
+
+// 配对码只在用户主动要求时存在。配对成功、撤销设备、过期后都清空而不是换新：
+// 界面上挂着一个没人需要的码，它每次静默轮换都像是随机在变，而且屏幕上显示的
+// 码随时可能已经失效 —— 扫了也配不上，还查不出原因。
+function clearRemotePairingCode(reason) {
+  if (!remoteAuth.code) return;
+  remoteAuth.code = '';
+  remoteAuth.issuedAt = 0;
+  remoteAuth.failures = 0;
+  // 因爆破被作废这件事必须能跨清空活下来告诉用户 —— 否则码只是「消失了」，
+  // 用户不知道刚有人在猜他的配对码。生成新码时才清掉这个标记。
+  if (reason === 'locked-out') remoteAuth.lastLockoutAt = Date.now();
+  if (reason) console.log('[Remote] pairing code cleared:', reason);
+}
+
+function remotePairingExpiresInMs() {
+  if (!remoteAuth.code) return 0;
+  return Math.max(0, REMOTE_PAIRING_TTL_MS - (Date.now() - remoteAuth.issuedAt));
+}
+
+function remotePairingUsable() {
+  return !!remoteAuth.code
+    && remotePairingExpiresInMs() > 0
+    && remoteAuth.failures < REMOTE_PAIRING_MAX_FAILURES;
+}
+
+// 二维码常驻显示，所以屏幕上的码必须永远是能用的：缺码或已过期就地补一个。
+// 「静默换码让人困惑」这个问题不靠隐藏码来解决,而是靠界面明确写出
+// 「配对成功后自动换码」+ 倒计时,让轮换变成预期行为而不是意外。
+function readRemotePairingCodeState() {
+  if (remoteAuth.code && !remotePairingUsable()) {
+    clearRemotePairingCode(remoteAuth.failures >= REMOTE_PAIRING_MAX_FAILURES ? 'locked-out' : 'expired');
+  }
+  if (!remoteAuth.code) rotateRemotePairingCode('auto');
+  return {
+    code: remoteAuth.code,
+    hasCode: true,
+    expiresInMs: remotePairingExpiresInMs(),
+  };
+}
+
+async function loadRemoteTokens() {
+  if (remoteAuth.loaded) return;
+  remoteAuth.loaded = true;
+  try {
+    const raw = await fs.promises.readFile(REMOTE_TOKEN_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    remoteAuth.preferredPort = normalizeRemoteListenerPort(parsed && parsed.preferredPort);
+    const list = Array.isArray(parsed && parsed.tokens) ? parsed.tokens : [];
+    list.forEach((entry) => {
+      const token = String((entry && entry.token) || '');
+      if (token.length < 32) return;
+      remoteAuth.tokens.set(token, {
+        token,
+        label: String((entry && entry.label) || '设备').slice(0, 60),
+        pairedAt: Number(entry && entry.pairedAt) || Date.now(),
+        lastSeenAt: Number(entry && entry.lastSeenAt) || 0,
+      });
+    });
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') console.warn('[Remote] token store read failed:', err.message);
+  }
+}
+
+async function saveRemoteTokens() {
+  try {
+    await fs.promises.mkdir(REMOTE_DIR, { recursive: true });
+    const payload = JSON.stringify({
+      preferredPort: normalizeRemoteListenerPort(remoteAuth.preferredPort),
+      tokens: Array.from(remoteAuth.tokens.values()),
+    }, null, 2);
+    const tmp = REMOTE_TOKEN_FILE + '.tmp';
+    await fs.promises.writeFile(tmp, payload, 'utf8');
+    await fs.promises.rename(tmp, REMOTE_TOKEN_FILE);
+  } catch (err) {
+    console.warn('[Remote] token store write failed:', err.message);
+  }
+}
+
+// 定长比较：token 比对必须避免因提前返回而泄露前缀匹配长度。
+function safeTokenEqual(a, b) {
+  const left = Buffer.from(String(a || ''), 'utf8');
+  const right = Buffer.from(String(b || ''), 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function extractRemoteToken(req, url) {
+  const header = req && req.headers ? String(req.headers['x-mineradio-token'] || '') : '';
+  if (header) return header.trim();
+  const query = url && url.searchParams ? String(url.searchParams.get('token') || '') : '';
+  return query.trim();
+}
+
+async function authorizeRemoteRequest(req, url) {
+  await loadRemoteTokens();
+  const presented = extractRemoteToken(req, url);
+  if (!presented) return null;
+  for (const entry of remoteAuth.tokens.values()) {
+    if (safeTokenEqual(entry.token, presented)) {
+      entry.lastSeenAt = Date.now();
+      return entry;
+    }
+  }
+  return null;
+}
+
+async function pairRemoteDevice(body, req) {
+  await loadRemoteTokens();
+  const submitted = String((body && body.code) || '').replace(/\D/g, '');
+  if (!remoteAuth.code) return { ok: false, error: 'PAIRING_CODE_UNAVAILABLE' };
+  if (remoteAuth.failures >= REMOTE_PAIRING_MAX_FAILURES) {
+    return { ok: false, error: 'PAIRING_LOCKED', message: '尝试次数过多，请在电脑上重新生成配对码' };
+  }
+  if (remotePairingExpiresInMs() <= 0) {
+    return { ok: false, error: 'PAIRING_CODE_EXPIRED', message: '配对码已过期，请在电脑上重新生成' };
+  }
+  if (submitted.length !== 6 || !safeTokenEqual(submitted, remoteAuth.code)) {
+    remoteAuth.failures += 1;
+    const locked = remoteAuth.failures >= REMOTE_PAIRING_MAX_FAILURES;
+    if (locked) console.warn('[Remote] pairing locked after repeated failures');
+    return {
+      ok: false,
+      error: locked ? 'PAIRING_LOCKED' : 'PAIRING_CODE_INVALID',
+      remainingAttempts: Math.max(0, REMOTE_PAIRING_MAX_FAILURES - remoteAuth.failures),
+    };
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  const entry = {
+    token,
+    label: String((body && body.label) || '').slice(0, 60)
+      || `设备 ${String((req && req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/i, '') || '未知'}`,
+    pairedAt: Date.now(),
+    lastSeenAt: Date.now(),
+  };
+  remoteAuth.tokens.set(token, entry);
+  // 超出上限时先淘汰最久未活跃的设备，避免 token 无限累积。
+  if (remoteAuth.tokens.size > REMOTE_TOKEN_LIMIT) {
+    const sorted = Array.from(remoteAuth.tokens.values()).sort((a, b) => a.lastSeenAt - b.lastSeenAt);
+    while (remoteAuth.tokens.size > REMOTE_TOKEN_LIMIT) {
+      const victim = sorted.shift();
+      if (!victim) break;
+      remoteAuth.tokens.delete(victim.token);
+    }
+  }
+  // 配对成功即换新码：一个码只换一台设备，旧二维码截图立即失效。
+  // 直接换而不是清空，二维码常驻显示时不会出现一段「没有码」的空窗。
+  rotateRemotePairingCode('paired');
+  await saveRemoteTokens();
+  return { ok: true, token, label: entry.label };
+}
+
+async function revokeRemoteTokens() {
+  await loadRemoteTokens();
+  const removed = remoteAuth.tokens.size;
+  remoteAuth.tokens.clear();
+  await saveRemoteTokens();
+  // 撤销后立刻换新码：旧码可能已被截图流出，而且界面上的二维码要保持可用。
+  rotateRemotePairingCode('revoked');
+  return { ok: true, removed };
+}
+
+// 虚拟网卡命名在各产品/各语言下差别很大（Windows 的 Hyper-V 交换机就叫
+// `vEthernet (Default Switch)`，不含 "hyper-v" 字样），所以名字匹配只能当辅助信号。
+const VIRTUAL_ADAPTER_PATTERN = /vethernet|hyper-?v|vmware|virtualbox|vbox|wsl|docker|tailscale|zerotier|tap-?windows|openvpn|wintun|bluetooth|npcap|loopback|radmin|parallels|utun/i;
+
+// 主信号：问内核「往公网发包时会选哪个源地址」。UDP connect 只写本地路由表、
+// 不发任何数据包，但结果就是操作系统的真实选路，比猜网卡名可靠得多。
+function detectPrimaryLanAddress() {
+  return new Promise((resolve) => {
+    let settled = false;
+    let socket = null;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      try { if (socket) socket.close(); } catch (_) {}
+      resolve(value);
+    };
+    try {
+      socket = require('dgram').createSocket('udp4');
+      socket.once('error', () => finish(''));
+      // 8.8.8.8 只用于让内核做选路判断，不会真的发包。
+      socket.connect(53, '8.8.8.8', () => {
+        try { finish(socket.address().address || ''); }
+        catch (_) { finish(''); }
+      });
+    } catch (_) {
+      finish('');
+    }
+    setTimeout(() => finish(''), 400);
+  });
+}
+
+async function listRemoteLanAddresses() {
+  const primary = await detectPrimaryLanAddress();
+  const groups = os.networkInterfaces();
+  const out = [];
+  Object.keys(groups).forEach((name) => {
+    (groups[name] || []).forEach((info) => {
+      if (info.family !== 'IPv4' && info.family !== 4) return;
+      if (info.internal) return;
+      const likelyVirtual = VIRTUAL_ADAPTER_PATTERN.test(name);
+      out.push({
+        name,
+        address: info.address,
+        likelyVirtual,
+        // 内核选中的出网地址就是手机该连的那个：手机和电脑在同一个路由器下，
+        // 走的是同一张网卡。
+        primary: !!primary && info.address === primary,
+      });
+    });
+  });
+  // primary 优先，其次非虚拟，最后按 192.168.* 这类家用网段靠前。
+  out.sort((a, b) => {
+    if (a.primary !== b.primary) return a.primary ? -1 : 1;
+    if (a.likelyVirtual !== b.likelyVirtual) return a.likelyVirtual ? 1 : -1;
+    const homeA = /^192\.168\./.test(a.address) ? 0 : 1;
+    const homeB = /^192\.168\./.test(b.address) ? 0 : 1;
+    if (homeA !== homeB) return homeA - homeB;
+    return a.address.localeCompare(b.address);
+  });
+  return out;
+}
+
+// 遥控状态由渲染进程推来（它才持有播放状态），服务端只做缓存 + 陈旧判断。
+const REMOTE_COVER_MAX_BYTES = 6 * 1024 * 1024;
+const remoteStateCache = { payload: null, updatedAt: 0, coverUrl: '', coverData: '' };
+function storeRemoteState(body) {
+  // 封面来源留在服务端，不随状态下发：data URL 可能几百 KB，每秒轮询都带上
+  // 会把手机流量和主线程一起吃掉。手机只拿到一个带版本号的相对地址。
+  remoteStateCache.coverUrl = String((body && body.coverUrl) || '').slice(0, 2000);
+  remoteStateCache.coverData = /^data:image\//i.test(String((body && body.coverData) || ''))
+    ? String(body.coverData).slice(0, REMOTE_COVER_MAX_BYTES)
+    : '';
+  remoteStateCache.payload = {
+    title: String((body && body.title) || '').slice(0, 200),
+    artist: String((body && body.artist) || '').slice(0, 200),
+    playing: (body && body.playing) === true,
+    volume: Math.max(0, Math.min(1, Number(body && body.volume) || 0)),
+    muted: (body && body.muted) === true,
+    lyricsEnabled: (body && body.lyricsEnabled) === true,
+    currentTime: Number.isFinite(Number(body && body.currentTime)) ? Number(body.currentTime) : null,
+    duration: Number.isFinite(Number(body && body.duration)) ? Number(body.duration) : null,
+    queueLength: Number.isFinite(Number(body && body.queueLength)) ? Number(body.queueLength) : null,
+    playMode: String((body && body.playMode) || '').slice(0, 40),
+  };
+  remoteStateCache.updatedAt = Date.now();
+  // 版本号让手机能靠 URL 变化换图，同时避免缓存住上一首的封面。
+  remoteStateCache.payload.coverVersion = remoteStateCache.coverUrl || remoteStateCache.coverData
+    ? crypto.createHash('sha1')
+      .update(remoteStateCache.coverUrl || remoteStateCache.coverData.slice(0, 4096))
+      .digest('hex').slice(0, 12)
+    : '';
+  return remoteStateCache.payload;
+}
+function readRemoteState() {
+  const age = remoteStateCache.updatedAt ? Date.now() - remoteStateCache.updatedAt : Infinity;
+  const payload = remoteStateCache.payload
+    ? Object.assign({}, remoteStateCache.payload, {
+      cover: remoteStateCache.payload.coverVersion
+        ? '/api/remote/cover?v=' + remoteStateCache.payload.coverVersion
+        : '',
+    })
+    : null;
+  return {
+    ok: true,
+    stale: !(age < REMOTE_STATE_STALE_MS),
+    ageMs: Number.isFinite(age) ? age : null,
+    state: payload,
+  };
+}
+
+// 把封面转发给手机。data URL 直接解码回二进制，http(s) 由服务端代取 ——
+// 手机不能直连音乐平台的图床（缺 Referer 会被挡），也不该拿到平台地址。
+async function serveRemoteCover(req, res) {
+  if (remoteStateCache.coverData) {
+    const match = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(remoteStateCache.coverData);
+    if (!match) {
+      res.writeHead(404, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    const buffer = Buffer.from(match[2], 'base64');
+    res.writeHead(200, {
+      'Content-Type': match[1],
+      'Content-Length': String(buffer.length),
+      'Cache-Control': 'private, max-age=300',
+    });
+    res.end(req.method === 'HEAD' ? undefined : buffer);
+    return;
+  }
+  if (!remoteStateCache.coverUrl) {
+    res.writeHead(404, { 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+  try {
+    const upstream = await fetch(remoteStateCache.coverUrl, {
+      headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' },
+    });
+    if (!upstream.ok || !upstream.body) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': upstream.headers.get('content-type') || 'image/jpeg',
+      'Cache-Control': 'private, max-age=300',
+    });
+    if (req.method === 'HEAD') { res.end(); return; }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    res.end(buffer);
+  } catch (err) {
+    console.warn('[RemoteCover]', err && err.message);
+    if (!res.headersSent) res.writeHead(502, { 'Cache-Control': 'no-store' });
+    res.end();
+  }
+}
+
+// 命令下发口。server.js 不能 require electron（浏览器模式下要能单跑），
+// 所以由 main.js 注入；未注入时明确回 503，不静默丢命令。
+let remoteCommandSink = null;
+const REMOTE_ALLOWED_COMMANDS = new Set([
+  'toggle-play', 'next', 'previous', 'set-volume', 'mute', 'toggle-lyrics',
+]);
+function setRemoteCommandSink(fn) {
+  remoteCommandSink = typeof fn === 'function' ? fn : null;
+}
+function dispatchRemoteCommand(body) {
+  const command = String((body && body.command) || '');
+  if (!REMOTE_ALLOWED_COMMANDS.has(command)) {
+    return { ok: false, error: 'COMMAND_NOT_ALLOWED', command };
+  }
+  if (!remoteCommandSink) return { ok: false, error: 'REMOTE_SINK_UNAVAILABLE' };
+  const payload = { command };
+  if (command === 'set-volume') {
+    const value = Number(body && body.value);
+    if (!Number.isFinite(value)) return { ok: false, error: 'VOLUME_VALUE_REQUIRED' };
+    payload.value = Math.max(0, Math.min(1, value));
+  }
+  try {
+    remoteCommandSink(payload);
+  } catch (err) {
+    console.warn('[Remote] command dispatch failed:', err && err.message);
+    return { ok: false, error: 'REMOTE_DISPATCH_FAILED' };
+  }
+  return { ok: true, command, value: payload.value };
 }
 function readPackageInfo() {
   try {
@@ -2055,6 +2527,132 @@ function readRequestBody(req) {
     });
     req.on('error', () => resolve({}));
   });
+}
+function compactDiagNumber(value, digits = 2) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const factor = Math.pow(10, digits);
+  return Math.round(n * factor) / factor;
+}
+// 只保留判断「该恢复到哪一层」需要的字段，并且截断字符串：
+// 这个文件会跨重启累积，不能让 src 或歌名把它撑爆。
+function normalizeStallLogEntry(body) {
+  const src = String((body && body.src) || '');
+  return {
+    ts: new Date().toISOString(),
+    reason: String((body && body.reason) || 'unknown').slice(0, 40),
+    currentTime: compactDiagNumber(body && body.currentTime),
+    duration: compactDiagNumber(body && body.duration),
+    readyState: Number.isFinite(Number(body && body.readyState)) ? Number(body.readyState) : null,
+    networkState: Number.isFinite(Number(body && body.networkState)) ? Number(body.networkState) : null,
+    paused: (body && body.paused) === true,
+    seeking: (body && body.seeking) === true,
+    bufferedEnd: compactDiagNumber(body && body.bufferedEnd),
+    audioCtxState: String((body && body.audioCtxState) || '').slice(0, 20),
+    lastWaitingAgoMs: Number.isFinite(Number(body && body.lastWaitingAgoMs)) ? Math.round(Number(body.lastWaitingAgoMs)) : null,
+    smartTransition: (body && body.smartTransition) === true,
+    // clock-resumed 专有：冻结持续时长与恢复后位置是否跳变。
+    frozenForMs: Number.isFinite(Number(body && body.frozenForMs)) ? Math.round(Number(body.frozenForMs)) : null,
+    resumedFromSameTime: body && typeof body.resumedFromSameTime === 'boolean' ? body.resumedFromSameTime : null,
+    songKey: String((body && body.songKey) || '').slice(0, 120),
+    title: String((body && body.title) || '').slice(0, 120),
+    src: src.slice(0, 120),
+  };
+}
+async function appendStallLogEntry(body) {
+  const entry = normalizeStallLogEntry(body);
+  await fs.promises.mkdir(DIAGNOSTICS_DIR, { recursive: true });
+  await fs.promises.appendFile(STALL_LOG_FILE, JSON.stringify(entry) + '\n', 'utf8');
+  await trimStallLogIfNeeded();
+  return entry;
+}
+// 超限时砍掉最老的行。appendFile 本身不需要读全文，只有这里越界才读一次。
+async function trimStallLogIfNeeded() {
+  try {
+    const stat = await fs.promises.stat(STALL_LOG_FILE);
+    if (stat.size <= STALL_LOG_MAX_BYTES) {
+      const quickLines = Math.ceil(stat.size / 160);
+      if (quickLines <= STALL_LOG_MAX_LINES) return;
+    }
+    const raw = await fs.promises.readFile(STALL_LOG_FILE, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    if (lines.length <= STALL_LOG_MAX_LINES && stat.size <= STALL_LOG_MAX_BYTES) return;
+    const kept = lines.slice(-STALL_LOG_MAX_LINES);
+    const tmp = STALL_LOG_FILE + '.tmp';
+    await fs.promises.writeFile(tmp, kept.join('\n') + '\n', 'utf8');
+    await fs.promises.rename(tmp, STALL_LOG_FILE);
+  } catch (_) {}
+}
+function formatStallLogLine(entry) {
+  const ts = String(entry.ts || '').replace('T', ' ').replace(/\.\d+Z$/, '');
+  const parts = [
+    `[${ts}]`,
+    String(entry.reason || 'unknown').padEnd(14),
+    `t=${entry.currentTime == null ? '?' : entry.currentTime}`,
+    `dur=${entry.duration == null ? '?' : entry.duration}`,
+    `rs=${entry.readyState == null ? '?' : entry.readyState}`,
+    `ns=${entry.networkState == null ? '?' : entry.networkState}`,
+    `buf=${entry.bufferedEnd == null ? '?' : entry.bufferedEnd}`,
+    `ctx=${entry.audioCtxState || '?'}`,
+    `waiting=${entry.lastWaitingAgoMs == null ? 'never' : entry.lastWaitingAgoMs + 'ms'}`,
+  ];
+  if (entry.frozenForMs != null) parts.push(`frozenFor=${entry.frozenForMs}ms`);
+  if (entry.resumedFromSameTime === false) parts.push('position-jumped');
+  if (entry.smartTransition) parts.push('smart-transition');
+  if (entry.paused) parts.push('paused');
+  if (entry.seeking) parts.push('seeking');
+  if (entry.title) parts.push(`| ${entry.title}`);
+  return parts.join(' ');
+}
+async function readStallLogReport() {
+  const header = [`file: ${STALL_LOG_FILE}`];
+  let lines = [];
+  try {
+    const raw = await fs.promises.readFile(STALL_LOG_FILE, 'utf8');
+    lines = raw.split('\n').filter(Boolean);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      header.push('entries: 0');
+      header.push('');
+      header.push('还没有记录。播放期间如果出现媒体时钟冻结，这里会出现条目。');
+      return header.join('\n') + '\n';
+    }
+    throw err;
+  }
+  header.push(`entries: ${lines.length}`);
+
+  // 攒到几百条时逐行读没法看，先给一份汇总：冻结次数、起播/中途分布、
+  // 恢复时长的中位数与最大值。这几个数字直接对应「改动有没有效果」。
+  const parsed = [];
+  lines.forEach((line) => {
+    try { parsed.push(JSON.parse(line)); } catch (_) {}
+  });
+  const frozen = parsed.filter((e) => e.reason === 'clock-frozen');
+  const resumed = parsed.filter((e) => e.reason === 'clock-resumed');
+  if (frozen.length) {
+    const atStart = frozen.filter((e) => Number(e.currentTime) < 0.5).length;
+    const durations = resumed
+      .map((e) => Number(e.frozenForMs))
+      .filter((v) => Number.isFinite(v))
+      .sort((a, b) => a - b);
+    header.push('');
+    header.push('---- 汇总 ----');
+    header.push(`冻结次数: ${frozen.length}（起播 ${atStart} / 中途 ${frozen.length - atStart}）`);
+    if (durations.length) {
+      const median = durations[Math.floor(durations.length / 2)];
+      header.push(`已恢复: ${durations.length} 次 · 检测后耗时中位数 ${median}ms · 最长 ${durations[durations.length - 1]}ms`);
+      header.push('（实际卡顿时长约为上述数值 + 1000ms 检测窗口）');
+    }
+    const unresolved = frozen.length - resumed.length;
+    if (unresolved > 0) header.push(`未记录到恢复: ${unresolved} 次（可能是切歌或退出打断了观测）`);
+  }
+
+  header.push('');
+  const rendered = lines.slice(-200).reverse().map((line) => {
+    try { return formatStallLogLine(JSON.parse(line)); }
+    catch (_) { return line; }
+  });
+  return header.concat(rendered).join('\n') + '\n';
 }
 function normalizeApiCode(payload) {
   const body = payload && (payload.body || payload);
@@ -5841,10 +6439,30 @@ async function handlePlatformListenReport(body) {
 // ====================================================================
 //  HTTP Server
 // ====================================================================
-const server = http.createServer(async (req, res) => {
+// 局域网遥控只需要遥控页面和 /api/remote/*。把可达面收在这个白名单里，
+// 这样以后为了遥控把 MINERADIO_HOST 放开到 0.0.0.0 时，其余 74 个端点
+// （本地音乐流、听歌数据、平台账号）仍然只有本机可达。
+const REMOTE_PUBLIC_PATHS = new Set(['/remote.html', '/favicon.ico']);
+function pathAllowedForRemoteOrigin(pn) {
+  if (REMOTE_PUBLIC_PATHS.has(pn)) return true;
+  return pn.startsWith('/api/remote/') || pn.startsWith('/remote-assets/');
+}
+async function handleHttpRequest(req, res) {
   refreshConfiguredCookieStores(false);
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
+
+  // 遥控监听器上的请求一律按外部来源处理，即使源地址是回环。
+  // 它绑在 0.0.0.0 上，本机进程没有理由走它 —— 强制降权比按源地址判定更严。
+  const treatAsRemote = req.socket && req.socket.__mineradioRemoteListener === true;
+  if ((treatAsRemote || !requestIsLoopback(req)) && !pathAllowedForRemoteOrigin(pn)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('Forbidden: non-loopback origin');
+    return;
+  }
+  // 管理面（配对码/状态上报/撤销）自己还会再查一次回环，这里把遥控监听器
+  // 上的请求提前标记成非回环，避免它们绕过那一层。
+  if (treatAsRemote) req.__mineradioForceRemote = true;
 
   if (pn === '/api/local-media') {
     const id = String(url.searchParams.get('id') || '');
@@ -5855,6 +6473,207 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     await streamRegisteredLocalMedia(req, res, target);
+    return;
+  }
+
+  // ---------- 局域网遥控 ----------
+  // 配对：局域网可达（这是准入入口），但限速与废码逻辑在 pairRemoteDevice 里。
+  if (pn === '/api/remote/pair') {
+    if (req.method !== 'POST') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!requireJSONRequest(req, res)) return;
+    try {
+      const result = await pairRemoteDevice(await readRequestBody(req), req);
+      sendPrivateJSON(res, result, result.ok ? 200 : 401);
+    } catch (err) {
+      console.error('[RemotePair]', err);
+      sendPrivateJSON(res, { ok: false, error: 'PAIRING_FAILED' }, 500);
+    }
+    return;
+  }
+
+  // 状态读取：局域网可达，必须持有 token。
+  if (pn === '/api/remote/state') {
+    if (req.method !== 'GET') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const device = await authorizeRemoteRequest(req, url);
+      if (!device) {
+        sendPrivateJSON(res, { ok: false, error: 'REMOTE_TOKEN_REQUIRED' }, 401);
+        return;
+      }
+      sendPrivateJSON(res, readRemoteState());
+    } catch (err) {
+      console.error('[RemoteState]', err);
+      sendPrivateJSON(res, { ok: false, error: 'REMOTE_STATE_FAILED' }, 500);
+    }
+    return;
+  }
+
+  // 封面：局域网可达，必须持有 token。手机拿不到平台图床地址，只拿这个相对地址。
+  if (pn === '/api/remote/cover') {
+    try {
+      const device = await authorizeRemoteRequest(req, url);
+      if (!device) {
+        sendPrivateJSON(res, { ok: false, error: 'REMOTE_TOKEN_REQUIRED' }, 401);
+        return;
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      await serveRemoteCover(req, res);
+    } catch (err) {
+      console.error('[RemoteCover]', err);
+      if (!res.headersSent) { res.writeHead(500); res.end(); }
+    }
+    return;
+  }
+
+  // 命令下发：局域网可达，必须持有 token，命令走白名单。
+  if (pn === '/api/remote/command') {
+    if (req.method !== 'POST') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!requireJSONRequest(req, res)) return;
+    try {
+      const device = await authorizeRemoteRequest(req, url);
+      if (!device) {
+        sendPrivateJSON(res, { ok: false, error: 'REMOTE_TOKEN_REQUIRED' }, 401);
+        return;
+      }
+      const result = dispatchRemoteCommand(await readRequestBody(req));
+      sendPrivateJSON(res, result, result.ok ? 200 : (result.error === 'REMOTE_SINK_UNAVAILABLE' ? 503 : 400));
+    } catch (err) {
+      console.error('[RemoteCommand]', err);
+      sendPrivateJSON(res, { ok: false, error: 'REMOTE_COMMAND_FAILED' }, 500);
+    }
+    return;
+  }
+
+  // 以下三个是管理面，只服务本机：配对码、状态上报、撤销设备。
+  // 放在 /api/remote/* 命名空间下，所以必须逐个再挡一次回环。
+  if (pn === '/api/remote/pairing') {
+    if (!requireTrustedLocalManagementRequest(req, res)) return;
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (req.method === 'POST' && !requireJSONRequest(req, res)) return;
+    try {
+      await loadRemoteTokens();
+      // POST = 用户主动换码；GET 会在没有可用码时补码，以保证屏幕上的二维码可用。
+      if (req.method === 'POST') rotateRemotePairingCode('requested');
+      const codeState = readRemotePairingCodeState();
+      sendPrivateJSON(res, {
+        ok: true,
+        code: codeState.code,
+        hasCode: codeState.hasCode,
+        expiresInMs: codeState.expiresInMs,
+        locked: remoteAuth.failures >= REMOTE_PAIRING_MAX_FAILURES,
+        remainingAttempts: Math.max(0, REMOTE_PAIRING_MAX_FAILURES - remoteAuth.failures),
+        lastLockoutAt: remoteAuth.lastLockoutAt || 0,
+        // 手机要连的是遥控监听器的端口，不是主端口（主端口只绑回环）。
+        // 监听器没起时回落到主端口，仅用于展示；此时 lanReachable 为 false。
+        port: remoteListenerStatus().port || mainBoundPort(),
+        mainPort: mainBoundPort(),
+        listener: remoteListenerStatus(),
+        lanAddresses: await listRemoteLanAddresses(),
+        boundHost: HOST,
+        // 两条路都算可达：显式把主端口绑到 0.0.0.0（调试用），或遥控监听器已起。
+        lanReachable: HOST === '0.0.0.0' || remoteListenerStatus().running,
+        pairedDevices: Array.from(remoteAuth.tokens.values()).map((entry) => ({
+          label: entry.label, pairedAt: entry.pairedAt, lastSeenAt: entry.lastSeenAt,
+        })),
+      });
+    } catch (err) {
+      console.error('[RemotePairing]', err);
+      sendPrivateJSON(res, { ok: false, error: 'PAIRING_INFO_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/remote/state-push') {
+    if (!requireTrustedLocalManagementRequest(req, res)) return;
+    if (req.method !== 'POST') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!requireJSONRequest(req, res)) return;
+    try {
+      storeRemoteState(await readRequestBody(req));
+      sendPrivateJSON(res, { ok: true });
+    } catch (err) {
+      console.error('[RemoteStatePush]', err);
+      sendPrivateJSON(res, { ok: false, error: 'REMOTE_STATE_PUSH_FAILED' }, 500);
+    }
+    return;
+  }
+
+  // 起停遥控监听器。只服务本机：否则手机自己就能把入口关掉或打开。
+  if (pn === '/api/remote/listener') {
+    if (!requireTrustedLocalManagementRequest(req, res)) return;
+    try {
+      if (req.method === 'GET') {
+        sendPrivateJSON(res, Object.assign({ ok: true }, remoteListenerStatus()));
+        return;
+      }
+      if (req.method !== 'POST') {
+        sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      if (!requireJSONRequest(req, res)) return;
+      const body = await readRequestBody(req);
+      const status = await setRemoteListenerEnabled(body && body.enabled === true);
+      sendPrivateJSON(res, Object.assign({ ok: true }, status));
+    } catch (err) {
+      console.error('[RemoteListener]', err);
+      sendPrivateJSON(res, { ok: false, error: err.code || err.message || 'REMOTE_LISTENER_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/remote/revoke') {
+    if (!requireTrustedLocalManagementRequest(req, res)) return;
+    if (req.method !== 'POST') {
+      sendPrivateJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!requireJSONRequest(req, res)) return;
+    try {
+      sendPrivateJSON(res, await revokeRemoteTokens());
+    } catch (err) {
+      console.error('[RemoteRevoke]', err);
+      sendPrivateJSON(res, { ok: false, error: 'REMOTE_REVOKE_FAILED' }, 500);
+    }
+    return;
+  }
+
+  // 诊断端点只服务本机。即便 MINERADIO_HOST 被放开到局域网，也不对外暴露。
+  if (pn === '/api/diag/stall-log') {
+    if (!requireTrustedLocalManagementRequest(req, res)) return;
+    try {
+      if (req.method === 'POST') {
+        if (!requireJSONRequest(req, res)) return;
+        const body = await readRequestBody(req);
+        const entry = await appendStallLogEntry(body);
+        sendPrivateJSON(res, { accepted: true, file: STALL_LOG_FILE, entry });
+        return;
+      }
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        sendText(res, await readStallLogReport());
+        return;
+      }
+      sendPrivateJSON(res, { error: 'METHOD_NOT_ALLOWED' }, 405);
+    } catch (err) {
+      console.error('[StallLog]', err);
+      sendPrivateJSON(res, { accepted: false, error: err.code || err.message }, 500);
+    }
     return;
   }
 
@@ -7407,7 +8226,9 @@ const server = http.createServer(async (req, res) => {
   let filePath = pn === '/' ? '/index.html' : pn;
   filePath = path.join(__dirname, 'public', filePath);
   serveStatic(res, filePath);
-});
+}
+
+const server = http.createServer(handleHttpRequest);
 
 server.listen(PORT, HOST, () => {
   console.log('======================================================');
@@ -7416,8 +8237,128 @@ server.listen(PORT, HOST, () => {
   console.log('======================================================');
 });
 
+// ====================================================================
+//  遥控监听器（第二监听器）
+// ====================================================================
+// 主端口永远只绑回环。要让手机连上，不去重绑主端口（那会断开正在播放的音频流，
+// 因为 /api/audio 是长连接的流式代理），而是另起一个只服务遥控白名单的监听器。
+// 开关关闭即销毁，所以「默认不可达」这件事不依赖用户记得设环境变量。
+const REMOTE_LISTENER_PORT_SPAN = 12;
+let remoteListener = null;
+let remoteListenerPort = 0;
+let remoteListenerStarting = null;
+let remoteListenerLifecycle = Promise.resolve();
+
+// PORT 是「请求的」端口，不是实际绑定的：PORT=0 时由系统分配，两者不同。
+// 遥控端口以主端口为基准往上找，所以这里必须取实际值。
+function mainBoundPort() {
+  try {
+    const address = server.address();
+    if (address && address.port) return address.port;
+  } catch (_) {}
+  return Number(PORT) || 0;
+}
+
+function remoteListenerStatus() {
+  return {
+    running: !!(remoteListener && remoteListener.listening),
+    port: remoteListener && remoteListener.listening ? remoteListenerPort : 0,
+  };
+}
+
+function tryListenRemote(port) {
+  return new Promise((resolve, reject) => {
+    const listener = http.createServer(handleHttpRequest);
+    // 标记在 socket 上而不是 server 上：handleHttpRequest 只拿得到 req。
+    listener.on('connection', (socket) => { socket.__mineradioRemoteListener = true; });
+    const onError = (err) => {
+      listener.removeListener('listening', onListening);
+      try { listener.close(); } catch (_) {}
+      reject(err);
+    };
+    const onListening = () => {
+      listener.removeListener('error', onError);
+      resolve(listener);
+    };
+    listener.once('error', onError);
+    listener.once('listening', onListening);
+    listener.listen(port, '0.0.0.0');
+  });
+}
+
+// 端口是浏览器 origin 的一部分。优先复用持久化端口，避免关闭或重启后换端口，
+// 导致手机看不到旧 origin 下 localStorage 里的 token 而被迫重新配对。
+async function startRemoteListener() {
+  if (remoteListener && remoteListener.listening) return remoteListenerStatus();
+  if (remoteListenerStarting) return remoteListenerStarting;
+  remoteListenerStarting = (async () => {
+    await loadRemoteTokens();
+    // 端口 0 或异常值时退到一个固定高位端口，别去撞 1..1024 那些特权端口。
+    const bound = mainBoundPort();
+    const base = bound > 1024 ? bound + 1 : 39900;
+    const candidates = [];
+    const addCandidate = (value) => {
+      const candidate = normalizeRemoteListenerPort(value);
+      if (candidate && candidate !== bound && !candidates.includes(candidate)) candidates.push(candidate);
+    };
+    addCandidate(remoteAuth.preferredPort);
+    for (let offset = 0; offset < REMOTE_LISTENER_PORT_SPAN; offset += 1) {
+      addCandidate(base + offset);
+    }
+    let lastError = null;
+    for (const candidate of candidates) {
+      try {
+        remoteListener = await tryListenRemote(candidate);
+        remoteListenerPort = candidate;
+        if (remoteAuth.preferredPort !== candidate) {
+          remoteAuth.preferredPort = candidate;
+          await saveRemoteTokens();
+        }
+        console.log('[Remote] listener started on 0.0.0.0:' + candidate);
+        return remoteListenerStatus();
+      } catch (err) {
+        lastError = err;
+        if (err && (err.code === 'EADDRINUSE' || err.code === 'EACCES')) continue;
+        throw err;
+      }
+    }
+    throw lastError || new Error('REMOTE_LISTENER_NO_FREE_PORT');
+  })().finally(() => { remoteListenerStarting = null; });
+  return remoteListenerStarting;
+}
+
+function stopRemoteListener() {
+  return new Promise((resolve) => {
+    if (!remoteListener) { remoteListenerPort = 0; resolve(remoteListenerStatus()); return; }
+    const listener = remoteListener;
+    remoteListener = null;
+    remoteListenerPort = 0;
+    try {
+      listener.close(() => resolve(remoteListenerStatus()));
+      // close() 只停止接受新连接，已建立的连接（遥控页面的轮询）会把它吊住，
+      // 所以主动断开，否则关开关后端口迟迟不释放。
+      if (typeof listener.closeAllConnections === 'function') listener.closeAllConnections();
+    } catch (_) {
+      resolve(remoteListenerStatus());
+    }
+    setTimeout(() => resolve(remoteListenerStatus()), 1500);
+  });
+}
+
+// HTTP 请求可能来自快速连续开关，不能让 start/stop 并发改同一组 server 句柄。
+// 串行后最终状态严格服从请求顺序，旧的 start 完成后会立刻执行排队中的 stop。
+function setRemoteListenerEnabled(enabled) {
+  const applyState = () => enabled === true ? startRemoteListener() : stopRemoteListener();
+  const operation = remoteListenerLifecycle.then(applyState, applyState);
+  remoteListenerLifecycle = operation.catch(() => {});
+  return operation;
+}
+
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
 server.registerLocalMediaPath = registerLocalMediaPath;
 server.flushListenSyncJournal = flushListenSyncJournalSync;
+// 由 main.js 注入把遥控命令转成 IPC 的通路。server.js 自身不依赖 electron，
+// 未注入时 /api/remote/command 明确回 503。
+server.setRemoteCommandSink = setRemoteCommandSink;
 
 module.exports = server;

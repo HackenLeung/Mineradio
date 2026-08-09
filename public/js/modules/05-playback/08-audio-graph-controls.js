@@ -414,9 +414,24 @@ function clearAudioAudibilityRecoveryTimers() {
   audioAudibilityRecoveryTimers.forEach(function (timer) { clearTimeout(timer); });
   audioAudibilityRecoveryTimers = [];
 }
+// 增益拆两级时（见 writeAudioOutputGain）元素和节点各持 sqrt(v)，串联相乘才等于 v。
+// 这里必须返回「实际输出增益」而不是单级的 sqrt(v)，否则调用方拿到的值与 targetVolume
+// 不同域：rampAudioOutputGain 会把 sqrt(v) 当作起点再开一次方，首帧输出从 v 跳到 sqrt(v)
+// （音量 30% 时约 +5dB），听感就是切歌瞬间音量突然放大又回落。
+function audioOutputGainIsSplit() {
+  return !!(gainNode && gainNode.gain && audioCtx);
+}
 function currentAudioOutputGain() {
-  if (audio && isFinite(audio.volume)) return clampRange(Number(audio.volume), 0, 1);
-  if (gainNode && gainNode.gain && isFinite(gainNode.gain.value)) return clampRange(Number(gainNode.gain.value), 0, 1);
+  var elementGain = (audio && isFinite(audio.volume)) ? clampRange(Number(audio.volume), 0, 1) : null;
+  if (audioOutputGainIsSplit()) {
+    var nodeGain = isFinite(gainNode.gain.value) ? clampRange(Number(gainNode.gain.value), 0, 1) : null;
+    if (elementGain != null && nodeGain != null) return clampRange(elementGain * nodeGain, 0, 1);
+    // 只读到一级时按平方还原另一级（两级同值），别把单级值当成输出值。
+    var known = elementGain != null ? elementGain : nodeGain;
+    if (known != null) return clampRange(known * known, 0, 1);
+  } else if (elementGain != null) {
+    return elementGain;
+  }
   return clampRange(targetVolume, 0, 1);
 }
 function audioSilentFloor() {
@@ -441,24 +456,27 @@ function writeAudioOutputGain(value) {
     } catch (e) { }
   }
 }
+// 冻结节点参数用的是「参数当前值」（拆分域，sqrt(v)），不能拿 currentAudioOutputGain()
+// 的输出增益（线性域，v）去写 —— 那会把节点压成 v，输出变成 v*sqrt(v)。
+// 返回值统一给输出增益，供调用方与 targetVolume 同域比较。
 function holdAudioOutputGain(now) {
-  var current = currentAudioOutputGain();
-  if (!gainNode || !audioCtx || !gainNode.gain) return current;
+  if (!gainNode || !audioCtx || !gainNode.gain) return currentAudioOutputGain();
   var param = gainNode.gain;
+  var heldBranchValue = isFinite(param.value) ? Number(param.value) : null;
   try {
     if (typeof param.cancelAndHoldAtTime === 'function') {
       param.cancelAndHoldAtTime(now);
       return currentAudioOutputGain();
     }
     param.cancelScheduledValues(now);
-    param.setValueAtTime(current, now);
+    if (heldBranchValue != null) param.setValueAtTime(heldBranchValue, now);
   } catch (e) {
     try {
       param.cancelScheduledValues(now);
-      param.setValueAtTime(current, now);
+      if (heldBranchValue != null) param.setValueAtTime(heldBranchValue, now);
     } catch (_) { }
   }
-  return current;
+  return currentAudioOutputGain();
 }
 function setAudioOutputGainImmediate(value) {
   value = normalizeAudioOutputGain(value);
