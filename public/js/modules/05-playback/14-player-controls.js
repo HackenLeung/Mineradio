@@ -901,6 +901,20 @@ function playModeLabel(mode) {
   return { loop: '顺序循环', shuffle: '随机播放', single: '单曲循环' }[mode] || '顺序循环';
 }
 
+function normalizePlayMode(mode) {
+  mode = String(mode || '');
+  return mode === 'shuffle' || mode === 'single' ? mode : 'loop';
+}
+
+// 快照恢复只赋值不刷新按钮时，模块加载时那一次 updatePlayModeButton 停在初始的 loop 上，
+// 于是图标显示顺序循环、实际却按恢复出来的模式走。恢复路径一律走这里。
+// 队列快照本身就是当时的乱序结果，恢复后不再重排。
+function applyRestoredPlayMode(mode) {
+  if (!mode) return;
+  playMode = normalizePlayMode(mode);
+  updatePlayModeButton(false);
+}
+
 function playModeIconMarkup(mode) {
   if (mode === 'shuffle') {
     return '<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>';

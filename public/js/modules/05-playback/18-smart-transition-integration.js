@@ -436,25 +436,53 @@ function smartTransitionIncomingVocalCueFromResponse(song, response, fadeSec) {
   }
 }
 
+function smartTransitionIsLocalSong(song) {
+  return !!(song && (song.type === 'local' || song.source === 'local' || song.localKey || song.localUrl));
+}
+
+// 本地歌的歌词不挂在 song.lyric 上：sidecar 与内嵌文本存在 localLyricText/embeddedLyrics，
+// 由 fetchLocalSongLyric 在真正开播时才喂进歌词链路。准备阶段必须自己取一次，
+// 否则本地歌永远拿不到人声时间、B 一律从 0:00 淡入。
+// 手动重新匹配是用户的显式纠正，与 fetchLocalSongLyric 一致地优先于文件自带歌词。
+function smartTransitionLocalInlineLyric(song) {
+  if (!smartTransitionIsLocalSong(song)) return '';
+  if (typeof hasManualLocalLyricMatch === 'function' && hasManualLocalLyricMatch(song)) return '';
+  return String((song && (song.localLyricText || song.embeddedLyrics)) || '');
+}
+
+// 本地歌没有自己的在线 id，直接交给 lyricEndpointForSong 会退化成 /api/lyric?id=undefined。
+// 匹配过在线元数据的改用那个身份查缓存和接口；没匹配过的不发这一次必然落空的请求。
+function smartTransitionLyricLookupSong(song) {
+  if (!smartTransitionIsLocalSong(song)) return song;
+  return typeof localOnlineSongForMetadata === 'function' ? localOnlineSongForMetadata(song) : null;
+}
+
 async function smartTransitionIncomingEntryTime(song, fadeSec) {
   // Inline lyrics and the disk cache avoid an extra request in the common
   // case.  A cache miss is still worth resolving while A is playing: it lets
   // the B deck seek directly to the first vocal lead-in before it preloads.
   var cue = smartTransitionIncomingVocalCueFromResponse(song, {}, fadeSec);
   if (cue.known) return cue;
+  var localInline = smartTransitionLocalInlineLyric(song);
+  if (localInline.trim()) {
+    cue = smartTransitionIncomingVocalCueFromResponse(song, { lyric: localInline }, fadeSec);
+    if (cue.known) return cue;
+  }
+  var lookupSong = smartTransitionLyricLookupSong(song);
+  if (!lookupSong) return cue;
   try {
     if (typeof readPersistentLyricCache === 'function') {
-      var cached = await readPersistentLyricCache(song);
+      var cached = await readPersistentLyricCache(lookupSong);
       cue = smartTransitionIncomingVocalCueFromResponse(song, cached, fadeSec);
       if (cue.known) return cue;
     }
     if (typeof apiJson !== 'function' || typeof lyricEndpointForSong !== 'function') return cue;
-    var response = await apiJson(lyricEndpointForSong(song), { timeoutMs: 5000 });
+    var response = await apiJson(lyricEndpointForSong(lookupSong), { timeoutMs: 5000 });
     var merged = typeof mergeInlineLyricResponseForSong === 'function'
       ? mergeInlineLyricResponseForSong(song, response || {})
       : (response || {});
     cue = smartTransitionIncomingVocalCueFromResponse(song, merged, fadeSec);
-    if (typeof writePersistentLyricCache === 'function') writePersistentLyricCache(song, merged);
+    if (typeof writePersistentLyricCache === 'function') writePersistentLyricCache(lookupSong, merged);
   } catch (_) { }
   return cue;
 }

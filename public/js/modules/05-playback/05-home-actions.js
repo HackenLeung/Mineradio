@@ -65,7 +65,8 @@ async function playHomeRecentQueue(record) {
   currentLocalSong = playQueue[currentIdx] && (playQueue[currentIdx].type === 'local' || playQueue[currentIdx].localKey)
     ? playQueue[currentIdx]
     : null;
-  if (snapshot.playMode) playMode = snapshot.playMode;
+  if (typeof applyRestoredPlayMode === 'function') applyRestoredPlayMode(snapshot.playMode);
+  else if (snapshot.playMode) playMode = snapshot.playMode;
   safeRenderQueuePanel('home-recent-queue', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('home-recent-queue', true);
   forcePlaybackControlsInteractive();

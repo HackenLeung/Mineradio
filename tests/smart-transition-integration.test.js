@@ -226,6 +226,64 @@ test('local handoff carries the incoming deck gain into the main playback envelo
   assert.match(localPlayback, /else applyVolumeToAudio\(\)/);
 });
 
+test('local playback arms the next smart transition on its own branch', () => {
+  // playQueueAt returns early for local songs, so its own scheduleSmartCrossfadePrepare
+  // call is unreachable. Without this one, smartTransitionPending stays null and a local
+  // queue never transitions — except after a manual seek or a settings toggle.
+  const localPlayback = namedFunctionSource(playback, 'playLocalQueueSong');
+  assert.match(localPlayback, /scheduleSmartCrossfadePrepare\(token, idx,/);
+  assert.match(localPlayback, /smartCrossfadePostSwitchDelay\(!!opts\.smartTransitionHandoff\)/);
+  assert.match(playback, /await playLocalQueueSong\([\s\S]*?return localStarted === true;/);
+});
+
+test('local incoming cue reads sidecar/embedded lyrics and never hits the online lyric endpoint unmatched', async () => {
+  // Local songs keep their lyrics on localLyricText/embeddedLyrics, and have no online id —
+  // lyricEndpointForSong would degrade to /api/lyric?id=undefined. Without this the cue is
+  // always unknown and the incoming deck restarts every local track from 0:00.
+  const sources = [
+    'smartTransitionIsLocalSong',
+    'smartTransitionLocalInlineLyric',
+    'smartTransitionLyricLookupSong',
+    'smartTransitionIncomingEntryTime',
+  ].map(name => namedFunctionSource(integration, name)).join('\n');
+  const calls = { endpoint: 0, cache: 0 };
+  const sandbox = {
+    smartTransitionIncomingVocalCueFromResponse(song, response, fadeSec) {
+      const text = String((response && response.lyric) || '');
+      const at = /\[00:(\d\d)\.00\]词/.exec(text);
+      if (!at) return { known: false, vocalAt: 0, entryTime: 0 };
+      const vocalAt = Number(at[1]);
+      return { known: true, vocalAt, entryTime: Math.max(0, vocalAt - fadeSec) };
+    },
+    hasManualLocalLyricMatch: song => song.manualMatched === true,
+    localOnlineSongForMetadata: song => (song.onlineMetadata ? { id: 42 } : null),
+    readPersistentLyricCache() { calls.cache += 1; return Promise.resolve(null); },
+    lyricEndpointForSong(song) { calls.endpoint += 1; return '/api/lyric?id=' + song.id; },
+    apiJson: () => Promise.resolve({}),
+    writePersistentLyricCache() {},
+    mergeInlineLyricResponseForSong: (song, response) => response,
+    String, Number, Math, Promise,
+  };
+  const entryTime = vm.runInNewContext(`${sources}; smartTransitionIncomingEntryTime`, sandbox);
+
+  const sidecar = await entryTime({ type: 'local', localLyricText: '[00:18.00]词' }, 6);
+  assert.deepEqual(sidecar, { known: true, vocalAt: 18, entryTime: 12 });
+  assert.equal(calls.endpoint, 0);
+  assert.equal(calls.cache, 0);
+
+  const embedded = await entryTime({ type: 'local', embeddedLyrics: '[00:09.00]词' }, 6);
+  assert.equal(embedded.entryTime, 3);
+
+  // No online match: skip the lookup entirely rather than firing id=undefined.
+  assert.equal((await entryTime({ type: 'local', localKey: 'a' }, 6)).known, false);
+  assert.equal(calls.endpoint, 0);
+
+  // A manual re-match outranks the file's own lyrics, same priority as fetchLocalSongLyric.
+  await entryTime({ type: 'local', manualMatched: true, localLyricText: '[00:18.00]词', onlineMetadata: {} }, 6);
+  assert.equal(calls.endpoint, 1);
+  assert.equal(calls.cache, 1);
+});
+
 test('prepared media must advance its clock before a transition can continue', async () => {
   const waitForProgress = vm.runInNewContext(`(${namedFunctionSource(integration, 'waitForSmartTransitionPlaybackProgress')})`, {
     smartTransitionTransitionStillCurrent: () => true,

@@ -257,6 +257,14 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   fetchLyric(song, token);
   safeRenderQueuePanel('play-local-queue', { scrollCurrent: miniQueueOpen });
   scheduleShelfRebuild('play-local-queue', true);
+  // 本地歌走的是这条独立分支，playQueueAt 的过渡排程走不到这里。
+  // 缺了这一次排程，smartTransitionPending 永远为空，本地队列不会触发智能过渡。
+  // 本地文件不经网络取流，无需在线路径的后台节流延迟。
+  if (typeof scheduleSmartCrossfadePrepare === 'function') {
+    scheduleSmartCrossfadePrepare(token, idx, typeof smartCrossfadePostSwitchDelay === 'function'
+      ? smartCrossfadePostSwitchDelay(!!opts.smartTransitionHandoff)
+      : 4200);
+  }
   setTimeout(function () {
     if (token === trackSwitchToken && currentLocalSong && currentLocalSong.localKey === song.localKey) {
       prepareLocalBeatAnalysis(currentLocalSong, song.localUrl);
