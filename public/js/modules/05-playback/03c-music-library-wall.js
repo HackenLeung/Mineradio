@@ -416,7 +416,24 @@ function musicLibraryWallOpenLibrary(index) {
   }
   if (content) content.scrollTop = musicLibraryWallState.detail.scrollTop;
   renderMusicLibraryWall({ resetScroll: true, forceGrid: true });
-  if (item.kind === 'playlist') musicLibraryWallLoadDetailPage('initial');
+  if (item.kind === 'playlist') {
+    musicLibraryWallLoadDetailPage('initial');
+  } else if (typeof hydrateLocalFolderPreview === 'function') {
+    var folderIndexes = item.kind === 'local-folder'
+      ? [item.folderIndex]
+      : (localFolderPlaylists || []).map(function (_, folderIndex) { return folderIndex; });
+    // 每个文件夹水合完就重画一次，"全部本地"下不必等整轮 IPC 扫完才看到封面。
+    var redrawHydratedWall = function () {
+      if (musicLibraryWallState.active && musicLibraryWallState.detail && musicLibraryWallState.detail.scrollKey === detailScrollKey) {
+        renderMusicLibraryWallFromSources();
+      }
+    };
+    folderIndexes.reduce(function (promise, folderIndex) {
+      return promise
+        .then(function () { return hydrateLocalFolderPreview(folderIndex); })
+        .then(redrawHydratedWall);
+    }, Promise.resolve()).catch(function (error) { console.warn('[MusicLibraryWallLocalCover]', error); });
+  }
 }
 
 function musicLibraryWallBack() {

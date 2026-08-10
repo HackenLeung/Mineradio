@@ -648,7 +648,13 @@ function applyLocalMatchCandidate(index) {
   if (typeof updateCommentButtonForSong === 'function') updateCommentButtonForSong(activeSong || song);
   if (commentPanelOpen) renderCommentPanelForSong(activeSong || song, null);
   closeLocalMatchModal();
-  showToast('已匹配歌词和封面: ' + (metadata.name || song.name || '在线歌曲'));
+  // 自定义封面压过任何匹配结果。不静默丢弃、也不擅自清除用户设的封面，只是说清楚
+  // 封面为什么没变——否则匹配看起来完全没生效。
+  var customCoverWins = typeof getCustomCoverForSong === 'function' && !!getCustomCoverForSong(song);
+  var matchedLabel = metadata.name || song.name || '在线歌曲';
+  showToast(customCoverWins
+    ? '已匹配歌词: ' + matchedLabel + '（自定义封面仍在生效，需先取消才会换封面）'
+    : '已匹配歌词和封面: ' + matchedLabel);
 }
 function openTrackDetailModal(type, songOverride) {
   var song = songOverride || currentCoverSong();
@@ -912,23 +918,18 @@ function clearCustomCoverForCurrent() {
     updateCustomCoverButton();
     return;
   }
-  var key = songCustomCoverKey(song);
-  if (key && customCoverMap[key]) {
-    delete customCoverMap[key];
-    saveCustomCoverMap();
-  }
   delete playlistCoverCache[custom];
-  delete song.customCover;
-  if (key) {
-    for (var i = 0; i < playQueue.length; i++) {
-      if (songCustomCoverKey(playQueue[i]) === key) delete playQueue[i].customCover;
-    }
-  }
-  if (key && currentLocalSong && songCustomCoverKey(currentLocalSong) === key) delete currentLocalSong.customCover;
-  if (currentIdx >= 0 && playQueue[currentIdx] && playQueue[currentIdx].cover) loadCoverFromUrl(coverUrlWithSize(playQueue[currentIdx].cover, 400));
+  if (typeof clearCustomCoverForSong === 'function') clearCustomCoverForSong(song);
+  else delete song.customCover;
+  var isLocalSong = song.type === 'local' || song.source === 'local' || song.localKey;
+  var restoredCover = isLocalSong && typeof localLibraryCover === 'function'
+    ? localLibraryCover(song)
+    : (song.cover || song.picUrl || song.albumCover || '');
+  if (restoredCover) loadCoverFromUrl(coverUrlWithSize(restoredCover, 400));
   else loadCoverFromUrl('');
   safeRenderQueuePanel('custom-cover-clear', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('custom-cover-clear');
+  if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
   updateCustomCoverButton();
   showToast('已恢复默认封面');
 }

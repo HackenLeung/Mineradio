@@ -90,6 +90,28 @@ function getCustomCoverForSong(song) {
   var key = songCustomCoverKey(song);
   return key && customCoverMap[key] ? customCoverMap[key] : '';
 }
+function clearCustomCoverForSong(song) {
+  if (!song) return false;
+  var key = songCustomCoverKey(song);
+  var hadCover = !!(song.customCover || (key && customCoverMap[key]));
+  if (key && customCoverMap[key]) {
+    delete customCoverMap[key];
+    saveCustomCoverMap();
+  }
+  // 同一首歌可能同时躺在队列、内存库和文件夹列表里，重复清理无害，不必去重。
+  function clearTarget(target) {
+    if (!target) return;
+    if (target === song || (key && songCustomCoverKey(target) === key)) delete target.customCover;
+  }
+  clearTarget(song);
+  (Array.isArray(playQueue) ? playQueue : []).forEach(clearTarget);
+  (Array.isArray(localLibrarySongs) ? localLibrarySongs : []).forEach(clearTarget);
+  (Array.isArray(localFolderPlaylists) ? localFolderPlaylists : []).forEach(function (folder) {
+    (folder && Array.isArray(folder.songs) ? folder.songs : []).forEach(clearTarget);
+  });
+  clearTarget(currentLocalSong);
+  return hadCover;
+}
 function hydrateCustomCover(song) {
   if (!song) return song;
   var custom = getCustomCoverForSong(song);
@@ -99,6 +121,10 @@ function hydrateCustomCover(song) {
 function songCoverSrc(song, size) {
   var custom = getCustomCoverForSong(song);
   if (custom) return custom;
+  if (song && (song.type === 'local' || song.source === 'local' || song.localKey) && typeof localLibraryCover === 'function') {
+    var localCover = localLibraryCover(song);
+    if (localCover) return coverUrlWithSize(localCover, size);
+  }
   return song && song.cover ? coverUrlWithSize(song.cover, size) : '';
 }
 function cssImageUrl(url) {

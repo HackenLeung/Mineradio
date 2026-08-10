@@ -191,8 +191,10 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     if (playQueue[idx]) playQueue[idx].duration = duration;
     if (lyricSourceMode === 'custom') applyCustomLyricState(currentLocalSong, true);
     if (typeof resolveLocalOnlineMetadata === 'function') {
-      resolveLocalOnlineMetadata(currentLocalSong, token).then(function () {
+      resolveLocalOnlineMetadata(currentLocalSong, token).then(function (metadata) {
         if (token !== trackSwitchToken) return;
+        if (metadata && typeof syncResolvedLocalSongReferences === 'function') syncResolvedLocalSongReferences(currentLocalSong);
+        if (metadata && typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
         var resolvedCover = typeof localLibraryCover === 'function' ? localLibraryCover(currentLocalSong) : currentLocalSong.cover;
         if (resolvedCover) loadCoverFromUrl(resolvedCover, { trackToken: token, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: true });
         fetchLyric(currentLocalSong, token);

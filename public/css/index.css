@@ -3362,14 +3362,15 @@ body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs
 .search-result .add-btn {
   width: 28px;
   height: 28px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, .12);
   background: rgba(255, 255, 255, .05);
   color: rgba(255, 255, 255, .55);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
   flex-shrink: 0;
   transition: all .2s
 }

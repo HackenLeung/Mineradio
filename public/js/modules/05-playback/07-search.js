@@ -258,7 +258,7 @@ function renderPodcastRadios(items, label) {
       '<div class="search-result-meta">' + escHtml(podcastMetaText(p) || label || 'NetEase Radio') + '</div>' +
       '</div>' +
       '</div>' +
-      '<button class="add-btn" title="Open" onclick="event.stopPropagation();openPodcastPrograms(' + i + ')">›</button>' +
+      '<button class="add-btn" title="Open" aria-label="Open" onclick="event.stopPropagation();openPodcastPrograms(' + i + ')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg></button>' +
       '</div>';
   }).join('');
   $results.classList.add('show');

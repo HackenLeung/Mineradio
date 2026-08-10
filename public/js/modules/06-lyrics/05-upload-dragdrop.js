@@ -97,7 +97,10 @@ function readLocalMetadataMap() {
 var localMetadataMap = readLocalMetadataMap();
 var localMetadataSaveTimer = 0;
 var localMetadataHydrationPromise = null;
-function saveLocalMetadataMap() {
+// 每次 localMetadataMap 变动都自增，用于作废 localMatchedOnlineCover 的解析缓存。
+var localMetadataMapEpoch = 1;
+function saveLocalMetadataMap(opts) {
+  if (!opts || !opts.keepCoverCache) localMetadataMapEpoch++;
   try { localStorage.setItem(LOCAL_METADATA_STORE_KEY, JSON.stringify(localMetadataMap || {})); } catch (e) { }
   if (window.desktopWindow && typeof window.desktopWindow.setLocalOnlineMetadataCache === 'function') {
     if (localMetadataSaveTimer) clearTimeout(localMetadataSaveTimer);
@@ -113,6 +116,7 @@ function hydrateLocalMetadataFromDisk() {
   localMetadataHydrationPromise = window.desktopWindow.getLocalOnlineMetadataCache().then(function (result) {
     if (!result || !result.ok || !result.payload || typeof result.payload !== 'object') return;
     localMetadataMap = Object.assign({}, result.payload, localMetadataMap || {});
+    localMetadataMapEpoch++;
     try { localStorage.setItem(LOCAL_METADATA_STORE_KEY, JSON.stringify(localMetadataMap)); } catch (e) { }
     applyStoredLocalMetadataToLibrary();
   }).catch(function () { });
@@ -155,10 +159,46 @@ function hasReusableLocalOnlineMetadata(metadata) {
   if (metadata.provider === 'qq') return !!(metadata.mid || metadata.songmid || metadata.id);
   return !!metadata.id;
 }
+function localMetadataVersionsMatch(song, metadata) {
+  if (typeof searchVersionSignature !== 'function') return true;
+  // 只比曲名。本地歌缺内嵌专辑标签时 album 会回落成目录路径，"DJ Mix"、"Live现场"
+  // 这类目录名会污染签名并否掉整个目录的在线匹配；而 Live/Remix 之类的版本标记
+  // 本来就写在曲名里。
+  var sourceVersion = searchVersionSignature(song && (song.name || song.title));
+  var metadataVersion = searchVersionSignature(metadata && (metadata.name || metadata.title));
+  return sourceVersion === metadataVersion;
+}
+// normalizeMatchText 不吃 "、" 和 "&"，而它们正是文件名里最常见的多歌手分隔符，
+// 残留下来会让下面的"铺满"核对永远差几个字符。
+function localFilenameMatchNorm(text) {
+  return typeof normalizeMatchText === 'function' ? normalizeMatchText(text).replace(/[、＆&]+/g, '') : '';
+}
+function localFilenameTitleArtistMatch(song, candidate) {
+  // 没有内嵌标签时整个文件名被当成歌名（"歌手 - 歌名" 或 "歌名 - 歌手" 都有），歌手
+  // 落成占位符，严格的同名同歌手判定必然落空。改判候选的歌名和歌手能否一起铺满文件
+  // 名——两段都在里面且不留残余就算命中，与先后顺序无关。
+  if (!song || String(song.artist || '') !== '本地文件') return false;
+  if (typeof artistNameParts !== 'function') return false;
+  var source = localFilenameMatchNorm(song.name || song.title);
+  var title = localFilenameMatchNorm(candidate && (candidate.name || candidate.title));
+  if (!source || title.length < 2 || source.indexOf(title) < 0) return false;
+  var matched = artistNameParts(candidate).map(function (name) {
+    return String(name || '').replace(/[、＆&]+/g, '');
+  }).filter(function (name) {
+    return name.length >= 2 && source.indexOf(name) >= 0;
+  });
+  if (!matched.length) return false;
+  // 挖掉歌名和命中的歌手后必须一点不剩，否则 "聪明"+"陈绮贞" 这种子串组合会蒙混过关。
+  var rest = source.replace(title, '');
+  matched.forEach(function (name) { rest = rest.replace(name, ''); });
+  return rest.length === 0;
+}
 function isCompatibleLocalOnlineMetadata(song, metadata) {
   metadata = normalizeStoredLocalOnlineMetadata(metadata);
   if (!song || !metadata) return false;
   if (metadata.manualMatched === true) return true;
+  if (!localMetadataVersionsMatch(song, metadata)) return false;
+  if (localFilenameTitleArtistMatch(song, metadata)) return true;
   if (typeof isSameTitleArtist === 'function') return isSameTitleArtist(song, metadata);
   var sourceTitle = simpleSearchNorm(song.name || song.title || '');
   var candidateTitle = simpleSearchNorm(metadata.name || metadata.title || '');
@@ -191,7 +231,8 @@ function applyStoredLocalMetadataToLibrary() {
 }
 function localMetadataQuery(song) {
   song = song || {};
-  return [song.name || song.title || '', String(song.artist || '').replace(/^本地文件$/, '')].filter(Boolean).join(' ').trim();
+  var artist = String(song.artist || '').replace(/^本地文件$/, '').replace(/[|｜;；]+/g, ' ');
+  return [song.name || song.title || '', artist].filter(Boolean).join(' ').trim();
 }
 function normalizeLocalMatchCandidate(candidate, provider) {
   candidate = cloneSong(candidate || {});
@@ -202,6 +243,8 @@ function normalizeLocalMatchCandidate(candidate, provider) {
 function localMetadataMatchScore(song, candidate, query) {
   var score = typeof scoreSongSearchResult === 'function' ? scoreSongSearchResult(candidate, query, 0) : 0;
   if (typeof isSameTitleArtist === 'function' && isSameTitleArtist(song, candidate)) score += 160;
+  // 文件名式命中和同名同歌手同权：否则无标签歌里 Remix 版靠标题相似度反而排在原版前面。
+  if (localFilenameTitleArtistMatch(song, candidate)) score += 160;
   var sourceTitle = simpleSearchNorm(song && (song.name || song.title) || '');
   var candidateTitle = simpleSearchNorm(candidate && (candidate.name || candidate.title) || '');
   if (sourceTitle && candidateTitle === sourceTitle) score += 80;
@@ -261,9 +304,12 @@ function syncLocalMetadata(song, metadata) {
 function applyLocalOnlineMetadata(song, metadata, token) {
   if (!song || !metadata || (token != null && token !== trackSwitchToken)) return false;
   metadata = normalizeStoredLocalOnlineMetadata(metadata) || metadata;
+  if (!isCompatibleLocalOnlineMetadata(song, metadata)) return false;
   song.onlineMetadata = Object.assign({}, metadata);
   song.manualMatched = metadata.manualMatched === true;
-  if (metadata.cover && !song.sidecarCover && !song.embeddedCover && !song.customCover) song.cover = metadata.cover;
+  // 手动匹配可以推翻内嵌/随文件封面，自动匹配不行；自定义封面始终最高。
+  if (metadata.cover && !song.customCover
+    && (song.manualMatched || (!song.sidecarCover && !song.embeddedCover))) song.cover = metadata.cover;
   if (metadata.lyric) song.lyric = metadata.lyric;
   if (metadata.yrc) song.yrc = metadata.yrc;
   return true;
@@ -275,19 +321,24 @@ async function resolveLocalOnlineMetadata(song, token, options) {
   var saved = storedLocalMetadataForSong(song);
   if (saved) {
     applyLocalOnlineMetadata(song, saved, token);
-    return saved;
+    // 手动匹配是用户的显式选择：哪怕它没带封面，也不能被一次自动搜索顶掉。
+    if (!options.requireCover || saved.cover || saved.manualMatched === true) return saved;
   }
   var query = localMetadataQuery(song);
   if (!query || options.manualOnly) return null;
   try {
     var provider = options.provider || (typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease');
     if (provider === 'local') provider = 'netease';
+    if (options.throttle && typeof waitForLocalLyricProvider === 'function') await waitForLocalLyricProvider(provider);
     var candidates = await fetchLocalMetadataCandidates(song, query, provider);
     if (token != null && token !== trackSwitchToken) return null;
     var ranked = candidates.map(function (candidate) {
       return { candidate: candidate, score: localMetadataMatchScore(song, candidate, query) };
     }).sort(function (a, b) { return b.score - a.score; });
-    var accepted = ranked.find(function (entry) { return isAcceptableLocalLyricCandidate(song, entry.candidate, entry.score); });
+    var accepted = ranked.find(function (entry) {
+      if (!isAcceptableLocalLyricCandidate(song, entry.candidate, entry.score)) return false;
+      return !options.requireCover || !!(entry.candidate.cover || entry.candidate.picUrl || entry.candidate.albumCover);
+    });
     if (!accepted) return null;
     var candidate = accepted.candidate;
     var metadata = compactLocalOnlineMetadata(candidate, provider);
@@ -337,25 +388,80 @@ function updateLocalLibraryFolder(folderPath, files, options) {
   localFolderPlaylists.forEach(function (folder) { localLibrarySongs = localLibrarySongs.concat(folder.songs || []); });
   return entry;
 }
+// songCoverSrc 会为每张可见卡片调用 localLibraryCover，所以这里的解析必须便宜。
+// 缓存挂在 WeakMap 上而不是歌曲对象上，避免被 cloneSong/Object.assign 带进副本或
+// localStorage；命中条件直接校验决定结果的输入，元数据一变就自然失效。
+var localMatchedCoverCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+function localMatchedOnlineCoverEntry(song) {
+  var empty = { cover: '', manual: false };
+  if (!song) return empty;
+  var cached = localMatchedCoverCache && localMatchedCoverCache.get(song);
+  if (cached && cached.epoch === localMetadataMapEpoch && cached.onlineMetadata === song.onlineMetadata
+    && cached.name === song.name && cached.artist === song.artist && cached.album === song.album) return cached.entry;
+  var inline = normalizeStoredLocalOnlineMetadata(song.onlineMetadata);
+  // storedLocalMetadataForSong 内部已经做过兼容校验，别再算一遍。
+  var metadata = inline
+    ? (isCompatibleLocalOnlineMetadata(song, inline) ? inline : null)
+    : storedLocalMetadataForSong(song);
+  var entry = metadata
+    ? { cover: metadata.cover || metadata.picUrl || metadata.albumCover || '', manual: metadata.manualMatched === true }
+    : empty;
+  if (localMatchedCoverCache) {
+    localMatchedCoverCache.set(song, {
+      epoch: localMetadataMapEpoch, onlineMetadata: song.onlineMetadata,
+      name: song.name, artist: song.artist, album: song.album, entry: entry
+    });
+  }
+  return entry;
+}
+function localMatchedOnlineCover(song) {
+  return localMatchedOnlineCoverEntry(song).cover;
+}
+function localManualMatchedCover(song) {
+  var entry = localMatchedOnlineCoverEntry(song);
+  return entry.manual ? entry.cover : '';
+}
+// localLibrarySongs 只在 updateLocalLibraryFolder 里被整体重建成新数组，可以直接用
+// 数组引用做索引失效标记。
+var localLibraryLookupIndex = null;
+var localLibraryLookupSource = null;
+function localLibrarySongByLocation(localKey, localPath) {
+  var songs = Array.isArray(localLibrarySongs) ? localLibrarySongs : [];
+  if (localLibraryLookupSource !== songs) {
+    localLibraryLookupIndex = { byKey: {}, byPath: {} };
+    for (var i = 0; i < songs.length; i++) {
+      var lib = songs[i];
+      if (!lib) continue;
+      var key = String(lib.localKey || '');
+      var path = String(lib.localPath || lib.filePath || '').toLowerCase();
+      if (key && !localLibraryLookupIndex.byKey[key]) localLibraryLookupIndex.byKey[key] = lib;
+      if (path && !localLibraryLookupIndex.byPath[path]) localLibraryLookupIndex.byPath[path] = lib;
+    }
+    localLibraryLookupSource = songs;
+  }
+  return (localKey && localLibraryLookupIndex.byKey[localKey])
+    || (localPath && localLibraryLookupIndex.byPath[localPath])
+    || null;
+}
+function localSongCoverFromFields(song) {
+  // 手动匹配是用户明确指定"这首才对"，必须压过文件内嵌图：综艺/合辑资源经常内嵌
+  // 一张与歌曲无关的封面，否则重新匹配永远看不到效果。自动匹配则仍排在内嵌图之后。
+  return localManualMatchedCover(song) || song.sidecarCover || song.embeddedCover
+    || localMatchedOnlineCover(song) || song.cover || '';
+}
 function localLibraryCover(song) {
   if (!song) return '';
-  var direct = (typeof getCustomCoverForSong === 'function' ? getCustomCoverForSong(song) : song.customCover) || song.sidecarCover || song.embeddedCover || song.cover;
+  var custom = typeof getCustomCoverForSong === 'function' ? getCustomCoverForSong(song) : song.customCover;
+  var direct = custom || localSongCoverFromFields(song);
   if (direct) return direct;
   // 瘦身后的歌曲对象（历史/搜索/快照重建）不带封面字段：按 localKey/localPath
   // 回内存库现取，内嵌封面由此回到播放链路，同时不进 localStorage。
   var localKey = String(song.localKey || '');
   var localPath = String(song.localPath || song.filePath || '').toLowerCase();
   if (!localKey && !localPath) return '';
-  var songs = Array.isArray(localLibrarySongs) ? localLibrarySongs : [];
-  for (var i = 0; i < songs.length; i++) {
-    var lib = songs[i];
-    if (!lib) continue;
-    if ((localKey && String(lib.localKey || '') === localKey)
-      || (localPath && String(lib.localPath || lib.filePath || '').toLowerCase() === localPath)) {
-      return lib.customCover || lib.sidecarCover || lib.embeddedCover || lib.cover || '';
-    }
-  }
-  return '';
+  var lib = localLibrarySongByLocation(localKey, localPath);
+  if (!lib) return '';
+  return lib.customCover || localSongCoverFromFields(lib);
 }
 function isSameLocalLibrarySong(left, right) {
   if (!left || !right) return false;
@@ -437,13 +543,34 @@ function hideLocalFolderLyricMatchChip() {
   if (chip) chip.classList.remove('show', 'done');
 }
 
+// 有内嵌歌词却搜不到封面的歌（冷门、自制）每轮批量匹配都会重跑一次在线搜索，
+// 而节流把节奏压在 ~500ms/次。记下失败时间，一天内不再重试。
+var LOCAL_COVER_SEARCH_MISS_TTL_MS = 24 * 60 * 60 * 1000;
+function localCoverSearchMissedRecently(song) {
+  var key = localMetadataKey(song);
+  var entry = key && localMetadataMap[key];
+  var missedAt = entry ? Number(entry.coverSearchMissAt) || 0 : 0;
+  return !!missedAt && (Date.now() - missedAt) < LOCAL_COVER_SEARCH_MISS_TTL_MS;
+}
+function noteLocalCoverSearchMiss(song) {
+  var key = localMetadataKey(song);
+  if (!key) return;
+  // 只加一个时间戳字段：没有 provider/id 的条目会被 normalizeStoredLocalOnlineMetadata
+  // 判为 null，不会被误当成可用的在线元数据。
+  localMetadataMap[key] = Object.assign({}, localMetadataMap[key] || {}, { coverSearchMissAt: Date.now() });
+  // 只是"搜过了、没结果"的时间戳，不改变任何封面解析结果，别为它作废封面缓存。
+  saveLocalMetadataMap({ keepCoverCache: true });
+}
+
 function hasReusableLocalLyricMatch(song) {
   var inlineLyric = String(song && (song.localLyricText || song.embeddedLyrics) || '').trim();
-  if (inlineLyric.length >= 8) return true;
+  var inlineIsEnough = inlineLyric.length >= 8;
+  if (inlineIsEnough && (localLibraryCover(song) || localCoverSearchMissedRecently(song))) return true;
   var metadata = normalizeStoredLocalOnlineMetadata(song && song.onlineMetadata) || storedLocalMetadataForSong(song);
   if (!hasReusableLocalOnlineMetadata(metadata) || !isCompatibleLocalOnlineMetadata(song, metadata)) return false;
   applyLocalOnlineMetadata(song, metadata);
   syncResolvedLocalSongReferences(song);
+  if (inlineIsEnough && localLibraryCover(song)) return true;
   // An online-song binding is reusable metadata, not proof that lyrics were
   // downloaded successfully. Let the worker verify the persistent lyric cache
   // and refill it from the saved provider ID when it is missing.
@@ -625,7 +752,7 @@ async function matchLocalSongLyricsWithRetry(song, desktopApi) {
   var lastError = null;
   for (var attempt = 0; attempt < 2; attempt++) {
     try {
-      if (song && song.localPath && !song.embeddedMetadataParsed && desktopApi && typeof desktopApi.resolveLocalMusicFile === 'function') {
+      if (song && song.localPath && (!song.embeddedMetadataParsed || !song.embeddedMediaParsed) && desktopApi && typeof desktopApi.resolveLocalMusicFile === 'function') {
         var parsed = await desktopApi.resolveLocalMusicFile(song.localPath, { deferCacheSave: true });
         if (parsed && parsed.ok && parsed.file) {
           var existingOnline = song.onlineMetadata;
@@ -636,7 +763,17 @@ async function matchLocalSongLyricsWithRetry(song, desktopApi) {
         }
       }
       var inlineLyric = String(song && (song.localLyricText || song.embeddedLyrics) || '').trim();
-      if (inlineLyric.length >= 8) return { reused: true, source: 'inline' };
+      if (inlineLyric.length >= 8) {
+        if (localLibraryCover(song)) return { reused: true, source: 'inline' };
+        if (localCoverSearchMissedRecently(song)) return { reused: true, source: 'inline' };
+        var coverMetadata = await resolveLocalOnlineMetadata(song, null, { requireCover: true, throttle: true });
+        if (coverMetadata && localLibraryCover(song)) {
+          syncResolvedLocalSongReferences(song);
+          return { reused: false, source: 'metadata', metadata: coverMetadata };
+        }
+        noteLocalCoverSearchMiss(song);
+        return { reused: true, source: 'inline' };
+      }
       return await resolveLocalOnlineLyricMatch(song, desktopApi);
     } catch (error) {
       lastError = error;
@@ -849,7 +986,7 @@ async function hydrateLocalFolderPreview(folderIndex) {
   async function worker() {
     while (cursor < songs.length) {
       var song = songs[cursor++];
-      if (!song || !song.localPath || (song.embeddedMetadataParsed && (song.embeddedCover || song.sidecarCover))) continue;
+      if (!song || !song.localPath || song.embeddedMediaParsed || (song.embeddedMetadataParsed && (song.embeddedCover || song.sidecarCover))) continue;
       try {
         var result = await window.desktopWindow.resolveLocalMusicFile(song.localPath, { deferCacheSave: true });
         if (!result || !result.ok || !result.file) continue;

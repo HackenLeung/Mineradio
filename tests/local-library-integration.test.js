@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -17,7 +18,9 @@ const beatCacheModal = read('public/js/modules/03-beat/03-local-beat-cache-modal
 const beatAnalysis = read('public/js/modules/03-beat/01-audio-beat-analysis.js');
 const coverLoading = read('public/js/modules/03-beat/05-cover-loading-crop.js');
 const customCoverMap = read('public/js/modules/05-playback/01-cover-custom-map.js');
+const coverActions = read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js');
 const playbackStart = read('public/js/modules/05-playback/13-playback-start-audio.js');
+const providerFallback = read('public/js/modules/05-playback/11-provider-fallback.js');
 const playlistDetail = read('public/js/modules/06-lyrics/02-playlist-detail.js');
 const pointerLayer = read('public/js/modules/02-visual/00-pointer-cover-particles.js');
 const indexHtml = read('public/index.html');
@@ -62,15 +65,63 @@ assert.match(upload, /function compactLocalOnlineMetadata\(/);
 assert.match(upload, /source: provider/);
 assert.match(upload, /albumId: song\.albumId \|\| song\.album_id/);
 assert.match(upload, /artists: Array\.isArray\(song\.artists\)/);
-assert.match(upload, /sidecarCover \|\| song\.embeddedCover \|\| song\.cover/);
+assert.match(upload, /return localManualMatchedCover\(song\) \|\| song\.sidecarCover \|\| song\.embeddedCover\s*\|\| localMatchedOnlineCover\(song\) \|\| song\.cover/,
+  'cover fallback order: custom → manual match → sidecar → embedded → auto match → raw cover');
 assert.match(upload, /function localLibraryDetailHtml\(/);
 assert.match(upload, /data-local-detail-row/);
 assert.doesNotMatch(upload, /var songs = expanded \?/);
 assert.match(upload, /syncResolvedLocalSongReferences\(song\)/);
 assert.match(upload, /localLibrarySongs[\s\S]{0,260}localFolderPlaylists[\s\S]{0,260}playQueue/);
+assert.match(upload, /function localMatchedOnlineCover\(song\)/);
+assert.match(upload, /function localManualMatchedCover\(song\)[\s\S]{0,200}entry\.manual \? entry\.cover : ''/,
+  'a manual match must be distinguishable from an automatic one so it can outrank the embedded artwork');
+assert.match(upload, /return lib\.customCover \|\| localSongCoverFromFields\(lib\)/,
+  'the library copy must resolve covers through the same priority ladder');
+assert.match(upload, /if \(metadata\.cover && !song\.customCover\s*&& \(song\.manualMatched \|\| \(!song\.sidecarCover && !song\.embeddedCover\)\)\)/,
+  'manually matching an online song must be able to overwrite artwork embedded in the file');
 assert.match(upload, /function matchLocalFolderLyrics\(/);
 assert.match(upload, /function matchLocalSongLyricsWithRetry\(/);
 assert.match(upload, /function hasReusableLocalLyricMatch\(/);
+assert.match(upload, /function localMetadataVersionsMatch\([\s\S]{0,620}sourceVersion === metadataVersion/);
+assert.match(upload, /var sourceVersion = searchVersionSignature\(song && \(song\.name \|\| song\.title\)\);/,
+  'album must stay out of the version signature: it falls back to the folder path, so a directory named "DJ Mix" or "Live现场" would veto every online match under it');
+assert.match(upload, /var metadataVersion = searchVersionSignature\(metadata && \(metadata\.name \|\| metadata\.title\)\);/);
+assert.match(upload, /if \(!localMetadataVersionsMatch\(song, metadata\)\) return false;\s*if \(localFilenameTitleArtistMatch\(song, metadata\)\) return true;/,
+  'the filename fallback must sit after the version gate, or a Remix would satisfy an untagged original');
+assert.match(upload, /if \(localFilenameTitleArtistMatch\(song, candidate\)\) score \+= 160;/,
+  'a filename-style hit must weigh the same as a title+artist hit, or Remixes outrank the original');
+assert.match(upload, /function applyLocalOnlineMetadata\([\s\S]{0,260}!isCompatibleLocalOnlineMetadata\(song, metadata\)/,
+  'every online metadata write must reject stale or mismatched versions');
+assert.match(upload, /\(!song\.embeddedMetadataParsed \|\| !song\.embeddedMediaParsed\)/,
+  'cached text metadata must not suppress embedded cover and lyric parsing');
+assert.match(upload, /song\.embeddedMediaParsed \|\| \(song\.embeddedMetadataParsed && \(song\.embeddedCover \|\| song\.sidecarCover\)\)/,
+  'a file already checked for embedded media must not be parsed again');
+assert.match(upload, /inlineLyric\.length >= 8 && localLibraryCover\(song\)/);
+assert.match(upload, /if \(localLibraryCover\(song\)\) return \{ reused: true, source: 'inline' \}/);
+assert.match(upload, /resolveLocalOnlineMetadata\(song, null, \{ requireCover: true, throttle: true \}\)/);
+assert.match(upload, /options\.throttle && typeof waitForLocalLyricProvider === 'function'/);
+assert.match(upload, /!options\.requireCover \|\| saved\.cover/);
+assert.doesNotMatch(upload, /if \(inlineLyric\.length >= 8\) return true;/);
+assert.match(upload, /function localCoverSearchMissedRecently\([\s\S]{0,420}Date\.now\(\) - missedAt\) < LOCAL_COVER_SEARCH_MISS_TTL_MS/,
+  'a cover search that found nothing must not be retried on every batch run');
+assert.match(upload, /if \(localCoverSearchMissedRecently\(song\)\) return \{ reused: true, source: 'inline' \}/);
+assert.match(upload, /noteLocalCoverSearchMiss\(song\);\s*return \{ reused: true, source: 'inline' \}/,
+  'the miss must be recorded only after the online search actually came back empty');
+assert.match(upload, /inlineIsEnough && \(localLibraryCover\(song\) \|\| localCoverSearchMissedRecently\(song\)\)/,
+  'batch matching must skip songs whose cover search already failed recently');
+assert.match(upload, /coverSearchMissAt: Date\.now\(\)/);
+assert.match(upload, /var localMatchedCoverCache = typeof WeakMap === 'function'/,
+  'songCoverSrc calls localLibraryCover per visible card, so the metadata resolution must be memoised off-object');
+assert.match(upload, /cached\.epoch === localMetadataMapEpoch && cached\.onlineMetadata === song\.onlineMetadata/,
+  'the memo must invalidate itself whenever the metadata it derived from changes');
+assert.match(upload, /function saveLocalMetadataMap\(opts\) \{\s*if \(!opts \|\| !opts\.keepCoverCache\) localMetadataMapEpoch\+\+/);
+assert.match(upload, /saveLocalMetadataMap\(\{ keepCoverCache: true \}\)/,
+  'a cover-search miss changes no cover, so it must not invalidate every song\'s memo');
+assert.match(upload, /!options\.requireCover \|\| saved\.cover \|\| saved\.manualMatched === true/,
+  'a manual match with no cover must survive a requireCover sweep instead of being overwritten');
+assert.match(upload, /function localLibrarySongByLocation\([\s\S]{0,900}localLibraryLookupSource = songs/,
+  'the localKey/localPath fallback must use an index instead of rescanning the whole library per card');
+assert.match(upload, /var lib = localLibrarySongByLocation\(localKey, localPath\);/);
 assert.match(upload, /function readReusableLocalLyricCache\(/);
 assert.match(upload, /getLocalLyricsCache\(cacheKey\)/);
 assert.match(upload, /function localFolderHasUsableLyricPayload\(/);
@@ -79,7 +130,8 @@ assert.match(upload, /cached && cached\.ok && localFolderHasUsableLyricPayload\(
 assert.match(upload, /return \{ reused: true, source: 'cache', provider: provider/);
 assert.match(upload, /return \{ reused: false, source: 'remote', provider: provider/);
 assert.match(upload, /if \(result && result\.reused\) localFolderLyricMatchState\.skipped \+= 1/);
-assert.doesNotMatch(upload, /applyLocalOnlineMetadata\(song, metadata\);[\s\S]{0,100}syncResolvedLocalSongReferences\(song\);[\s\S]{0,50}return true;/);
+assert.doesNotMatch(upload, /syncResolvedLocalSongReferences\(song\);\s*return true;/,
+  'binding online metadata is not proof the lyrics downloaded — the worker must still verify the lyric cache');
 assert.match(upload, /function hasReusableLocalOnlineMetadata\(/);
 assert.match(upload, /function normalizeStoredLocalOnlineMetadata\(/);
 assert.match(upload, /var LOCAL_LYRIC_MATCH_PROVIDERS = \['netease', 'kugou', 'qq'\]/);
@@ -118,6 +170,7 @@ assert.match(indexCss, /\.local-library-name,\.local-library-sub\{[^}]*display:b
 assert.match(indexCss, /\.local-library-folder:hover \.folder-lyric-match-btn/);
 
 assert.match(coverLoading, /isInlineCoverSrc\(directUrl\)[\s\S]{0,120}applyCoverDataUrl\(directUrl, opts\)/);
+assert.match(providerFallback, /\[\|｜;；\]/);
 assert.match(desktopMain, /local-library-folders-v1\.json/);
 assert.match(desktopMain, /custom-covers-v1\.json/);
 ['tlyric', 'ytlrc', 'romalrc', 'yromalrc', 'klyric', 'qrc', 'roma', 'trans'].forEach((field) => {
@@ -125,10 +178,22 @@ assert.match(desktopMain, /custom-covers-v1\.json/);
 });
 assert.match(desktopMain, /item\.embeddedMediaParsed = true/);
 assert.match(customCoverMap, /function hydrateCustomCoverMapFromDisk\(/);
+assert.match(customCoverMap, /function clearCustomCoverForSong\(song\)/,
+  'clearing a local custom cover must remove the persisted mapping and all live song copies');
 assert.match(customCoverMap, /Object\.assign\(\{\}, result\.payload, customCoverMap \|\| \{\}\)/);
 assert.match(customCoverMap, /localLibrarySongs\) \? localLibrarySongs : \[\]\)\.forEach\(hydrateCustomCover\)/);
 assert.match(customCoverMap, /setCustomCovers\(customCoverMap \|\| \{\}\)/);
+assert.match(coverActions, /clearCustomCoverForSong\(song\)/);
+assert.match(coverActions, /var restoredCover = isLocalSong && typeof localLibraryCover === 'function'/);
+assert.match(coverActions, /var customCoverWins = typeof getCustomCoverForSong === 'function' && !!getCustomCoverForSong\(song\)/,
+  'a custom cover outranks any match, so reporting "已匹配歌词和封面" while it is set is a lie');
+assert.match(coverActions, /自定义封面仍在生效，需先取消才会换封面/);
+assert.match(coverActions, /renderMusicLibraryWallFromSources\(\)/,
+  'clearing a cover must redraw the local music wall');
 assert.match(playbackStart, /!song\.localUrl \|\| \(!song\.customCover && !song\.sidecarCover && !song\.embeddedCover && !song\.embeddedMediaParsed\)/);
+assert.match(playbackStart, /resolveLocalOnlineMetadata\(currentLocalSong, token\)\.then\(function \(metadata\)/);
+assert.match(playbackStart, /metadata && typeof syncResolvedLocalSongReferences === 'function'/);
+assert.match(playbackStart, /metadata && typeof renderMusicLibraryWallFromSources === 'function'/);
 assert.match(indexHtml, /id="playlist-detail-panel"/);
 assert.match(upload, /data-local-detail-current="1">定位当前歌曲/);
 assert.match(upload, /function locateCurrentLocalLibraryTrack\(/);
@@ -184,5 +249,46 @@ assert.match(lyrics, /fallback && fallback\.payload/);
 assert.match(lyrics, /var resolved = await resolveLocalOnlineLyricMatch\(song, window\.desktopWindow\)/);
 assert.doesNotMatch(lyrics.slice(lyrics.indexOf('async function fetchLocalSongLyric'), lyrics.indexOf('async function fetchLyric')), /resolveLocalOnlineMetadata\(song, token\)/);
 assert.match(read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), /var providers = \[\{ key: 'netease'.*\{ key: 'kugou'.*\{ key: 'qq'/s);
+
+// 无标签本地文件的匹配判定全在语义上，正则断言证明不了它能工作——直接跑一遍。
+function grabFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notStrictEqual(start, -1, `missing function ${name}`);
+  const end = source.indexOf('\n}', start);
+  assert.notStrictEqual(end, -1, `unterminated function ${name}`);
+  return source.slice(start, end + 2);
+}
+
+function testUntaggedLocalFileMatching() {
+  const sandbox = {};
+  vm.runInNewContext([
+    grabFunction(providerFallback, 'normalizeMatchText'),
+    grabFunction(providerFallback, 'artistNameParts'),
+    grabFunction(upload, 'localFilenameMatchNorm'),
+    grabFunction(upload, 'localFilenameTitleArtistMatch'),
+  ].join('\n'), sandbox, { filename: 'local-filename-match' });
+  const match = sandbox.localFilenameTitleArtistMatch;
+  const untagged = name => ({ name, artist: '本地文件' });
+
+  assert.strictEqual(match(untagged('陈绮贞 - 太聪明'), { name: '太聪明', artist: '陈绮贞' }), true,
+    '"歌手 - 歌名" must match the online original');
+  assert.strictEqual(match(untagged('用背脊唱情歌 - Gareth.T'), { name: '用背脊唱情歌', artist: 'Gareth.T' }), true,
+    'the reverse "歌名 - 歌手" order must match too');
+  assert.strictEqual(match(untagged('孙盛希 - 少一点天分'), { name: '少一点天分', artist: '孙盛希' }), true);
+  assert.strictEqual(match(untagged("Usher、Pitbull - DJ Got Us Fallin' In Love"),
+    { name: "DJ Got Us Fallin' In Love", artist: 'Usher&Pitbull' }), true,
+    'every credited artist counts toward covering the filename');
+
+  assert.strictEqual(match(untagged('陈绮贞 - 太聪明'), { name: '聪明', artist: '陈绮贞' }), false,
+    'a substring title leaves "太" behind and must not pass');
+  assert.strictEqual(match(untagged('陈绮贞 - 太聪明'), { name: '太聪明（Shock23 Remix）', artist: 'Shock23' }), false,
+    'a remixer who is not named in the filename must not match');
+  assert.strictEqual(match(untagged('陈绮贞 - 太聪明'), { name: '太聪明', artist: '' }), false,
+    'a candidate with no artist cannot cover the filename');
+  assert.strictEqual(match({ name: '太聪明', artist: '陈绮贞' }, { name: '太聪明', artist: '陈绮贞' }), false,
+    'a file that already carries embedded tags must keep using the strict judgement');
+}
+
+testUntaggedLocalFileMatching();
 
 console.log('OK local-library-integration');

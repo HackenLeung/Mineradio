@@ -282,7 +282,7 @@ function artistNameParts(song) {
     song.artists.forEach(function (a) { if (a && a.name) parts.push(a.name); });
   }
   if (song && song.artist) {
-    String(song.artist).split(/\s*\/\s*|\s*,\s*|、|&| feat\.? | ft\.? /i).forEach(function (name) {
+    String(song.artist).split(/\s*\/\s*|\s*,\s*|、|[|｜;；]|&| feat\.? | ft\.? /i).forEach(function (name) {
       if (name && name.trim()) parts.push(name.trim());
     });
   }

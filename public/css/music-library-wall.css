@@ -214,7 +214,6 @@ body.music-library-wall-active #bottom-bar {
 .music-library-wall-grid {
   flex: 0 0 auto;
   width: 100%;
-  margin-top: auto;
   margin-bottom: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));

@@ -517,6 +517,26 @@ function testStaticRecoveryWiring() {
   assert(!/sourceFallbackRecovery/.test(nextTrackBlock), 'natural ended next starts a fresh playback root');
 }
 
+function testTagSeparatedArtistsMatchOnlineMetadata() {
+  const sandbox = {
+    normalizeMatchText(text) {
+      return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    },
+  };
+  vm.runInNewContext([
+    extractFunction(fallbackText, 'artistNameParts'),
+    extractFunction(fallbackText, 'isSameTitleArtist'),
+  ].join('\n'), sandbox, { filename: fallbackPath });
+  assert.strictEqual(sandbox.isSameTitleArtist(
+    { name: "Party Ain't Over", artist: 'Pitbull|Usher|Afrojack' },
+    { name: "Party Ain't Over", artist: 'Pitbull / Usher / Afrojack' }
+  ), true, 'pipe-separated FLAC artist tags must match online multi-artist metadata');
+  assert.strictEqual(sandbox.isSameTitleArtist(
+    { name: 'Timber', artist: 'Pitbull;Kesha' },
+    { name: 'Timber', artist: 'Pitbull / Kesha' }
+  ), true, 'semicolon-separated FLAC artist tags must match online multi-artist metadata');
+}
+
 async function run() {
   await testFiniteQueueRecovery();
   await testDuplicateSongProviderDeduplication();
@@ -524,6 +544,7 @@ async function run() {
   await testDeadlineAndManualSupersession();
   testPendingResumeSurvivesGraphRecovery();
   testNetworkStarvationRetainsSourceAndResumePosition();
+  testTagSeparatedArtistsMatchOnlineMetadata();
   testStaticRecoveryWiring();
   console.log('OK playback-source-fallback-transaction');
 }

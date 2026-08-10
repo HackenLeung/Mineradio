@@ -47,7 +47,12 @@ assert.match(wall, /preserveHomeState: false/);
 assert.match(wall, /musicLibraryWallPlayTrack\(0\)/);
 assert.match(wall, /event\.key !== 'Escape'/);
 assert.match(wall, /requestNextPlaylistCatalogPage\('music-library-wall'\)/);
-assert.match(wall, /hasMore: item\.kind === 'playlist',[\s\S]{0,220}loading: false/,
+assert.match(wall, /var folderIndexes = item\.kind === 'local-folder'[\s\S]{0,240}return folderIndex; \}\)/,
+  'opening a local wall must hydrate embedded covers without waiting for playback');
+assert.match(wall, /\.then\(function \(\) \{ return hydrateLocalFolderPreview\(folderIndex\); \}\)\s*\n\s*\.then\(redrawHydratedWall\)/,
+  'each folder must redraw as it finishes, so "all local" does not stay blank until the last folder is scanned');
+assert.match(wall, /var redrawHydratedWall = function \(\)[\s\S]{0,260}detail\.scrollKey === detailScrollKey[\s\S]{0,120}renderMusicLibraryWallFromSources\(\)/,
+  'a redraw from a stale hydration pass must not overwrite whichever library is open now');assert.match(wall, /hasMore: item\.kind === 'playlist',[\s\S]{0,220}loading: false/,
   'online L2 must start idle so the initial page request is not rejected as a duplicate');
 assert.match(wall, /function musicLibraryWallSyncShelfTheme\([\s\S]{0,520}shelfAccentHex\([\s\S]{0,240}--mlw-shelf-accent-rgb/,
   'the cover wall must inherit the existing 3D shelf accent');
@@ -71,8 +76,10 @@ assert.match(css, /\.music-library-wall-heading\s*\{\s*display:\s*none\s*\}/);
 assert.match(css, /body\.music-library-wall-active #top-right\s*\{[\s\S]{0,180}z-index:\s*26[\s\S]{0,160}pointer-events:\s*auto/,
   'the native Home and account controls must remain available above the stage overlay');
 assert.match(css, /\.music-library-wall-content\s*\{[\s\S]{0,240}display:\s*flex[\s\S]{0,100}flex-direction:\s*column/);
-assert.match(css, /\.music-library-wall-grid\s*\{[\s\S]{0,180}margin-top:\s*auto[\s\S]{0,80}margin-bottom:\s*auto/,
-  'a short cover wall should sit in the middle of the stage');
+assert.doesNotMatch(css, /\.music-library-wall-grid\s*\{[^}]*margin-top:\s*auto/,
+  'short cover walls must stay aligned with the same top edge as multi-row walls');
+assert.match(css, /\.music-library-wall-grid\s*\{[^}]*margin-bottom:\s*auto/,
+  'unused vertical space should remain below a short cover wall');
 assert.match(css, /\.music-library-wall-card:hover,[\s\S]{0,320}translateY\(-10px\)[\s\S]{0,80}scale\(1\.055\)/);
 assert.match(css, /\.music-library-wall-card\s*\{[\s\S]{0,620}perspective:\s*820px/,
   'each cover owns its perspective so edge cards do not get pushed outside the viewport');
