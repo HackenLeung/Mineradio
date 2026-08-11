@@ -184,7 +184,8 @@ function restoreLastPlaybackSnapshot() {
   playQueue = restoredQueue.queue;
   currentIdx = restoredQueue.index;
   currentLocalSong = isLocal ? playQueue[currentIdx] : null;
-  if (snapshot.playMode) playMode = snapshot.playMode;
+  if (typeof applyRestoredPlayMode === 'function') applyRestoredPlayMode(snapshot.playMode);
+  else if (snapshot.playMode) playMode = snapshot.playMode;
   var shownSong = currentCoverSong() || current;
   if (shownSong) {
     updateControlTrackInfo(shownSong);
