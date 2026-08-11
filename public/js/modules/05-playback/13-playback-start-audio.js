@@ -267,8 +267,15 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
 
 async function playQueueAt(idx, opts) {
   opts = opts || {};
-  if (typeof beginSourceFallbackPlaybackInvocation === 'function' && !beginSourceFallbackPlaybackInvocation(opts)) return false;
   if (idx < 0 || idx >= playQueue.length) return false;
+  if (typeof coverDeliveryPreparePlayback === 'function' && !coverDeliveryPreparePlayback(opts)) return false;
+  // 投递 token 只授权这一次根播放调用。后续音源回退、质量重试等内部重入
+  // 应视作正常播放，不能在投递层已经释放后被旧 token 拦住。
+  if (opts.coverDeliveryToken != null) {
+    opts = Object.assign({}, opts);
+    delete opts.coverDeliveryToken;
+  }
+  if (typeof beginSourceFallbackPlaybackInvocation === 'function' && !beginSourceFallbackPlaybackInvocation(opts)) return false;
   if (typeof ensurePlaylistQueueHydratedAhead === 'function') ensurePlaylistQueueHydratedAhead(idx);
   var transitionHandoff = !!(opts.smartTransitionHandoff && opts.preloadedAudio && opts.preloadedData);
   var transitionMixed = !!(transitionHandoff && opts.smartTransitionMixed !== false);

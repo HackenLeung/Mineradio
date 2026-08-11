@@ -301,7 +301,10 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
     hideLoading();
     if (autoplay) {
       try {
-        await playQueueAt(currentIdx, { preserveHomeState: !!opts.preserveHomeState });
+        await playQueueAt(currentIdx, {
+          preserveHomeState: !!opts.preserveHomeState,
+          coverDeliveryToken: opts.coverDeliveryToken
+        });
         if (playlistLoadRequestState.token !== loadRequestToken) return false;
       } catch (playErr) {
         if (playlistLoadRequestState.token !== loadRequestToken) return false;

@@ -570,6 +570,7 @@ function animate() {
 
   var coverLayerPerfStart = performance.now();
   updateRipples(dt);
+  if (typeof tickCoverDeliveryParticles === 'function') tickCoverDeliveryParticles(dt);
   updateFloatLayer(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.cover-layers', coverLayerPerfStart);
   var shelfPerfStart = performance.now();

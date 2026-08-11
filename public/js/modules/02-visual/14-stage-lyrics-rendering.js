@@ -2083,7 +2083,11 @@ function updateStageLyrics3D(dt) {
   if (skullMouthLyrics) lockFit = Math.min(lockFit, 1.12);
   if (!isFinite(stageLyrics.lockFitScale)) stageLyrics.lockFitScale = 1;
   stageLyrics.lockFitScale += (lockFit - stageLyrics.lockFitScale) * (lockFit < stageLyrics.lockFitScale ? 0.18 : 0.10);
-  stageLyrics.group.scale.setScalar(layoutScale * stageLyrics.lockFitScale);
+  // 封面投递只提供一个短暂的外层缩放乘数。歌词自己的相机锁定、
+  // lockFitScale 和布局参数仍由本模块单独计算，避免 GSAP 每帧抢写 group.scale。
+  var deliveryScale = stageLyrics.deliveryScale == null ? 1 : Number(stageLyrics.deliveryScale);
+  if (!isFinite(deliveryScale)) deliveryScale = 1;
+  stageLyrics.group.scale.setScalar(layoutScale * stageLyrics.lockFitScale * clampRange(deliveryScale, 0.72, 1.16));
   if (skullMouthLyrics) {
     stageLyrics.snapCameraLockFrames = 0;
     skullParticleGroup.updateMatrixWorld(true);

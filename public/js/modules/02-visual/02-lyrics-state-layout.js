@@ -28,6 +28,9 @@ var stageLyrics = {
   starRiverWidth: 4.2,
   starRiverHeight: 0.58,
   lockFitScale: 1,
+  // 封面投递完成时由播放动画模块驱动；updateStageLyrics3D 每帧
+  // 会把它乘入真实布局，因此不会和歌词自身的相机锁定互相抢写 scale。
+  deliveryScale: 1,
   snapCameraLockFrames: 0,
   transitionLineStep: 0,
   currentDisplayKey: '',
