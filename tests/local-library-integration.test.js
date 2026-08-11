@@ -96,12 +96,16 @@ assert.match(upload, /\(!song\.embeddedMetadataParsed \|\| !song\.embeddedMediaP
   'cached text metadata must not suppress embedded cover and lyric parsing');
 assert.match(upload, /song\.embeddedMediaParsed \|\| \(song\.embeddedMetadataParsed && \(song\.embeddedCover \|\| song\.sidecarCover\)\)/,
   'a file already checked for embedded media must not be parsed again');
-assert.match(upload, /inlineLyric\.length >= 8 && localLibraryCover\(song\)/);
+// 内嵌歌词够长也必须同时有封面才算可复用。源码把长度判断抽成了 inlineIsEnough，
+// 这里同时接受两种写法，避免下次重命名又把测试拖垮。
+assert.match(upload, /(inlineIsEnough|inlineLyric\.length >= 8) && localLibraryCover\(song\)/);
 assert.match(upload, /if \(localLibraryCover\(song\)\) return \{ reused: true, source: 'inline' \}/);
 assert.match(upload, /resolveLocalOnlineMetadata\(song, null, \{ requireCover: true, throttle: true \}\)/);
 assert.match(upload, /options\.throttle && typeof waitForLocalLyricProvider === 'function'/);
 assert.match(upload, /!options\.requireCover \|\| saved\.cover/);
-assert.doesNotMatch(upload, /if \(inlineLyric\.length >= 8\) return true;/);
+// 光有内嵌歌词不能直接判定可复用（没封面还得继续找），所以不允许出现裸 return true。
+// 同样兼容改名后的写法，否则重命名一次这条守卫就静默失效了。
+assert.doesNotMatch(upload, /if \((inlineIsEnough|inlineLyric\.length >= 8)\) return true;/);
 assert.match(upload, /function localCoverSearchMissedRecently\([\s\S]{0,420}Date\.now\(\) - missedAt\) < LOCAL_COVER_SEARCH_MISS_TTL_MS/,
   'a cover search that found nothing must not be retried on every batch run');
 assert.match(upload, /if \(localCoverSearchMissedRecently\(song\)\) return \{ reused: true, source: 'inline' \}/);

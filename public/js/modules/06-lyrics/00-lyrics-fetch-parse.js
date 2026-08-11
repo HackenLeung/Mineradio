@@ -9,6 +9,216 @@ var lyricQueuePrefetchTimer = 0;
 var lyricQueuePrefetchToken = 0;
 var lyricQueuePrefetchBusy = false;
 var lyricQueuePrefetchKeys = {};
+var NETEASE_CLOUD_LYRIC_REMATCH_STORE_KEY = 'mineradio-netease-cloud-lyric-rematches-v1';
+var neteaseCloudLyricRematchMap = null;
+var CLOUD_LYRIC_REMATCH_ORIGINAL_COVER_FIELD = 'cloudLyricOriginalCover';
+
+function isNeteaseCloudSong(song) {
+  return !!(song && (song.cloudSong || song.cloudSource === 'netease-cloud'));
+}
+
+// 网易的 al.pic / pic 是纯数字图片 ID，不是地址；酷狗的 pic 才是真地址。
+// 数字 ID 落进 song.cover 后会被当相对路径请求成 localhost:3000/1099511689…（404），
+// 而且会写进 localStorage 长期生效。这里按「像不像地址」筛，不按字段名筛。
+function isCloudLyricRematchCoverUrl(value) {
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return false;
+  if (/^data:image\//i.test(text) || /^blob:/i.test(text) || /^https?:\/\//i.test(text)) return true;
+  return text.indexOf('/') >= 0 || text.indexOf('\\') >= 0;
+}
+function cloudLyricRematchCoverFromCandidate(candidate) {
+  candidate = candidate || {};
+  var album = candidate.album && typeof candidate.album === 'object' ? candidate.album : {};
+  var values = [
+    candidate.cover,
+    candidate.picUrl,
+    candidate.pic_url,
+    candidate.albumCover,
+    candidate.album_cover,
+    candidate.coverUrl,
+    candidate.cover_url,
+    candidate.albumPicUrl,
+    candidate.album_pic_url,
+    album.picUrl,
+    album.pic_url,
+    album.cover,
+    album.coverUrl,
+    album.pic
+  ];
+  for (var i = 0; i < values.length; i++) {
+    var value = String(values[i] || '').trim();
+    if (isCloudLyricRematchCoverUrl(value)) return value;
+  }
+  return '';
+}
+
+function normalizeNeteaseCloudLyricRematchCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+  var rawProvider = String(candidate.provider || candidate.source || candidate.platform || candidate.type || '').toLowerCase();
+  var provider = typeof normalizePlaybackProvider === 'function'
+    ? normalizePlaybackProvider(rawProvider)
+    : (/^(qq|kugou|netease)$/.test(rawProvider) ? rawProvider : 'netease');
+  var rematchCover = cloudLyricRematchCoverFromCandidate(candidate);
+  var normalized = {
+    provider: provider,
+    source: provider,
+    type: provider === 'kugou' ? 'kugou' : (provider === 'qq' ? 'qq' : 'song'),
+    id: String(candidate.id || candidate.trackId || candidate.songId || ''),
+    mid: String(candidate.mid || candidate.songmid || ''),
+    songmid: String(candidate.songmid || candidate.mid || ''),
+    hash: String(candidate.hash || candidate.fileHash || candidate.audioHash || ''),
+    albumAudioId: String(candidate.albumAudioId || candidate.album_audio_id || candidate.mixSongId || candidate.mixsongid || ''),
+    album_audio_id: String(candidate.album_audio_id || candidate.albumAudioId || candidate.mixSongId || candidate.mixsongid || ''),
+    mixSongId: String(candidate.mixSongId || candidate.mixsongid || candidate.albumAudioId || candidate.album_audio_id || ''),
+    duration: Number(candidate.duration || candidate.durationMs || candidate.dt) || 0,
+    name: String(candidate.name || candidate.title || ''),
+    artist: String(candidate.artist || ''),
+    album: String(candidate.album || ''),
+    // 归一化是所有来源（localStorage 老数据、内存对象、搜索候选）的唯一入口，
+    // 原封面在这里就筛掉坏值，后面读的地方不必各自设防。
+    originalCover: isCloudLyricRematchCoverUrl(candidate.originalCover || candidate.original_cover)
+      ? String(candidate.originalCover || candidate.original_cover).trim()
+      : '',
+    cover: rematchCover,
+    picUrl: String(candidate.picUrl || candidate.pic_url || ''),
+    albumCover: String(candidate.albumCover || candidate.album_cover || ''),
+    coverUrl: String(candidate.coverUrl || candidate.cover_url || ''),
+    albumPicUrl: String(candidate.albumPicUrl || candidate.album_pic_url || ''),
+  };
+  var address = provider === 'qq'
+    ? (normalized.mid || normalized.songmid || normalized.id)
+    : (provider === 'kugou' ? (normalized.hash || normalized.id || normalized.albumAudioId) : normalized.id);
+  return address ? normalized : null;
+}
+
+function neteaseCloudLyricRematchSongKey(song) {
+  if (!isNeteaseCloudSong(song)) return '';
+  var id = String(song.cloudId || song.id || '').trim();
+  return id ? 'netease-cloud:' + id : '';
+}
+
+function readNeteaseCloudLyricRematchMap() {
+  if (neteaseCloudLyricRematchMap) return neteaseCloudLyricRematchMap;
+  try {
+    var raw = JSON.parse(localStorage.getItem(NETEASE_CLOUD_LYRIC_REMATCH_STORE_KEY) || '{}');
+    neteaseCloudLyricRematchMap = raw && raw.version === 1 && raw.items ? raw.items : raw;
+  } catch (e) {
+    neteaseCloudLyricRematchMap = {};
+  }
+  return neteaseCloudLyricRematchMap || (neteaseCloudLyricRematchMap = {});
+}
+
+function cloudLyricRematchIdentity(candidate) {
+  candidate = normalizeNeteaseCloudLyricRematchCandidate(candidate);
+  if (!candidate) return '';
+  var id = candidate.provider === 'qq'
+    ? (candidate.mid || candidate.songmid || candidate.id)
+    : (candidate.provider === 'kugou' ? (candidate.hash || candidate.id || candidate.albumAudioId) : candidate.id);
+  return candidate.provider + ':' + id;
+}
+
+function cloudLyricRematchForSong(song) {
+  if (!isNeteaseCloudSong(song)) return null;
+  var key = neteaseCloudLyricRematchSongKey(song);
+  var stored = key
+    ? normalizeNeteaseCloudLyricRematchCandidate(readNeteaseCloudLyricRematchMap()[key])
+    : null;
+  var inline = normalizeNeteaseCloudLyricRematchCandidate(song.cloudLyricRematch);
+  if (inline && stored) {
+    if (cloudLyricRematchIdentity(inline) !== cloudLyricRematchIdentity(stored)) return stored;
+    if (!cloudLyricRematchCoverFromCandidate(inline)) {
+      inline = Object.assign({}, inline, { cover: cloudLyricRematchCoverFromCandidate(stored) });
+    }
+    if (!String(inline.originalCover || '').trim()) {
+      inline = Object.assign({}, inline, { originalCover: String(stored.originalCover || '').trim() });
+    }
+    return inline;
+  }
+  return inline || stored;
+}
+
+function cloudLyricRematchCoverForSong(song) {
+  return cloudLyricRematchCoverFromCandidate(cloudLyricRematchForSong(song));
+}
+
+function cloudLyricRematchOriginalCover(target, previous) {
+  if (!target) return '';
+  if (!Object.prototype.hasOwnProperty.call(target, CLOUD_LYRIC_REMATCH_ORIGINAL_COVER_FIELD)) {
+    previous = previous || cloudLyricRematchForSong(target);
+    var previousOriginal = previous && isCloudLyricRematchCoverUrl(previous.originalCover)
+      ? String(previous.originalCover).trim()
+      : '';
+    // 已经被坏值污染过的 song.cover 不能当「原封面」存下来，否则恢复等于恢复成 404。
+    var currentCover = cloudLyricRematchCoverFromCandidate({
+      cover: target.cover,
+      picUrl: target.picUrl,
+      albumCover: target.albumCover,
+      coverUrl: target.coverUrl,
+      albumPicUrl: target.albumPicUrl
+    });
+    var previousMatched = cloudLyricRematchCoverFromCandidate(previous);
+    target[CLOUD_LYRIC_REMATCH_ORIGINAL_COVER_FIELD] = String(
+      previousOriginal || (previousMatched && currentCover === previousMatched ? '' : currentCover)
+    ).trim();
+  }
+  return String(target[CLOUD_LYRIC_REMATCH_ORIGINAL_COVER_FIELD] || '').trim();
+}
+
+function cloudLyricRematchOriginalCoverForSong(song) {
+  var rematch = cloudLyricRematchForSong(song);
+  // 老数据里可能已经存了坏值当原封面，读的时候也要筛一遍。
+  if (rematch && isCloudLyricRematchCoverUrl(rematch.originalCover)) return String(rematch.originalCover).trim();
+  return cloudLyricRematchOriginalCover(song, rematch);
+}
+
+function syncCloudLyricRematchCover(song, candidate) {
+  if (!isNeteaseCloudSong(song)) return { cover: '', targets: [] };
+  var normalized = normalizeNeteaseCloudLyricRematchCandidate(candidate);
+  var key = neteaseCloudLyricRematchSongKey(song);
+  var cover = cloudLyricRematchCoverFromCandidate(normalized);
+  var targets = [];
+  function addTarget(target) {
+    if (!target || neteaseCloudLyricRematchSongKey(target) !== key || targets.indexOf(target) >= 0) return;
+    targets.push(target);
+  }
+  addTarget(song);
+  if (typeof playQueue !== 'undefined' && Array.isArray(playQueue)) playQueue.forEach(addTarget);
+  if (typeof currentLocalSong !== 'undefined') addTarget(currentLocalSong);
+  if (typeof musicLibraryWallState !== 'undefined' && musicLibraryWallState && musicLibraryWallState.detail) {
+    var wallTracks = musicLibraryWallState.detail.tracks;
+    if (Array.isArray(wallTracks)) wallTracks.forEach(addTarget);
+  }
+  targets.forEach(function (target) {
+    var originalCover = cloudLyricRematchOriginalCover(target);
+    if (!originalCover && normalized && normalized.originalCover) originalCover = normalized.originalCover;
+    if (!Object.prototype.hasOwnProperty.call(normalized, 'originalCover') || !normalized.originalCover) {
+      normalized.originalCover = originalCover;
+    }
+    target[CLOUD_LYRIC_REMATCH_ORIGINAL_COVER_FIELD] = originalCover;
+    target.cloudLyricRematch = normalized;
+    var hasCustomCover = typeof getCustomCoverForSong === 'function' && !!getCustomCoverForSong(target);
+    if (!hasCustomCover) target.cover = cover || originalCover;
+  });
+  return { cover: cover, normalized: normalized, targets: targets };
+}
+
+function setCloudLyricRematch(song, candidate) {
+  var key = neteaseCloudLyricRematchSongKey(song);
+  var normalized = normalizeNeteaseCloudLyricRematchCandidate(candidate);
+  if (!key || !normalized) return false;
+  var previous = cloudLyricRematchForSong(song);
+  var originalCover = cloudLyricRematchOriginalCover(song, previous);
+  if (!normalized.originalCover) normalized.originalCover = originalCover;
+  song.cloudLyricRematch = normalized;
+  var map = readNeteaseCloudLyricRematchMap();
+  map[key] = normalized;
+  try {
+    localStorage.setItem(NETEASE_CLOUD_LYRIC_REMATCH_STORE_KEY, JSON.stringify({ version: 1, items: map }));
+  } catch (e) { }
+  syncCloudLyricRematchCover(song, normalized);
+  return true;
+}
+
 function lyricTranslationTextFromAliases(source) {
   source = source || {};
   return source.tlyric || source.trans || source.translatedLyric || source.translation || source.translated_lyric || '';
@@ -16,7 +226,9 @@ function lyricTranslationTextFromAliases(source) {
 function lyricEndpointForSong(songOrId) {
   var song = (songOrId && typeof songOrId === 'object') ? songOrId : null;
   var provider = song ? songProviderKey(song) : 'netease';
-  if (song && (song.cloudSong || song.cloudSource === 'netease-cloud')) {
+  if (isNeteaseCloudSong(song)) {
+    var rematch = cloudLyricRematchForSong(song);
+    if (rematch) return lyricEndpointForSong(rematch);
     return '/api/cloud/lyric?id=' + encodeURIComponent(song.id || '');
   }
   if (provider === 'qq') {
@@ -38,7 +250,9 @@ function persistentLyricCacheKey(song) {
   var provider = typeof songProviderKey === 'function' ? songProviderKey(song) : (song.source || song.provider || 'netease');
   var id = song.id || song.mid || song.songmid || song.hash || '';
   var artist = song.artist || song.singer || song.artists || '';
-  return ['lyrics-v1', provider, id, song.name || song.title || '', artist].join('|');
+  var rematch = isNeteaseCloudSong(song) ? cloudLyricRematchIdentity(cloudLyricRematchForSong(song)) : '';
+  var key = ['lyrics-v1', provider, id, song.name || song.title || '', artist].join('|');
+  return rematch ? key + '|' + rematch : key;
 }
 
 function readPersistentLyricCache(song) {
@@ -115,6 +329,8 @@ async function runQueueLyricPrefetch(fromIndex, token) {
 function applyFetchedLyricResponse(song, token, response, options) {
   options = options || {};
   if (token !== trackSwitchToken) return null;
+  if (options.cloudRematchIdentity != null && isNeteaseCloudSong(song)
+    && options.cloudRematchIdentity !== cloudLyricRematchIdentity(cloudLyricRematchForSong(song))) return null;
   var mergedResponse = mergeInlineLyricResponseForSong(song, response || {});
   cancelPendingTrackFallbackLyrics();
   var state = parseLyricResponseToOriginalState(song, mergedResponse);
@@ -411,25 +627,34 @@ async function fetchLocalSongLyric(song, token) {
 async function fetchLyric(songOrId, token, attempt) {
   attempt = Math.max(0, Number(attempt) || 0);
   var song;
+  var cloudRematchIdentityAtStart = '';
   try {
     song = (songOrId && typeof songOrId === 'object') ? songOrId : null;
+    cloudRematchIdentityAtStart = isNeteaseCloudSong(song)
+      ? cloudLyricRematchIdentity(cloudLyricRematchForSong(song))
+      : '';
     if (song && (song.type === 'local' || song.source === 'local' || song.localUrl)) {
       await fetchLocalSongLyric(song, token);
       return;
     }
     var cachedResponse = song ? await readPersistentLyricCache(song) : null;
     if (cachedResponse) {
-      var cachedState = applyFetchedLyricResponse(song, token, cachedResponse, { persist: false });
+      var cachedState = applyFetchedLyricResponse(song, token, cachedResponse, {
+        persist: false,
+        cloudRematchIdentity: cloudRematchIdentityAtStart
+      });
       if (cachedState && cachedState.usableLyric) {
         refreshPersistentLyricCache(song);
         return;
       }
     }
     var r = await apiJson(lyricEndpointForSong(song || songOrId));
-    var state = applyFetchedLyricResponse(song, token, r);
+    var state = applyFetchedLyricResponse(song, token, r, { cloudRematchIdentity: cloudRematchIdentityAtStart });
     if (!state) return;
     if (!state.usableLyric && shouldRetryStartupLyricFetch(song, token, attempt)) scheduleStartupLyricFetchRetry(song, token, attempt);
   } catch (e) {
+    if (isNeteaseCloudSong(song)
+      && cloudRematchIdentityAtStart !== cloudLyricRematchIdentity(cloudLyricRematchForSong(song))) return;
     if (token !== trackSwitchToken) return;
     cancelPendingTrackFallbackLyrics();
     var fallbackLines = withLyricFallbackForSong(song || currentLyricSong(), []);

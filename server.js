@@ -2562,6 +2562,12 @@ function normalizeStallLogEntry(body) {
     // clock-resumed 专有：冻结持续时长与恢复后位置是否跳变。
     frozenForMs: Number.isFinite(Number(body && body.frozenForMs)) ? Math.round(Number(body.frozenForMs)) : null,
     resumedFromSameTime: body && typeof body.resumedFromSameTime === 'boolean' ? body.resumedFromSameTime : null,
+    // prefetch-throughput 专有：预读实际聚合吞吐。和 clock-frozen 同一条时间线，
+    // 用来判定 CDN 是按连接还是按 IP 限速——并行预读能不能成立全看这个。
+    throughputKbps: Number.isFinite(Number(body && body.throughputKbps)) ? Math.round(Number(body.throughputKbps)) : null,
+    sampleBytes: Number.isFinite(Number(body && body.sampleBytes)) ? Math.round(Number(body.sampleBytes)) : null,
+    sampleMs: Number.isFinite(Number(body && body.sampleMs)) ? Math.round(Number(body.sampleMs)) : null,
+    connections: Number.isFinite(Number(body && body.connections)) ? Math.round(Number(body.connections)) : null,
     songKey: String((body && body.songKey) || '').slice(0, 120),
     title: String((body && body.title) || '').slice(0, 120),
     src: src.slice(0, 120),
@@ -2605,6 +2611,10 @@ function formatStallLogLine(entry) {
     `waiting=${entry.lastWaitingAgoMs == null ? 'never' : entry.lastWaitingAgoMs + 'ms'}`,
   ];
   if (entry.frozenForMs != null) parts.push(`frozenFor=${entry.frozenForMs}ms`);
+  // 吞吐行没有 t/dur/rs 这些播放器字段，上面那串会全是 ?；这里补上真正有内容的。
+  if (entry.throughputKbps != null) parts.push(`throughput=${entry.throughputKbps}KB/s`);
+  if (entry.connections != null) parts.push(`conns=${entry.connections}`);
+  if (entry.sampleMs != null) parts.push(`over=${entry.sampleMs}ms`);
   if (entry.resumedFromSameTime === false) parts.push('position-jumped');
   if (entry.smartTransition) parts.push('smart-transition');
   if (entry.paused) parts.push('paused');
@@ -4579,11 +4589,45 @@ async function qqGetJSON(targetUrl, params, opts) {
   return parseJSONText(text);
 }
 
-const AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES = 1024 * 1024;
+const AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES = 256 * 1024;
+// 1 MiB → 256 KiB。理由不是「块小就不卡」，而是这里是攒满整块再发（下面靠完整块
+// 才能重试）：块越大，首字节就越晚。按当时实测的 53 KB/s，1 MiB 要等 19 秒才出声，
+// 256 KiB 约 4.8 秒。稳态连续播放靠下面的并行预读，不靠块大小。
+// 一块 256 KiB 对无损（约 880 kbps）≈ 2.4 秒音频。
+//
+// 补记：并行预读上线后聚合吞吐实测 160~260 KB/s，那个 53 KB/s 是串行链路
+// 自身造成的（下一块要等上一块发完才开始），不是上游带宽上限。
+// 预读深度按「字节预算」推导，不写死块数：块大小是可调参数，写死块数会让
+// 两者一改就脱钩（预算不变，连接数却翻倍）。
+const AUDIO_PROXY_READ_AHEAD_BYTES = 2 * 1024 * 1024;
+// 连接数上限单独钉住：万一块大小调小，预算除下来会开出几十条连接。
+const AUDIO_PROXY_READ_AHEAD_MAX_CHUNKS = 8;
+const AUDIO_PROXY_READ_AHEAD_CHUNKS = Math.max(1, Math.min(
+  AUDIO_PROXY_READ_AHEAD_MAX_CHUNKS,
+  Math.floor(AUDIO_PROXY_READ_AHEAD_BYTES / AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES),
+));
+// 已实测（stall.jsonl，2026-08-11 15:20 之后）：稳态聚合 160~260 KB/s，
+// 换轨瞬间冲到 400~1000 KB/s，远高于无损所需的约 110 KB/s。
+// 结论一：CDN 不是按 IP 限速，并行预读有效。
+// 结论二：吞吐已不是瓶颈，再加深度是浪费连接——所以深度停在 8，别再往上调。
+//
+// 注意「稳态 conns=2~3」不是深度没生效，而是窗口滑到前面去了：8 条只在换轨
+// （缓存全空）时才同时打满，此时对应的正是那几条 400~1000 KB/s 的采样。
+//
+// 同期 t>1 的中途冻结从 17 次降到 0 次，这个改动的目标已经达成。
+// 剩下的 clock-frozen 全部是 t=0 的起播卡顿，与吞吐无关（见下方 t=0 说明）。
+const AUDIO_PROXY_THROUGHPUT_SAMPLE_MS = 10000;
+// 只在速率有实质变化时才落盘。stall.jsonl 只保留最后 500 行（STALL_LOG_MAX_LINES），
+// 而每 10 秒写一行 = 每小时 360 行：稳态播放不到一小时半就能把 clock-frozen 全挤掉，
+// 等于为了加一个诊断，毁掉这个文件本来的用途。参照冻结观测的做法（同一次冻结只报
+// 一条），平稳时保持安静，劣化和恢复才出声。
+const AUDIO_PROXY_THROUGHPUT_REPORT_DELTA = 0.25;
+const audioProxyThroughputSample = { bytes: 0, since: 0, reportedKbps: -1 };
 // A stalled CDN Range must give way to a retry before the renderer's media
 // clock budget expires. The completed chunk is cached below so a retry or an
 // Audio element replacement does not discard a successful upstream fetch.
-const AUDIO_PROXY_OPEN_TIMEOUT_MS = 3200;
+const AUDIO_PROXY_OPEN_TIMEOUT_MS = 8000;
+// 首字节超时从 3.2s 提到 8s：原值对慢 CDN 太紧，一次重试约 9.6s 反而比直接等更慢。
 const AUDIO_PROXY_RANGE_BODY_IDLE_TIMEOUT_MS = 5000;
 const AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS = 45000;
 const AUDIO_PROXY_RANGE_FETCH_ATTEMPTS = 3;
@@ -4776,11 +4820,96 @@ function rememberAudioProxyRange(key, value) {
   }
 }
 
+// 聚合吞吐按「窗口内完成字节 / 窗口墙上时间」算，不能把每个请求的耗时相加：
+// 预读是并发的，相加会把并行度当成额外速度，正好抹掉这里要测的那个量。
+function recordAudioProxyPrefetchBytes(byteLength) {
+  const bytes = Number(byteLength) || 0;
+  if (bytes <= 0) return;
+  const now = Date.now();
+  if (!audioProxyThroughputSample.since) audioProxyThroughputSample.since = now;
+  audioProxyThroughputSample.bytes += bytes;
+  const elapsedMs = now - audioProxyThroughputSample.since;
+  if (elapsedMs < AUDIO_PROXY_THROUGHPUT_SAMPLE_MS) return;
+  const sampleBytes = audioProxyThroughputSample.bytes;
+  audioProxyThroughputSample.bytes = 0;
+  audioProxyThroughputSample.since = now;
+  const kbps = Math.round((sampleBytes / 1024) / (elapsedMs / 1000));
+  const previous = audioProxyThroughputSample.reportedKbps;
+  // 首条必报（否则一首歌可能一条都没有）；之后只报变化超过阈值的。
+  if (previous >= 0) {
+    const baseline = Math.max(previous, 1);
+    if (Math.abs(kbps - previous) / baseline < AUDIO_PROXY_THROUGHPUT_REPORT_DELTA) return;
+  }
+  audioProxyThroughputSample.reportedKbps = kbps;
+  appendStallLogEntry({
+    reason: 'prefetch-throughput',
+    throughputKbps: kbps,
+    sampleBytes,
+    sampleMs: elapsedMs,
+    connections: audioProxyRangeInFlight.size,
+  }).catch(() => { /* 诊断写盘失败不影响播放 */ });
+}
+
+// 预读窗口：从当前块之后连开 AUDIO_PROXY_READ_AHEAD_CHUNKS 块灌进缓存。
+// 客户端每消费一块就再调一次，窗口随播放位置往前滑。fire-and-forget，不阻塞响应。
+function scheduleAudioProxyReadAhead(audioUrl, headers, total) {
+  const range = String(headers && headers.Range || '').trim();
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(range);
+  if (!match) return;
+  const start = Number(match[1]);
+  if (!Number.isSafeInteger(start)) return;
+  let end = match[2] ? Number(match[2]) : start + AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES - 1;
+  if (!Number.isSafeInteger(end) || end < start) return;
+  const knownTotal = Number.isSafeInteger(Number(total)) && Number(total) > 0 ? Number(total) : 0;
+  for (let depth = 0; depth < AUDIO_PROXY_READ_AHEAD_CHUNKS; depth += 1) {
+    const nextStart = end + 1;
+    // 已知总长时到尾就停：否则每首歌结尾都会白发一个越界 Range，拿回 416，
+    // 而非 206 分支不会 cancel 掉 body，等于每首歌漏一个连接。
+    if (knownTotal && nextStart >= knownTotal) return;
+    // 故意不把 nextEnd 夹到 total-1：浏览器之后发的是 `bytes=nextStart-`，
+    // 会被 normalizeAudioProxyUpstreamRange 归一成同样未夹的闭区间，
+    // 缓存键必须和它逐字一致才能命中。CDN 自己会把 206 收窄到真实结尾。
+    const nextEnd = nextStart + AUDIO_PROXY_OPEN_RANGE_CHUNK_BYTES - 1;
+    const nextRange = 'bytes=' + nextStart + '-' + nextEnd;
+    const nextKey = audioProxyRangeCacheKey(audioUrl, { Range: nextRange });
+    end = nextEnd;
+    if (!nextKey || readAudioProxyRangeCache(nextKey) || audioProxyRangeInFlight.has(nextKey)) continue;
+    // 必须整份克隆原请求头：User-Agent / Referer / Accept-Encoding 都是 CDN 的
+    // 准入条件，只带 Range 会被 403，而且失败是静默的（播放仍走客户端那条路），
+    // 等于预读永远不生效还看不出来。
+    const prefetchHeaders = Object.assign({}, headers, { Range: nextRange });
+    const prefetchLifecycle = { clientClosed: false, responseFinished: false, reader: null };
+    const prefetch = fetchCompleteAudioProxyRange(audioUrl, prefetchHeaders, prefetchLifecycle)
+      .then(async value => {
+        if (value && value.buffer) {
+          rememberAudioProxyRange(nextKey, value);
+          recordAudioProxyPrefetchBytes(value.buffer.length);
+          return value;
+        }
+        // 忽略 Range 的源会回一个流式 200。预读没有任何消费者，这个 body
+        // 必须自己关掉，否则每块预读漏一个连接。
+        if (value && value.upstream && value.upstream.body) {
+          try { await value.upstream.body.cancel(); } catch (_) {}
+        }
+        return null;
+      })
+      // 预读的失败绝不能变成真实请求的 502：真实请求会 await 这个 in-flight
+      // promise，这里若 reject 就等于把预读的错误转嫁给播放。返回 null 让它自己重取。
+      .catch(() => null)
+      .finally(() => { audioProxyRangeInFlight.delete(nextKey); });
+    audioProxyRangeInFlight.set(nextKey, prefetch);
+  }
+}
+
 async function fetchAudioProxyRangeWithCache(audioUrl, headers, lifecycle) {
   const key = audioProxyRangeCacheKey(audioUrl, headers);
   if (!key) return fetchCompleteAudioProxyRange(audioUrl, headers, lifecycle);
   const cached = readAudioProxyRangeCache(key);
-  if (cached) return cached;
+  if (cached) {
+    // 命中也要推进窗口：命中说明播放位置前移了一块，预读窗口要跟着滑。
+    scheduleAudioProxyReadAhead(audioUrl, headers, cached.contentRange && cached.contentRange.total);
+    return cached;
+  }
 
   const pending = audioProxyRangeInFlight.get(key);
   if (pending) {
@@ -4797,7 +4926,11 @@ async function fetchAudioProxyRangeWithCache(audioUrl, headers, lifecycle) {
   const sharedLifecycle = { clientClosed: false, responseFinished: false, reader: null };
   const sharedPromise = fetchCompleteAudioProxyRange(audioUrl, headers, sharedLifecycle)
     .then(value => {
-      if (value && value.buffer) rememberAudioProxyRange(key, value);
+      if (value && value.buffer) {
+        rememberAudioProxyRange(key, value);
+        // 这一块拿到后才知道 total，正好用它约束预读不要越过文件结尾。
+        scheduleAudioProxyReadAhead(audioUrl, headers, value.contentRange && value.contentRange.total);
+      }
       return value;
     })
     .finally(() => { audioProxyRangeInFlight.delete(key); });

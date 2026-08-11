@@ -1,3 +1,8 @@
+function playbackSongCover(song) {
+  if (typeof songCoverSrc === 'function') return songCoverSrc(song, 400) || '';
+  return song && (song.customCover || song.cover || song.picUrl || song.albumCover || song.coverUrl || '');
+}
+
 function playbackSameAlbumCover(prevSong, nextSong) {
   if (!prevSong || !nextSong) return false;
   var prevProvider = normalizePlaybackProvider(songProviderKey(prevSong));
@@ -6,8 +11,8 @@ function playbackSameAlbumCover(prevSong, nextSong) {
   var prevAlbum = prevSong.albumId || prevSong.album_id || prevSong.albumMid || prevSong.albummid || '';
   var nextAlbum = nextSong.albumId || nextSong.album_id || nextSong.albumMid || nextSong.albummid || '';
   if (!prevAlbum || String(prevAlbum) !== String(nextAlbum)) return false;
-  var prevCover = String(prevSong.customCover || prevSong.cover || prevSong.picUrl || prevSong.albumCover || prevSong.coverUrl || '').trim();
-  var nextCover = String(nextSong.customCover || nextSong.cover || nextSong.picUrl || nextSong.albumCover || nextSong.coverUrl || '').trim();
+  var prevCover = String(playbackSongCover(prevSong) || '').trim();
+  var nextCover = String(playbackSongCover(nextSong) || '').trim();
   return !!(prevCover && prevCover === nextCover);
 }
 
@@ -437,7 +442,7 @@ async function playQueueAt(idx, opts) {
         colorMixDuration: sameAlbumCoverSwitch ? 1 : undefined
       };
       if (customCover) applyCoverDataUrl(customCover, coverOpts);
-      else loadCoverFromUrl(song.cover ? coverUrlWithSize(song.cover, 400) : '', coverOpts);
+      else loadCoverFromUrl(playbackSongCover(song), coverOpts);
     });
     safePlaybackStep('trial-banner-reset', function () { document.getElementById('trial-banner').classList.remove('show'); });
     if (song.type === 'local' || song.source === 'local' || song.localUrl) {

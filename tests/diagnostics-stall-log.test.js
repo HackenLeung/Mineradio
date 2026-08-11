@@ -126,6 +126,35 @@ async function run() {
   assert.equal(truncatedEntry.src.length, 120, 'src 应截断到 120');
   assert.equal(truncatedEntry.title.length, 120, 'title 应截断到 120');
 
+  // 预读吞吐行走同一条时间线：归一化 schema 是白名单，漏加字段会被静默丢掉，
+  // 那样诊断看着在跑却永远没数据——正是这套日志要避免的失效方式。
+  const throughput = await request(port, route, {
+    method: 'POST',
+    body: JSON.stringify({
+      reason: 'prefetch-throughput',
+      throughputKbps: 212,
+      sampleBytes: 2097152,
+      sampleMs: 10000,
+      connections: 8,
+    }),
+  });
+  const throughputEntry = JSON.parse(throughput.body).entry;
+  assert.equal(throughputEntry.reason, 'prefetch-throughput');
+  assert.equal(throughputEntry.throughputKbps, 212);
+  assert.equal(throughputEntry.sampleBytes, 2097152);
+  assert.equal(throughputEntry.sampleMs, 10000);
+  assert.equal(throughputEntry.connections, 8);
+
+  // 吞吐行没有播放器字段，上面那串 t/dur/rs 会全是 ?；渲染必须补上真正有内容的。
+  const throughputReport = await request(port, route);
+  assert.ok(throughputReport.body.includes('throughput=212KB/s'), '应渲染聚合吞吐');
+  assert.ok(throughputReport.body.includes('conns=8'), '应渲染并发连接数');
+  assert.ok(throughputReport.body.includes('over=10000ms'), '应渲染采样窗口');
+
+  // 播放器条目不该多出吞吐字段的噪声。
+  const playbackOnly = await request(port, route, { method: 'POST', body: JSON.stringify({ reason: 'clock-frozen', currentTime: 5 }) });
+  assert.equal(JSON.parse(playbackOnly.body).entry.throughputKbps, null);
+
   assert.equal((await request(port, route, { method: 'DELETE' })).status, 405);
   console.log('OK diagnostics-stall-log');
 }

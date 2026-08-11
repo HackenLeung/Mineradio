@@ -59,6 +59,23 @@ function isInlineCoverSrc(src) {
 function isProxyableCoverUrl(url) {
   return /^https?:\/\//i.test(String(url || ''));
 }
+// 各家搜索结果里 pic/al.pic 这类字段有时是纯数字图片 ID 而不是地址（网易就是这样，
+// 酷狗的 pic 才是真地址）。数字 ID 一旦当成 src，浏览器会按相对路径解析成
+// http://localhost:3000/109951168971888100，刷一屏 404。封面链路统一在这里收口：
+// 不是内联图、不是 http(s)、也不带路径分隔符的值，一律当没有封面。
+function isUsableCoverSrc(src) {
+  var value = String(src == null ? '' : src).trim();
+  if (!value) return false;
+  if (isInlineCoverSrc(value) || isProxyableCoverUrl(value)) return true;
+  return value.indexOf('/') >= 0 || value.indexOf('\\') >= 0;
+}
+// 不能用 `a || b || c`：坏值也是真值，会挡住后面本来能用的字段。
+function firstUsableCoverSrc(values) {
+  for (var i = 0; i < (values || []).length; i++) {
+    if (isUsableCoverSrc(values[i])) return String(values[i]).trim();
+  }
+  return '';
+}
 function coverProxySrc(url, cacheBust) {
   if (!url) return '';
   if (isInlineCoverSrc(url)) return url;
@@ -66,6 +83,7 @@ function coverProxySrc(url, cacheBust) {
   return '/api/cover?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
 }
 function coverUrlWithSize(url, size) {
+  if (url && !isUsableCoverSrc(url)) return '';
   if (!url || isInlineCoverSrc(url) || !/^https?:\/\//i.test(url)) return url || '';
   if (!size) return url;
   var param = 'param=' + size + 'y' + size;
@@ -126,7 +144,23 @@ function songCoverSrc(song, size) {
     var localCover = localLibraryCover(song);
     if (localCover) return coverUrlWithSize(localCover, size);
   }
-  return song && song.cover ? coverUrlWithSize(song.cover, size) : '';
+  if (song && (song.cloudSong || song.cloudSource === 'netease-cloud')
+    && typeof cloudLyricRematchCoverForSong === 'function') {
+    var rematchedCover = cloudLyricRematchCoverForSong(song);
+    if (rematchedCover) return coverUrlWithSize(rematchedCover, size);
+    var cloudRematch = typeof cloudLyricRematchForSong === 'function' ? cloudLyricRematchForSong(song) : null;
+    if (cloudRematch && typeof cloudLyricRematchOriginalCoverForSong === 'function') {
+      var originalCloudCover = cloudLyricRematchOriginalCoverForSong(song);
+      if (Object.prototype.hasOwnProperty.call(cloudRematch, 'originalCover')) {
+        if (originalCloudCover) return coverUrlWithSize(originalCloudCover, size);
+      }
+    }
+  }
+  // 逐个字段筛可用值：坏值（纯数字图片 ID）也是真值，用 `||` 会挡住后面能用的字段。
+  var cover = song ? firstUsableCoverSrc([
+    song.cover, song.picUrl, song.albumCover, song.coverUrl, song.albumPicUrl
+  ]) : '';
+  return cover ? coverUrlWithSize(cover, size) : '';
 }
 function cssImageUrl(url) {
   return String(url || '').replace(/\\/g, '\\\\').replace(/"/g, '%22');

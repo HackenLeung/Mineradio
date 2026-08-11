@@ -148,7 +148,8 @@ function closeLyricTimingPopover(force) {
 }
 
 function isLyricRematchableSong(song) {
-  return !!(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
+  return !!(song && (song.type === 'local' || song.source === 'local' || song.localUrl
+    || song.cloudSong || song.cloudSource === 'netease-cloud'));
 }
 
 function updateLyricRematchUi(song) {
@@ -159,14 +160,14 @@ function updateLyricRematchUi(song) {
   btn.disabled = !rematchable;
   btn.setAttribute('aria-hidden', rematchable ? 'false' : 'true');
   if (!song) btn.title = '先播放一首歌';
-  else if (!rematchable) btn.title = '只有本地歌曲可以重新匹配在线版本';
+  else if (!rematchable) btn.title = '当前歌曲不支持重新匹配在线版本';
   else btn.title = '重新搜索并选择正确的在线版本';
 }
 
 function openLyricRematchForCurrentSong() {
   var song = lyricTimingCurrentSong();
   if (!song) { showToast('先播放一首歌'); return; }
-  if (!isLyricRematchableSong(song)) { showToast('只有本地歌曲可以重新匹配'); return; }
+  if (!isLyricRematchableSong(song)) { showToast('当前歌曲不支持重新匹配'); return; }
   if (typeof openLocalMatchModal !== 'function') return;
   closeLyricTimingPopover(true);
   openLocalMatchModal(song);

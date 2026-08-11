@@ -64,6 +64,7 @@ function musicLibraryWallSyncShelfTheme() {
 
 function musicLibraryWallCover(song) {
   if (!song) return '';
+  if (typeof songCoverSrc === 'function') return songCoverSrc(song, 400) || '';
   if ((song.type === 'local' || song.source === 'local' || song.localKey) && typeof localLibraryCover === 'function') {
     return localLibraryCover(song) || '';
   }

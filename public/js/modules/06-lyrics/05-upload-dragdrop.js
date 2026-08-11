@@ -291,7 +291,14 @@ function compactLocalOnlineMetadata(song, provider) {
     artist: song.artist || '',
     artists: Array.isArray(song.artists) ? song.artists.slice(0, 6) : [],
     album: song.album || '',
-    cover: song.cover || song.picUrl || song.albumCover || '',
+    // 逐个筛可用值：搜索结果里 pic 之类字段可能是纯数字图片 ID，用 `||` 会让坏值挡住后面的真地址。
+    cover: firstUsableCoverSrc([
+      song.cover, song.picUrl, song.pic_url, song.albumCover, song.album_cover,
+      song.coverUrl, song.cover_url, song.albumPicUrl, song.album_pic_url,
+      song.album && typeof song.album === 'object' ? song.album.picUrl : '',
+      song.album && typeof song.album === 'object' ? song.album.cover : '',
+      song.album && typeof song.album === 'object' ? song.album.coverUrl : ''
+    ]),
     duration: Number(song.duration) || 0
   };
 }

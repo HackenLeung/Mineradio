@@ -523,7 +523,16 @@ function localDetailOnlineSubject(song) {
   if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) return song;
   return typeof localOnlineSongForMetadata === 'function' ? (localOnlineSongForMetadata(song) || song) : song;
 }
-var localMatchModalState = { song: null, provider: 'netease', candidates: [], loading: false };
+var localMatchModalState = {
+  song: null,
+  provider: 'netease',
+  candidates: [],
+  loading: false,
+  mode: 'local',
+  session: 0,
+  searchRequest: 0,
+  applyRequest: 0
+};
 function ensureLocalMatchModal() {
   var mask = document.getElementById('local-match-modal');
   if (mask) return mask;
@@ -561,53 +570,88 @@ function setLocalMatchProvider(provider) {
 }
 function openLocalMatchModal(song) {
   song = song || currentCoverSong();
-  if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) { showToast('请选择本地歌曲'); return; }
+  var isLocalSong = !!(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
+  var isCloudSong = !!(song && (song.cloudSong || song.cloudSource === 'netease-cloud'));
+  if (!song || (!isLocalSong && !isCloudSong)) { showToast('请选择可重新匹配歌词的歌曲'); return; }
+  localMatchModalState.session += 1;
+  localMatchModalState.searchRequest = 0;
+  localMatchModalState.applyRequest = 0;
   localMatchModalState.song = song;
-  localMatchModalState.provider = typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease';
+  localMatchModalState.mode = isCloudSong ? 'cloud' : 'local';
+  localMatchModalState.provider = isCloudSong
+    ? 'netease'
+    : (typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease');
   if (['netease', 'kugou', 'qq'].indexOf(localMatchModalState.provider) < 0) {
     localMatchModalState.provider = typeof localLyricMatchProviderOrder === 'function' ? localLyricMatchProviderOrder()[0] : 'netease';
   }
   localMatchModalState.candidates = [];
   var mask = ensureLocalMatchModal();
   renderLocalMatchProviderTabs();
+  var searchButtonEl = mask.querySelector('#local-match-search-btn');
+  if (searchButtonEl) searchButtonEl.disabled = false;
+  var headingEl = mask.querySelector('h2');
   var titleEl = mask.querySelector('#local-match-song-title');
   var subEl = mask.querySelector('#local-match-song-sub');
-  var savedMetadata = song.onlineMetadata || (typeof localMetadataMap !== 'undefined' ? localMetadataMap[localMetadataKey(song)] : null);
-  if (titleEl) titleEl.textContent = song.name || '当前本地歌曲';
+  var savedMetadata = isLocalSong
+    ? (song.onlineMetadata || (typeof localMetadataMap !== 'undefined' ? localMetadataMap[localMetadataKey(song)] : null))
+    : (typeof cloudLyricRematchForSong === 'function' ? cloudLyricRematchForSong(song) : null);
+  if (headingEl) headingEl.textContent = isCloudSong ? '重新匹配歌词和封面' : '匹配在线歌曲';
+  if (titleEl) titleEl.textContent = song.name || (isCloudSong ? '当前云盘歌曲' : '当前本地歌曲');
   if (subEl) {
-    subEl.textContent = savedMetadata
+    subEl.textContent = isCloudSong
+      ? (savedMetadata
+        ? ('当前歌词和默认封面匹配自 ' + (savedMetadata.name || '在线歌曲') + ' · 可重新选择正确版本')
+        : '选择正确版本后，会替换歌词和默认封面，不改变云盘歌曲的播放来源')
+      : savedMetadata
       ? ('已匹配 ' + (savedMetadata.name || '在线歌曲') + ' · 可重新选择正确版本')
       : '选择正确版本后，会用于封面、歌词、评论和听歌记录';
   }
   mask.querySelector('#local-match-query').value = localMetadataQuery(song);
   mask.querySelector('#local-match-results').innerHTML = '';
-  mask.querySelector('#local-match-status').textContent = '搜索结果只用于绑定本地歌曲，不会直接加入播放列表';
+  mask.querySelector('#local-match-status').textContent = isCloudSong
+    ? '搜索结果只用于替换当前云盘歌曲的歌词和默认封面，不会改变播放来源'
+    : '搜索结果只用于绑定本地歌曲，不会直接加入播放列表';
   openGsapModal(mask);
   searchLocalMatchCandidates();
 }
 function closeLocalMatchModal() {
+  localMatchModalState.session += 1;
+  localMatchModalState.searchRequest += 1;
+  localMatchModalState.applyRequest += 1;
+  localMatchModalState.candidates = [];
   closeGsapModal(document.getElementById('local-match-modal'));
 }
 async function searchLocalMatchCandidates() {
   var song = localMatchModalState.song;
+  var session = localMatchModalState.session;
+  var provider = localMatchModalState.provider;
+  var request = ++localMatchModalState.searchRequest;
+  localMatchModalState.applyRequest += 1;
   var queryEl = document.getElementById('local-match-query');
   var resultsEl = document.getElementById('local-match-results');
   var statusEl = document.getElementById('local-match-status');
   if (!song || !queryEl || !resultsEl) return;
   var query = String(queryEl.value || '').trim();
-  if (!query) { statusEl.textContent = '请输入歌名或歌手'; return; }
+  function isCurrentSearch() {
+    return localMatchModalState.session === session
+      && localMatchModalState.song === song
+      && localMatchModalState.provider === provider
+      && localMatchModalState.searchRequest === request;
+  }
+  if (!query) { if (isCurrentSearch() && statusEl) statusEl.textContent = '请输入歌名或歌手'; return; }
   localMatchModalState.loading = true;
-  statusEl.textContent = '正在搜索...';
-  resultsEl.innerHTML = '<div class="detail-loading">正在搜索候选歌曲...</div>';
+  if (statusEl) statusEl.textContent = '正在搜索...';
+  if (resultsEl) resultsEl.innerHTML = '<div class="detail-loading">正在搜索候选歌曲...</div>';
   try {
-    var candidates = await fetchLocalMetadataCandidates(song, query, localMatchModalState.provider);
+    var candidates = await fetchLocalMetadataCandidates(song, query, provider);
+    if (!isCurrentSearch()) return;
     candidates = candidates.map(function (candidate) {
       candidate._localMatchScore = localMetadataMatchScore(song, candidate, query);
       return candidate;
     }).sort(function (a, b) { return b._localMatchScore - a._localMatchScore; }).slice(0, 20);
     localMatchModalState.candidates = candidates;
-    statusEl.textContent = candidates.length ? ('找到 ' + candidates.length + ' 个候选') : '没有找到候选歌曲';
-    resultsEl.innerHTML = candidates.length ? candidates.map(function (candidate, index) {
+    if (statusEl) statusEl.textContent = candidates.length ? ('找到 ' + candidates.length + ' 个候选') : '没有找到候选歌曲';
+    if (resultsEl) resultsEl.innerHTML = candidates.length ? candidates.map(function (candidate, index) {
       var cover = songCoverSrc(candidate, 88);
       var score = Number(candidate._localMatchScore);
       var scoreLabel = isFinite(score) ? ('匹配 ' + Math.round(score)) : '候选';
@@ -618,16 +662,124 @@ async function searchLocalMatchCandidates() {
         '<span class="local-match-item-tail"><small>' + escHtml(scoreLabel) + '</small><b>使用</b></span></button>';
     }).join('') : '<div class="detail-empty">换一个关键词再试</div>';
   } catch (error) {
+    if (!isCurrentSearch()) return;
     console.warn('[LocalMatchSearch]', error);
-    statusEl.textContent = '搜索失败，请检查当前平台登录或网络状态';
-    resultsEl.innerHTML = '<div class="detail-empty">搜索失败</div>';
-  } finally { localMatchModalState.loading = false; }
+    if (statusEl) statusEl.textContent = '搜索失败，请检查当前平台登录或网络状态';
+    if (resultsEl) resultsEl.innerHTML = '<div class="detail-empty">搜索失败</div>';
+  } finally {
+    if (isCurrentSearch()) localMatchModalState.loading = false;
+  }
 }
-function applyLocalMatchCandidate(index) {
+async function applyCloudLyricMatchCandidate(song, candidate, provider) {
+  var metadata = compactLocalOnlineMetadata(candidate, provider);
+  if (!metadata) { showToast('候选歌曲信息不完整'); return; }
+  var session = localMatchModalState.session;
+  var applyRequest = ++localMatchModalState.applyRequest;
+  var tokenAtStart = trackSwitchToken;
+  var currentAtStart = currentCoverSong();
+  var songKey = typeof neteaseCloudLyricRematchSongKey === 'function'
+    ? neteaseCloudLyricRematchSongKey(song)
+    : '';
+  var currentKeyAtStart = typeof neteaseCloudLyricRematchSongKey === 'function'
+    ? neteaseCloudLyricRematchSongKey(currentAtStart)
+    : '';
+  var wasCurrentAtStart = !!(songKey && currentKeyAtStart && songKey === currentKeyAtStart);
+  var targetSong = wasCurrentAtStart ? currentAtStart : song;
+  function isCurrentApply() {
+    return localMatchModalState.session === session
+      && localMatchModalState.song === song
+      && localMatchModalState.applyRequest === applyRequest;
+  }
+  var statusEl = document.getElementById('local-match-status');
+  var searchBtn = document.getElementById('local-match-search-btn');
+  if (isCurrentApply() && statusEl) statusEl.textContent = '正在获取候选歌词...';
+  if (isCurrentApply() && searchBtn) searchBtn.disabled = true;
+  try {
+    if (typeof waitForLocalLyricProvider === 'function') await waitForLocalLyricProvider(provider);
+    // 排队等待期间，用户可能已经关闭弹窗、切换平台或选择了另一个候选。
+    // 此时无需再发出旧候选的歌词请求。
+    if (!isCurrentApply()) return;
+    var response = await apiJson(lyricEndpointForSong(metadata), { timeoutMs: 9000 });
+    if (!response || response.error || response.code === 405 || response.status === 405) {
+      throw typeof localLyricProviderError === 'function'
+        ? localLyricProviderError(provider, response, 'CLOUD_LYRIC_REMATCH_FAILED')
+        : new Error('CLOUD_LYRIC_REMATCH_FAILED');
+    }
+    var previewState = typeof parseLyricResponseToOriginalState === 'function'
+      ? parseLyricResponseToOriginalState(song, response)
+      : null;
+    if (previewState && !previewState.usableLyric) throw new Error('CLOUD_LYRIC_REMATCH_EMPTY');
+    if (!isCurrentApply()) return;
+    if (typeof setCloudLyricRematch === 'function') setCloudLyricRematch(song, metadata);
+    if (targetSong !== song && typeof setCloudLyricRematch === 'function') setCloudLyricRematch(targetSong, metadata);
+    var currentSongAfterApply = currentCoverSong();
+    var currentSongKey = typeof neteaseCloudLyricRematchSongKey === 'function'
+      ? neteaseCloudLyricRematchSongKey(currentSongAfterApply)
+      : '';
+    var appliesToCurrentSong = !!(wasCurrentAtStart
+      && trackSwitchToken === tokenAtStart
+      && currentSongKey && songKey && currentSongKey === songKey);
+    var state = previewState;
+    if (appliesToCurrentSong && typeof applyFetchedLyricResponse === 'function') {
+      state = applyFetchedLyricResponse(targetSong, tokenAtStart, response, {
+        persist: true,
+        cloudRematchIdentity: typeof cloudLyricRematchIdentity === 'function' ? cloudLyricRematchIdentity(metadata) : ''
+      });
+      if (!state || !state.usableLyric) throw new Error('CLOUD_LYRIC_REMATCH_EMPTY');
+    } else if (typeof writePersistentLyricCache === 'function') {
+      writePersistentLyricCache(targetSong, mergeInlineLyricResponseForSong(targetSong, response));
+    }
+    var matchedCover = typeof cloudLyricRematchCoverForSong === 'function'
+      ? cloudLyricRematchCoverForSong(targetSong)
+      : '';
+    if (appliesToCurrentSong
+      && !(typeof getCustomCoverForSong === 'function' && getCustomCoverForSong(currentSongAfterApply))
+      && typeof loadCoverFromUrl === 'function') {
+      var effectiveCover = typeof songCoverSrc === 'function'
+        ? songCoverSrc(currentSongAfterApply, 400)
+        : (matchedCover || currentSongAfterApply.cover || '');
+      loadCoverFromUrl(effectiveCover, {
+        trackToken: trackSwitchToken,
+        deferHeavy: false,
+        delay: 0,
+        timeout: 700,
+        seamlessTrackSwitch: true
+      });
+    }
+    if (!isCurrentApply()) return;
+    safeRenderQueuePanel('cloud-lyric-rematch', { scrollCurrent: miniQueueOpen });
+    safeShelfRebuild('cloud-lyric-rematch');
+    if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
+    if (appliesToCurrentSong) {
+      if (typeof updateControlTrackInfo === 'function') updateControlTrackInfo(currentSongAfterApply);
+      if (typeof syncMediaSessionState === 'function') syncMediaSessionState();
+      if (typeof updateCustomCoverButton === 'function') updateCustomCoverButton();
+    }
+    closeLocalMatchModal();
+    var customCoverWins = typeof getCustomCoverForSong === 'function' && !!getCustomCoverForSong(targetSong);
+    showToast(customCoverWins
+      ? '已重新匹配歌词（自定义封面仍在生效）: ' + (metadata.name || song.name || '在线歌曲')
+      : (matchedCover
+        ? '已重新匹配歌词和封面: ' + (metadata.name || song.name || '在线歌曲')
+        : '已重新匹配歌词（候选版本没有可用封面）: ' + (metadata.name || song.name || '在线歌曲')));
+  } catch (error) {
+    if (!isCurrentApply()) return;
+    console.warn('[CloudLyricRematch]', error);
+    if (statusEl) statusEl.textContent = '歌词获取失败，请换一个候选版本再试';
+    showToast('重新匹配歌词失败');
+  } finally {
+    if (isCurrentApply() && searchBtn) searchBtn.disabled = false;
+  }
+}
+async function applyLocalMatchCandidate(index) {
   var song = localMatchModalState.song;
   var candidate = localMatchModalState.candidates[index];
   if (!song || !candidate) return;
   var provider = localMatchModalState.provider;
+  if (localMatchModalState.mode === 'cloud') {
+    await applyCloudLyricMatchCandidate(song, candidate, provider);
+    return;
+  }
   var metadata = compactLocalOnlineMetadata(candidate, provider);
   if (!metadata) { showToast('候选歌曲信息不完整'); return; }
   metadata.manualMatched = true;
@@ -924,8 +1076,8 @@ function clearCustomCoverForCurrent() {
   var isLocalSong = song.type === 'local' || song.source === 'local' || song.localKey;
   var restoredCover = isLocalSong && typeof localLibraryCover === 'function'
     ? localLibraryCover(song)
-    : (song.cover || song.picUrl || song.albumCover || '');
-  if (restoredCover) loadCoverFromUrl(coverUrlWithSize(restoredCover, 400));
+    : (typeof songCoverSrc === 'function' ? songCoverSrc(song, 400) : (song.cover || song.picUrl || song.albumCover || ''));
+  if (restoredCover) loadCoverFromUrl(restoredCover);
   else loadCoverFromUrl('');
   safeRenderQueuePanel('custom-cover-clear', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('custom-cover-clear');

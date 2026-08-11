@@ -196,7 +196,10 @@ function restoreLastPlaybackSnapshot() {
     if (artistEl) artistEl.textContent = isLocal ? ((shownSong.artist || '本地文件') + ' · 正在恢复文件夹') : (shownSong.artist || songSourceLabel(shownSong));
     var thumbWrap = document.getElementById('thumb-wrap');
     if (thumbWrap) thumbWrap.classList.add('visible');
-    if (!isLocal && shownSong.cover) {
+    var restoredCover = !isLocal && typeof songCoverSrc === 'function'
+      ? songCoverSrc(shownSong, 400)
+      : (!isLocal ? shownSong.cover : '');
+    if (restoredCover) {
       setTimeout(function () {
         if (!audio && currentIdx >= 0 && playQueue[currentIdx] && queueItemKey(playQueue[currentIdx]) === queueItemKey(shownSong)) {
           loadCoverFromUrl(songCoverSrc(shownSong, 400), { deferHeavy: true, delay: 120, timeout: 700 });
