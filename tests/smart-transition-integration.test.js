@@ -97,7 +97,7 @@ test('smart transition owns the crossfade path without the removed upstream Auto
   assert.match(prepare, /prepareSmartTransitionFallback\(token, currentIndex\)/);
   assert.match(fallback, /smartTransitionIncomingEntryTime\(nextSong, initialFadeSec\)/);
   assert.match(fallback, /entryTime:\s*Math\.max\(0, Number\(incomingCue\.entryTime\) \|\| 0\)/);
-  assert.match(integration, /apiJson\(lyricEndpointForSong\(song\), \{ timeoutMs: 5000 \}\)/);
+  assert.match(integration, /apiJson\(lyricEndpointForSong\(lookupSong\), \{ timeoutMs: 5000 \}\)/);
   assert.match(execute, /prepareSmartTransitionPendingAudio\(pending\)/);
   assert.match(execute, /runSmartTransitionTimeline\(pending, nextMedia, transitionContext\)/);
   assert.match(execute, /smartTransitionHandoff:\s*true/);
