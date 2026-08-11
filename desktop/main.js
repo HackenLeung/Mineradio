@@ -5082,7 +5082,11 @@ async function createWindowOnce() {
   }, STARTUP_SHOW_WATCHDOG_MS);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // 只放行 http(s)。window.open 的目标由页面内容决定，而页面里混着大量远程
+    // 内容（封面、歌词、歌单元数据）；file:// 或自定义协议交给 openExternal
+    // 就是让系统直接拉起本机程序。下面的 will-navigate 和三个登录窗早就这么挡了，
+    // 这里是唯一漏掉的一处。
+    if (/^https?:\/\//i.test(String(url || ''))) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
