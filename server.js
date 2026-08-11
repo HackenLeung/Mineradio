@@ -53,8 +53,14 @@ const {
   lyric,
   lyric_new,
   user_record,
+  user_cloud,
+  user_cloud_detail,
 } = require('NeteaseCloudMusicApi');
-const { scrobble: enhancedNeteaseScrobble } = require('@neteasecloudmusicapienhanced/api');
+const {
+  scrobble: enhancedNeteaseScrobble,
+  song_cloud_download: enhancedNeteaseCloudDownload,
+  cloud_lyric_get: enhancedNeteaseCloudLyricGet,
+} = require('@neteasecloudmusicapienhanced/api');
 const http = require('http');
 const https = require('https');
 const fs   = require('fs');
@@ -2921,6 +2927,118 @@ function mapSongRecord(s) {
     fee: s.fee,
   };
 }
+function mapNeteaseCloudArtists(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map(artist => {
+      if (typeof artist === 'string') return { id: '', name: artist.trim() };
+      return { id: artist && artist.id, name: artist && (artist.name || artist.artistName || artist.singer) || '' };
+    }).filter(artist => artist.name);
+  }
+  if (raw && typeof raw === 'object') {
+    return mapNeteaseCloudArtists(raw.ar || raw.artists || raw.artist || raw.name || '');
+  }
+  return String(raw || '')
+    .split(/\s*\/\s*|、|,|，|&| feat\.? | ft\.? /i)
+    .map(name => ({ id: '', name: name.trim() }))
+    .filter(artist => artist.name);
+}
+function mapNeteaseCloudSong(item) {
+  item = item || {};
+  const nested = [item.simpleSong, item.song, item.track].find(value => value && typeof value === 'object') || {};
+  const nestedAlbum = nested.al || nested.album || {};
+  const rawAlbum = item.album || item.albumName || nestedAlbum;
+  const albumName = typeof rawAlbum === 'string'
+    ? rawAlbum
+    : (rawAlbum && (rawAlbum.name || rawAlbum.albumName) || nestedAlbum.name || '');
+  const artists = mapNeteaseCloudArtists(item.artists || item.ar || item.artist || item.singer || nested.ar || nested.artists);
+  const id = item.songId || item.songid || item.id || nested.id || '';
+  const fileName = item.fileName || item.filename || item.name || '';
+  const name = item.songName || item.title || (typeof item.song === 'string' ? item.song : '') || nested.name || fileName.replace(/\.[^.]+$/, '') || '未命名歌曲';
+  const cover = item.cover || item.coverUrl || item.coverImgUrl || item.picUrl || item.albumPicUrl || nestedAlbum.picUrl || nestedAlbum.coverImgUrl || '';
+  const duration = item.duration || item.durationMs || item.dt || nested.dt || 0;
+  const base = mapSongRecord({
+    ...nested,
+    id,
+    name,
+    ar: artists,
+    al: { ...nestedAlbum, id: item.albumId || item.album_id || nestedAlbum.id, name: albumName, picUrl: cover },
+    dt: duration,
+    fee: item.fee == null ? nested.fee : item.fee,
+  });
+  return {
+    ...base,
+    provider: 'netease',
+    source: 'netease',
+    type: 'song',
+    id,
+    name,
+    artist: artists.map(artist => artist.name).join(' / ') || String(item.artist || item.singer || '未知歌手'),
+    artists,
+    artistId: artists[0] && artists[0].id,
+    album: albumName,
+    albumId: item.albumId || item.album_id || nestedAlbum.id || '',
+    cover,
+    duration,
+    cloudSong: true,
+    cloudId: String(id || ''),
+    cloudSource: 'netease-cloud',
+    fileName,
+    fileSize: Number(item.fileSize || item.filesize || item.size || 0) || 0,
+    bitrate: Number(item.bitrate || item.br || 0) || 0,
+    addTime: item.addTime || item.uploadTime || item.createTime || 0,
+  };
+}
+function extractNeteaseCloudRows(body) {
+  body = body || {};
+  const values = [body.data, body.songs, body.cloudSongs, body.list];
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.data)) return value.data;
+    if (value && Array.isArray(value.list)) return value.list;
+  }
+  return [];
+}
+function extractNeteaseCloudMetaNumber(body, keys, fallback) {
+  const values = [body, body && body.data, body && body.result, body && body.data && body.data.result];
+  for (const value of values) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    for (const key of keys) {
+      const number = Number(value[key]);
+      if (Number.isFinite(number) && number >= 0) return number;
+    }
+  }
+  return Number(fallback) || 0;
+}
+function extractNeteaseCloudMetaBoolean(body, keys) {
+  const values = [body, body && body.data, body && body.result, body && body.data && body.data.result];
+  for (const value of values) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    for (const key of keys) {
+      if (typeof value[key] === 'boolean') return value[key];
+    }
+  }
+  return null;
+}
+function extractNeteaseCloudAudioUrl(value, depth) {
+  depth = Number(depth) || 0;
+  if (depth > 4 || value == null) return '';
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = extractNeteaseCloudAudioUrl(item, depth + 1);
+      if (url) return url;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+  for (const key of ['url', 'downloadUrl', 'songUrl', 'audioUrl', 'playUrl', 'mp3Url']) {
+    if (/^https?:\/\//i.test(String(value[key] || ''))) return String(value[key]);
+  }
+  for (const key of ['data', 'result', 'urlInfo', 'song', 'songInfo']) {
+    const url = extractNeteaseCloudAudioUrl(value[key], depth + 1);
+    if (url) return url;
+  }
+  return '';
+}
 function mapDiscoverPlaylist(pl, tag) {
   pl = pl || {};
   const creator = pl.creator || pl.user || {};
@@ -3001,10 +3119,10 @@ function isQzoneBackgroundPlaylist(pl) {
   const text = String((pl && pl.name || '') + ' ' + (pl && pl.creator || '')).toLowerCase();
   return /qzone|空间|背景音乐/i.test(text);
 }
-async function requireLogin(res) {
+async function requireLogin(res, sendResponse) {
   const info = await getLoginInfo();
   if (!info.loggedIn || !info.userId) {
-    sendJSON(res, { error: 'LOGIN_REQUIRED', loggedIn: false }, 401);
+    (typeof sendResponse === 'function' ? sendResponse : sendJSON)(res, { error: 'LOGIN_REQUIRED', loggedIn: false }, 401);
     return null;
   }
   return info;
@@ -6057,6 +6175,53 @@ async function handleSongUrl(id, loginInfo, qualityPreference, matchHints) {
   };
 }
 
+async function handleNeteaseCloudSongUrl(id, loginInfo, qualityPreference) {
+  id = String(id || '').trim();
+  if (!id) return { provider: 'netease', source: 'netease-cloud', playable: false, error: 'MISSING_CLOUD_SONG_ID' };
+  if (!loginInfo || !loginInfo.loggedIn || !userCookie) {
+    return {
+      provider: 'netease',
+      source: 'netease-cloud',
+      playable: false,
+      error: 'NETEASE_CLOUD_LOGIN_REQUIRED',
+      message: '网易云音乐云盘需要登录后播放',
+    };
+  }
+  const result = await enhancedNeteaseCloudDownload({ id, cookie: userCookie, timestamp: Date.now() });
+  const body = result && (result.body || result) || {};
+  const url = extractNeteaseCloudAudioUrl(body);
+  const payload = body && body.data && typeof body.data === 'object' && !Array.isArray(body.data)
+    ? body.data
+    : body;
+  if (!url) {
+    return {
+      provider: 'netease',
+      source: 'netease-cloud',
+      cloudSong: true,
+      cloudId: id,
+      playable: false,
+      error: 'NETEASE_CLOUD_URL_UNAVAILABLE',
+      message: '网易云音乐云盘没有返回可播放地址',
+      code: body && body.code,
+      requestedQuality: qualityPreference || '',
+    };
+  }
+  return {
+    provider: 'netease',
+    source: 'netease-cloud',
+    cloudSong: true,
+    cloudId: id,
+    url,
+    playable: true,
+    trial: false,
+    level: payload && (payload.level || payload.type || '') || '',
+    quality: payload && (payload.quality || payload.br || '') || '',
+    br: payload && (payload.br || payload.bitrate || 0) || 0,
+    size: payload && (payload.size || payload.fileSize || 0) || 0,
+    requestedQuality: qualityPreference || '',
+  };
+}
+
 // ---------- 业务: 登录态/用户信息 ----------
 function readCookieFromResponse(resp) {
   const candidates = [
@@ -7485,6 +7650,9 @@ async function handleHttpRequest(req, res) {
   }
 
   if (pn === '/api/song/url') {
+    const cloudPlaybackRequested = /^(1|true|yes)$/i.test(String(
+      url.searchParams.get('cloud') || url.searchParams.get('cloudSong') || ''
+    ));
     try {
       const sid = url.searchParams.get('id');
       const quality = url.searchParams.get('quality') || '';
@@ -7500,8 +7668,10 @@ async function handleHttpRequest(req, res) {
         skipDirect: url.searchParams.get('skipDirect') === '1',
       };
       const loginInfo = await getPlaybackLoginInfo();
-      const info = await handleSongUrl(sid, loginInfo, quality, matchHints);
-      sendJSON(res, {
+      const info = cloudPlaybackRequested
+        ? await handleNeteaseCloudSongUrl(sid, loginInfo, quality)
+        : await handleSongUrl(sid, loginInfo, quality, matchHints);
+      (cloudPlaybackRequested ? sendPrivateJSON : sendJSON)(res, {
         ...info,
         loggedIn: loginInfo.loggedIn,
         vipType: loginInfo.vipType || 0,
@@ -7510,7 +7680,10 @@ async function handleHttpRequest(req, res) {
         isSvip: !!loginInfo.isSvip,
         vipLabel: loginInfo.vipLabel || '无VIP',
       });
-    } catch (err) { console.error('[SongUrl]', err); sendJSON(res, { error: err.message }, 500); }
+    } catch (err) {
+      console.error('[SongUrl]', err);
+      (cloudPlaybackRequested ? sendPrivateJSON : sendJSON)(res, { error: err.message }, 500);
+    }
     return;
   }
 
@@ -7696,6 +7869,66 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  // ---------- 网易云音乐云盘 ----------
+  if (pn === '/api/user/cloud') {
+    try {
+      const info = await requireLogin(res, sendPrivateJSON);
+      if (!info) return;
+      const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '48', 10) || 48));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const result = await user_cloud({ limit, offset, cookie: userCookie, timestamp: Date.now() });
+      const body = result && (result.body || result) || {};
+      const rawRows = extractNeteaseCloudRows(body);
+      const songs = rawRows.map(mapNeteaseCloudSong).filter(song => song.id && song.name);
+      const total = Math.max(
+        extractNeteaseCloudMetaNumber(body, ['total', 'count', 'songCount', 'totalCount'], 0),
+        offset + rawRows.length
+      );
+      const nextOffset = offset + rawRows.length;
+      const explicitHasMore = extractNeteaseCloudMetaBoolean(body, ['hasMore', 'more']);
+      const hasMore = explicitHasMore == null ? (total ? nextOffset < total : rawRows.length >= limit) : explicitHasMore;
+      sendPrivateJSON(res, {
+        provider: 'netease',
+        cloud: true,
+        loggedIn: true,
+        userId: info.userId,
+        songs,
+        tracks: songs,
+        total,
+        offset,
+        limit,
+        nextOffset,
+        hasMore,
+        partial: true,
+      });
+    } catch (err) {
+      console.error('[NeteaseCloud]', err);
+      sendPrivateJSON(res, { provider: 'netease', cloud: true, error: err.message, songs: [], tracks: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/user/cloud/detail') {
+    try {
+      const info = await requireLogin(res, sendPrivateJSON);
+      if (!info) return;
+      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
+        .split(',').map(value => value.trim()).filter(Boolean).slice(0, 100);
+      if (!ids.length) {
+        sendPrivateJSON(res, { provider: 'netease', cloud: true, error: 'Missing cloud song id', songs: [] }, 400);
+        return;
+      }
+      const result = await user_cloud_detail({ id: ids.join(','), cookie: userCookie, timestamp: Date.now() });
+      const body = result && (result.body || result) || {};
+      const songs = extractNeteaseCloudRows(body).map(mapNeteaseCloudSong).filter(song => song.id);
+      sendPrivateJSON(res, { provider: 'netease', cloud: true, loggedIn: true, userId: info.userId, ids, songs, total: songs.length });
+    } catch (err) {
+      console.error('[NeteaseCloudDetail]', err);
+      sendPrivateJSON(res, { provider: 'netease', cloud: true, error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
   // ---------- 红心状态 ----------
   if (pn === '/api/song/like/check') {
     try {
@@ -7845,6 +8078,42 @@ async function handleHttpRequest(req, res) {
       if (!lyricNodeText(merged, key) && fallback && fallback[key]) merged[key] = fallback[key];
     });
     return merged;
+  }
+
+  if (pn === '/api/cloud/lyric') {
+    try {
+      const info = await requireLogin(res, sendPrivateJSON);
+      if (!info) return;
+      const id = url.searchParams.get('id') || url.searchParams.get('sid') || '';
+      if (!id) { sendPrivateJSON(res, { provider: 'netease', source: 'netease-cloud', error: 'Missing cloud song id', lyric: '' }, 400); return; }
+      const result = await enhancedNeteaseCloudLyricGet({ uid: info.userId, sid: id, cookie: userCookie, timestamp: Date.now() });
+      const body = result && (result.body || result) || {};
+      const nodes = [body, body.data, body.result].filter(value => value && typeof value === 'object');
+      const readLyric = (keys) => {
+        for (const node of nodes) {
+          for (const key of keys) {
+            const value = node[key];
+            if (typeof value === 'string' && value.trim()) return value;
+            if (value && typeof value === 'object' && typeof value.lyric === 'string' && value.lyric.trim()) return value.lyric;
+          }
+        }
+        return '';
+      };
+      sendPrivateJSON(res, {
+        provider: 'netease',
+        source: 'netease-cloud',
+        cloudSong: true,
+        cloudId: id,
+        lyric: readLyric(['lyric', 'lrc', 'lyrics']),
+        tlyric: readLyric(['tlyric', 'translation']),
+        yrc: readLyric(['yrc']),
+        ytlrc: readLyric(['ytlrc']),
+      });
+    } catch (err) {
+      console.error('[NeteaseCloudLyric]', err);
+      sendPrivateJSON(res, { provider: 'netease', source: 'netease-cloud', error: err.message, lyric: '' }, 500);
+    }
+    return;
   }
 
   if (pn === '/api/lyric') {

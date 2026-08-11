@@ -16,6 +16,9 @@ function lyricTranslationTextFromAliases(source) {
 function lyricEndpointForSong(songOrId) {
   var song = (songOrId && typeof songOrId === 'object') ? songOrId : null;
   var provider = song ? songProviderKey(song) : 'netease';
+  if (song && (song.cloudSong || song.cloudSource === 'netease-cloud')) {
+    return '/api/cloud/lyric?id=' + encodeURIComponent(song.id || '');
+  }
   if (provider === 'qq') {
     var mid = song.mid || song.songmid || song.id || '';
     var qqId = song.qqId || (/^\d+$/.test(String(song.id || '')) ? song.id : '');

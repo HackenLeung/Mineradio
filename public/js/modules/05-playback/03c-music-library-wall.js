@@ -1,6 +1,7 @@
 'use strict';
 
 var MUSIC_LIBRARY_WALL_OVERSCAN_ROWS = 2;
+var musicLibraryWallCloudCatalog = { userId: '', count: 0, cover: '' };
 var musicLibraryWallState = {
   active: false,
   level: 1,
@@ -30,6 +31,25 @@ function isMusicLibraryWallOpen() {
 function musicLibraryWallProviderLabel(provider) {
   provider = typeof normalizePlaylistProvider === 'function' ? normalizePlaylistProvider(provider) : String(provider || 'netease');
   return provider === 'qq' ? '小Q' : (provider === 'kugou' ? '小狗' : '小云');
+}
+
+function musicLibraryWallCloudLoggedIn() {
+  return typeof loginStatus !== 'undefined'
+    && !!(loginStatus && loginStatus.loggedIn)
+    && !!musicLibraryWallCloudUserId();
+}
+
+function musicLibraryWallCloudUserId() {
+  if (typeof loginStatus === 'undefined' || !loginStatus || !loginStatus.loggedIn) return '';
+  var raw = loginStatus.userId != null ? loginStatus.userId : loginStatus.uid;
+  return raw == null ? '' : String(raw);
+}
+
+function musicLibraryWallSyncCloudAccount() {
+  var userId = musicLibraryWallCloudUserId();
+  if (musicLibraryWallCloudCatalog.userId === userId) return false;
+  musicLibraryWallCloudCatalog = { userId: userId, count: 0, cover: '' };
+  return true;
 }
 
 function musicLibraryWallSyncShelfTheme() {
@@ -153,6 +173,7 @@ function closeMusicLibraryWall(opts) {
 }
 
 function musicLibraryWallBuildLibraries() {
+  musicLibraryWallSyncCloudAccount();
   var libraries = [];
   var allLocalCover = musicLibraryWallCover(localLibrarySongs && localLibrarySongs[0]);
   libraries.push({
@@ -174,6 +195,18 @@ function musicLibraryWallBuildLibraries() {
       error: folder && folder.restoreError || ''
     });
   });
+  if (musicLibraryWallCloudLoggedIn()) {
+    var cloudCount = Number(musicLibraryWallCloudCatalog.count) || 0;
+    libraries.push({
+      kind: 'netease-cloud',
+      provider: 'netease',
+      playlistId: 'all',
+      title: '网易云音乐云盘',
+      subtitle: cloudCount ? (cloudCount + ' 首 · 云端上传歌曲') : '云端上传歌曲 · 小云',
+      count: cloudCount,
+      cover: musicLibraryWallCloudCatalog.cover || ''
+    });
+  }
   (userPlaylists || []).forEach(function (playlist) {
     if (!playlist || !playlist.id) return;
     var provider = typeof normalizePlaylistProvider === 'function' ? normalizePlaylistProvider(playlist.provider) : (playlist.provider || 'netease');
@@ -193,17 +226,24 @@ function musicLibraryWallBuildLibraries() {
 
 function renderMusicLibraryWallFromSources(opts) {
   opts = opts || {};
+  var cloudAccountChanged = musicLibraryWallSyncCloudAccount();
   if (!musicLibraryWallState.active) return false;
   if (
     musicLibraryWallState.level === 2
     && musicLibraryWallState.detail
-    && musicLibraryWallState.detail.kind === 'playlist'
-    && typeof playlistCatalogProviderLoggedIn === 'function'
-    && !playlistCatalogProviderLoggedIn(musicLibraryWallState.detail.provider)
+    && (
+      (
+        musicLibraryWallState.detail.kind === 'playlist'
+        && typeof playlistCatalogProviderLoggedIn === 'function'
+        && !playlistCatalogProviderLoggedIn(musicLibraryWallState.detail.provider)
+      )
+      || (musicLibraryWallState.detail.kind === 'netease-cloud' && (!musicLibraryWallCloudLoggedIn() || cloudAccountChanged))
+    )
   ) {
     musicLibraryWallCancelDetailRequest();
     musicLibraryWallState.level = 1;
     musicLibraryWallState.detail = null;
+    musicLibraryWallState.trackQuery = '';
     opts.resetScroll = true;
   }
   if (musicLibraryWallState.level === 1) {
@@ -290,7 +330,9 @@ function musicLibraryWallSpacerHtml(position, height) {
 }
 
 function musicLibraryWallLibraryCardHtml(item, index) {
-  var badge = item.kind === 'playlist' ? musicLibraryWallProviderLabel(item.provider) : (item.kind === 'local-folder' ? '文件夹' : '本地');
+  var badge = item.kind === 'playlist'
+    ? musicLibraryWallProviderLabel(item.provider)
+    : (item.kind === 'netease-cloud' ? '云盘' : (item.kind === 'local-folder' ? '文件夹' : '本地'));
   var className = 'music-library-wall-card library-card' + (item.error ? ' has-error' : '');
   return '<button class="' + className + '" type="button" role="listitem" data-mlw-library-index="' + index + '" aria-label="打开 ' + escHtml(item.title) + '">' +
     '<span class="music-library-wall-art">' + musicLibraryWallImageHtml(item.cover, item.title) +
@@ -424,7 +466,7 @@ function renderMusicLibraryWall(opts) {
     if (locateCurrent) locateCurrent.hidden = true;
     if (kicker) kicker.textContent = 'LIBRARY · L1';
     if (title) title.textContent = '音乐库';
-    if (subtitle) subtitle.textContent = '用户歌单、本地总库与文件夹';
+    if (subtitle) subtitle.textContent = '用户歌单、云盘与本地音乐';
     if (status) status.textContent = items.length + ' 个音乐库';
     if (playAll) playAll.hidden = true;
     if (back) back.setAttribute('aria-label', '返回 Home');
@@ -498,6 +540,7 @@ function musicLibraryWallOpenLibrary(index) {
     controller: null,
     timer: 0
   };
+  if (item.kind === 'netease-cloud') musicLibraryWallState.detail.hasMore = true;
   if (item.kind === 'local-all') {
     musicLibraryWallState.detail.tracks = Array.isArray(localLibrarySongs) ? localLibrarySongs.slice() : [];
     musicLibraryWallState.detail.total = musicLibraryWallState.detail.tracks.length;
@@ -512,7 +555,7 @@ function musicLibraryWallOpenLibrary(index) {
   }
   if (content) content.scrollTop = musicLibraryWallState.detail.scrollTop;
   renderMusicLibraryWall({ resetScroll: true, forceGrid: true });
-  if (item.kind === 'playlist') {
+  if (item.kind === 'playlist' || item.kind === 'netease-cloud') {
     musicLibraryWallLoadDetailPage('initial');
   } else if (typeof hydrateLocalFolderPreview === 'function') {
     var folderIndexes = item.kind === 'local-folder'
@@ -552,7 +595,9 @@ function musicLibraryWallBack() {
 
 async function musicLibraryWallLoadDetailPage(reason) {
   var detail = musicLibraryWallState.detail;
-  if (!musicLibraryWallState.active || musicLibraryWallState.level !== 2 || !detail || detail.kind !== 'playlist') return false;
+  var isCloud = !!(detail && detail.kind === 'netease-cloud');
+  var cloudUserId = isCloud ? musicLibraryWallCloudUserId() : '';
+  if (!musicLibraryWallState.active || musicLibraryWallState.level !== 2 || !detail || (detail.kind !== 'playlist' && !isCloud)) return false;
   if (detail.loading || detail.loadingMore || (reason !== 'initial' && !detail.hasMore)) return false;
   var offset = reason === 'initial' ? 0 : Math.max(0, Number(detail.nextOffset) || detail.tracks.length);
   var token = detail.token;
@@ -565,10 +610,13 @@ async function musicLibraryWallLoadDetailPage(reason) {
   renderMusicLibraryWall();
   try {
     var limit = typeof PLAYLIST_DETAIL_BATCH_SIZE === 'number' ? PLAYLIST_DETAIL_BATCH_SIZE : 80;
-    var endpoint = playlistTracksEndpoint(detail.provider, detail.playlistId, { limit: limit, offset: offset });
+    var endpoint = isCloud
+      ? '/api/user/cloud?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset)
+      : playlistTracksEndpoint(detail.provider, detail.playlistId, { limit: limit, offset: offset });
     var response = await apiJson(endpoint, controller ? { signal: controller.signal } : { timeoutMs: 12000 });
     if (!musicLibraryWallState.active || musicLibraryWallState.detail !== detail || detail.token !== token) return false;
-    var rawTracks = response && response.tracks || [];
+    if (isCloud && cloudUserId !== musicLibraryWallCloudUserId()) return false;
+    var rawTracks = response && (response.tracks || response.songs) || [];
     if (response && response.error && !rawTracks.length) throw new Error(response.message || response.error);
     var mapped = rawTracks.map(cloneSong);
     var added = typeof appendPlaylistPanelDetailTracks === 'function'
@@ -576,6 +624,10 @@ async function musicLibraryWallLoadDetailPage(reason) {
       : (Array.prototype.push.apply(detail.tracks, mapped), mapped.length);
     var responseTotal = Number(response && (response.total || (response.playlist && response.playlist.trackCount))) || 0;
     detail.total = Math.max(detail.total || 0, responseTotal, detail.tracks.length);
+    if (isCloud) {
+      musicLibraryWallCloudCatalog.count = responseTotal;
+      if (!musicLibraryWallCloudCatalog.cover && mapped[0]) musicLibraryWallCloudCatalog.cover = musicLibraryWallCover(mapped[0]);
+    }
     detail.nextOffset = Math.max(offset + rawTracks.length, Number(response && response.nextOffset) || 0);
     detail.hasMore = !!(response && response.hasMore) || (!!detail.total && detail.nextOffset < detail.total);
     if (!rawTracks.length || (!added && detail.nextOffset <= offset)) detail.hasMore = false;
@@ -619,10 +671,12 @@ function musicLibraryWallCommitTrackPlayback(detail, index, opts) {
     safeRenderQueuePanel('music-library-wall-local-folder', { scrollCurrent: true });
     safeShelfRebuild('music-library-wall-local-folder', true);
     result = playQueueAt(currentIdx, { manual: true, coverDeliveryToken: opts.coverDeliveryToken });
-  } else if (detail.kind === 'playlist') {
-    var providerId = typeof playlistPanelProviderId === 'function'
-      ? playlistPanelProviderId(detail.provider, detail.playlistId)
-      : (detail.provider === 'qq' ? 'qq:' : (detail.provider === 'kugou' ? 'kugou:' : '')) + detail.playlistId;
+  } else if (detail.kind === 'playlist' || detail.kind === 'netease-cloud') {
+    var providerId = detail.kind === 'netease-cloud'
+      ? 'netease-cloud:' + (detail.playlistId || 'all')
+      : (typeof playlistPanelProviderId === 'function'
+        ? playlistPanelProviderId(detail.provider, detail.playlistId)
+        : (detail.provider === 'qq' ? 'qq:' : (detail.provider === 'kugou' ? 'kugou:' : '')) + detail.playlistId);
     result = loadPlaylistIntoQueueById(providerId, true, detail.title || '', {
       seedTracks: detail.tracks,
       startIndex: index,
@@ -924,7 +978,7 @@ if (musicLibraryWallContent) musicLibraryWallContent.addEventListener('scroll', 
   }
   musicLibraryWallUpdateScrollControls();
   scheduleMusicLibraryWallRender();
-  if (musicLibraryWallState.level === 2 && musicLibraryWallState.detail && musicLibraryWallState.detail.kind === 'playlist') {
+  if (musicLibraryWallState.level === 2 && musicLibraryWallState.detail && (musicLibraryWallState.detail.kind === 'playlist' || musicLibraryWallState.detail.kind === 'netease-cloud')) {
     if (musicLibraryWallContent.scrollTop + musicLibraryWallContent.clientHeight >= musicLibraryWallContent.scrollHeight - 520) {
       musicLibraryWallLoadDetailPage('scroll');
     }

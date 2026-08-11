@@ -3,6 +3,7 @@ function queueItemKey(song) {
   if (!song) return '';
   if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'qq:' + (song.mid || song.songmid || song.id || (song.name + '|' + song.artist));
   if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.audioHash) return 'kugou:' + (song.hash || song.fileHash || song.audioHash || song.id || (song.name + '|' + song.artist));
+  if (song.cloudSong || song.cloudSource === 'netease-cloud') return 'netease-cloud:' + (song.cloudId || song.id || (song.name + '|' + song.artist));
   if (song.type === 'podcast' && song.programId) return 'podcast:' + song.programId;
   if (song.localKey) return 'local:' + song.localKey;
   if (song.id != null && song.id !== '') return 'song:' + song.id;
@@ -13,7 +14,7 @@ function queueItemKey(song) {
 // 这些内容在文件夹重扫时会由 syncResolvedLocalSongReferences 重新挂回来。
 var PLAYBACK_SNAPSHOT_URL_MAX = 2048;
 var PLAYBACK_SNAPSHOT_IDENTITY_KEYS = [
-  'provider', 'source', 'type', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
+  'provider', 'source', 'type', 'cloudSong', 'cloudSource', 'cloudId', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
   'hash', 'fileHash', 'audioHash', 'albumId', 'album_id', 'albumMid', 'albummid', 'albumAudioId', 'album_audio_id', 'mixSongId', 'hqHash', 'sqHash', 'resHash',
   'name', 'title', 'artist', 'duration', 'durationMs', 'dt',
   'programId', 'radioId', 'radioName', 'localKey', 'localPath'

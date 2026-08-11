@@ -92,6 +92,7 @@ function playlistQueueSource(id) {
   var raw = String(id || '');
   if (raw.indexOf('qq:') === 0) return { provider: 'qq', id: raw.slice(3), requestId: raw };
   if (raw.indexOf('kugou:') === 0) return { provider: 'kugou', id: raw.slice(6), requestId: raw };
+  if (raw.indexOf('netease-cloud:') === 0) return { provider: 'netease-cloud', id: raw.slice(14), requestId: raw };
   return { provider: 'netease', id: raw, requestId: raw };
 }
 function playlistQueuePageSize(provider, initial) {
@@ -101,6 +102,9 @@ function playlistQueuePageSize(provider, initial) {
   return PLAYLIST_QUEUE_BACKGROUND_BATCH_SIZE;
 }
 function playlistQueuePageUrl(source, offset, limit) {
+  if (source.provider === 'netease-cloud') {
+    return '/api/user/cloud?offset=' + Math.max(0, offset || 0) + '&limit=' + Math.max(1, limit || PLAYLIST_QUEUE_INITIAL_BATCH_SIZE);
+  }
   return playlistTracksEndpoint(source.provider, source.id, { offset: Math.max(0, offset || 0), limit: Math.max(1, limit || PLAYLIST_QUEUE_INITIAL_BATCH_SIZE) });
 }
 function cancelPlaylistQueueHydration(reason) {

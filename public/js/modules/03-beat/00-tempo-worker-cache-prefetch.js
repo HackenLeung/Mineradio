@@ -377,6 +377,7 @@ async function fetchBeatPrefetchAudioUrl(song) {
   var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
   if (playbackQualityAboveCap(requestedQuality, playbackProvider, runtimeQualityCap)) requestedQuality = runtimeQualityCap;
   var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
+  var cloudParam = song && (song.cloudSong || song.cloudSource === 'netease-cloud') ? '&cloud=1' : '';
   var neteaseMatchQuery = typeof neteasePlaybackMatchQuery === 'function' ? neteasePlaybackMatchQuery(song) : '';
   var data;
   if (playbackProvider === 'qq') {
@@ -394,7 +395,7 @@ async function fetchBeatPrefetchAudioUrl(song) {
       '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
       qualityParam, { timeoutMs: 9000 });
   } else {
-    data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteaseMatchQuery + qualityParam, { timeoutMs: 14000 });
+    data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + cloudParam + neteaseMatchQuery + qualityParam, { timeoutMs: 14000 });
   }
   if (!data || !data.url || data.trial) return null;
   return '/api/audio?url=' + encodeURIComponent(data.url);

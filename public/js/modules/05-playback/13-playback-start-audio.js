@@ -473,6 +473,7 @@ async function playQueueAt(idx, opts) {
         requestedQuality = runtimeQualityCap;
       }
       var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
+      var cloudParam = song && (song.cloudSong || song.cloudSource === 'netease-cloud') ? '&cloud=1' : '';
       var data;
       if (transitionHandoff) {
         data = opts.preloadedData;
@@ -493,7 +494,7 @@ async function playQueueAt(idx, opts) {
           '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
           qualityParam, { timeoutMs: 9000 });
       } else {
-        data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
+        data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + cloudParam + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
       }
       if (token !== trackSwitchToken) return;
       if (
