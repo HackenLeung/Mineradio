@@ -553,15 +553,13 @@ function serveStatic(res, filePath) {
     res.end(data);
   });
 }
+// 这里以前固定发 Access-Control-Allow-Origin: *，等于允许任何网页跨站读取账号态、
+// 歌单、听歌数据 —— 服务只绑回环挡不住这类攻击，因为恶意页面的 JS 就跑在本机浏览器里，
+// 127.0.0.1 对它完全可达。去掉之后 sendJSON 和 sendPrivateJSON 等价，直接转发，
+// 免得两份响应头各自漂移。媒体流（本地音乐、音频代理、封面代理）另有自己的 CORS 头，
+// 那是 <audio> 和 canvas 取像素必需的，不走这里。
 function sendJSON(res, data, status) {
-  res.writeHead(status || 200, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-  });
-  res.end(JSON.stringify(data));
+  sendPrivateJSON(res, data, status);
 }
 function sendPrivateJSON(res, data, status) {
   res.writeHead(status || 200, {
@@ -2515,21 +2513,25 @@ function getMusicDownloadDir() {
 // ========== /音乐下载引擎 ==========
 
 function readRequestBody(req) {
+  // 只认 application/json。以前 JSON.parse 失败会回退成表单解析，等于允许拿
+  // text/plain 发 JSON 体 —— 那是 CORS 简单请求，浏览器不发预检，任何网页都能
+  // 跨站写这些端点（顶替登录 cookie 正是走的这条路）。前端所有带 body 的 POST
+  // 都显式带 application/json，回退分支只服务攻击者。
+  const type = String((req && req.headers && req.headers['content-type']) || '')
+    .split(';', 1)[0].trim().toLowerCase();
+  const acceptsBody = type === 'application/json';
   return new Promise(resolve => {
     let raw = '';
     req.on('data', chunk => {
+      // 不接收的请求体也要读完再丢弃，否则连接会挂在半截等客户端发完。
+      if (!acceptsBody) return;
       raw += chunk;
       if (raw.length > 8 * 1024 * 1024) req.destroy();
     });
     req.on('end', () => {
-      if (!raw) { resolve({}); return; }
+      if (!acceptsBody || !raw) { resolve({}); return; }
       try { resolve(JSON.parse(raw)); }
-      catch (e) {
-        const params = new URLSearchParams(raw);
-        const out = {};
-        params.forEach((v, k) => { out[k] = v; });
-        resolve(out);
-      }
+      catch (e) { resolve({}); }
     });
     req.on('error', () => resolve({}));
   });
@@ -6628,6 +6630,17 @@ async function handleHttpRequest(req, res) {
   // 管理面（配对码/状态上报/撤销）自己还会再查一次回环，这里把遥控监听器
   // 上的请求提前标记成非回环，避免它们绕过那一层。
   if (treatAsRemote) req.__mineradioForceRemote = true;
+
+  // 去掉 CORS 通配头只挡住了跨站「读」—— 恶意页面照样能发出 POST/GET 触发副作用
+  // （登出、顶替登录 cookie、改设置），只是读不到响应。所以这里对所有非遥控路径
+  // 统一查一次来源：浏览器发起跨站请求必带 Origin，原生客户端和回归测试不带，
+  // requestHasTrustedLocalOrigin 正是按这条线区分的。遥控路径走 token 鉴权，
+  // 且它的合法来源是遥控端口而不是主端口，必须排除在外。
+  if (!pathAllowedForRemoteOrigin(pn) && !requestHasTrustedLocalOrigin(req)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('Forbidden: cross-site origin');
+    return;
+  }
 
   if (pn === '/api/local-media') {
     const id = String(url.searchParams.get('id') || '');
