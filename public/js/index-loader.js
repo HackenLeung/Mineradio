@@ -31,6 +31,7 @@
     'js/modules/02-visual/08-lyrics-display-modes.js',
     'js/modules/02-visual/09-lyrics-payloads.js',
     'js/modules/02-visual/10-lyrics-mask-textures.js',
+    'js/modules/02-visual/11-lyrics-adaptive-quality.js',
     'js/modules/02-visual/11-lyrics-shaders.js',
     'js/modules/02-visual/12-lyrics-row-layers.js',
     'js/modules/02-visual/13-lyrics-mesh-build.js',

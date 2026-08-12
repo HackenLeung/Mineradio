@@ -35,6 +35,10 @@ function buildLyricMesh(input, preparedRowLayerBundle, preparedMasks) {
   var payload = normalizeStageLyricPayload(input);
   if (!payload) payload = normalizeStageLyricPayload('');
   var text = payload ? payload.combinedText : '';
+  var lineCount = (payload && payload.lines) ? payload.lines.length : 0;
+  if (typeof checkAndApplyLyricQualityDowngrade === 'function') {
+    checkAndApplyLyricQualityDowngrade(lineCount);
+  }
   preparedMasks = preparedMasks || {};
   var mask = preparedMasks.mask || makeLyricMask(payload || text);
   var maskLayout = { fontSize: mask.fontSize, lineHeight: mask.lineHeight };

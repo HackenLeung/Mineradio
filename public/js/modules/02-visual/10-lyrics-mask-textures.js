@@ -389,6 +389,12 @@ function lyricRowTextureWidthBudget() {
   var profile = typeof runtimeHardwareProfile !== 'undefined' ? runtimeHardwareProfile : null;
   if (profile && profile.lowSpec) budget = Math.min(budget, 1024);
   else if (profile && profile.balancedSpec) budget = Math.min(budget, 1536);
+  else budget = Math.min(budget, 2048);
+  if (typeof lyricQualityDowngradeState !== 'undefined' && lyricQualityDowngradeState && lyricQualityDowngradeState.appliedDowngrade) {
+    var downgrade = lyricQualityDowngradeState.appliedDowngrade;
+    if (downgrade.to === 'eco') budget = Math.min(budget, 1024);
+    else if (downgrade.to === 'balanced') budget = Math.min(budget, 1536);
+  }
   var rendererMaxTexture = renderer && renderer.capabilities ? Number(renderer.capabilities.maxTextureSize) : 0;
   if (isFinite(rendererMaxTexture) && rendererMaxTexture > 0) budget = Math.min(budget, rendererMaxTexture);
   return Math.max(768, Math.round(budget));
@@ -406,7 +412,13 @@ function lyricQualityPoolBudgetBytes(tier) {
 
 function lyricQualityMaxResidentRows() {
   var profile = typeof runtimeHardwareProfile !== 'undefined' ? runtimeHardwareProfile : null;
-  return profile && profile.lowSpec ? 4 : (profile && profile.balancedSpec ? 6 : 8);
+  var baseRows = profile && profile.lowSpec ? 4 : (profile && profile.balancedSpec ? 6 : 8);
+  if (typeof lyricQualityDowngradeState !== 'undefined' && lyricQualityDowngradeState && lyricQualityDowngradeState.appliedDowngrade) {
+    var downgrade = lyricQualityDowngradeState.appliedDowngrade;
+    if (downgrade.to === 'eco') return Math.max(3, Math.floor(baseRows * 0.6));
+    if (downgrade.to === 'balanced') return Math.max(4, Math.floor(baseRows * 0.75));
+  }
+  return baseRows;
 }
 
 function lyricQualityTargetMetrics(mask, tier) {
@@ -432,7 +444,8 @@ function lyricQualityTargetMetrics(mask, tier) {
     height = Math.max(1, Math.floor(logicalH * scale));
     bytes = Math.ceil(width * height * 8.8);
   }
-  if (width <= baseW + 8 || height <= Math.max(1, Number(mask.height) || logicalH) + 4) return null;
+  var widthBudget = lyricRowTextureWidthBudget();
+  if (width <= widthBudget * 0.95 || height <= Math.max(1, Number(mask.height) || logicalH) + 4) return null;
   return { tier: tier, scale: scale, width: width, height: height, bytes: bytes, logicalWidth: logicalW, logicalHeight: logicalH };
 }
 
@@ -552,7 +565,7 @@ function compactLyricLineMaskTexture(mask) {
   if (!isFinite(Number(mask.logicalActiveTextWidth)) || Number(mask.logicalActiveTextWidth) <= 0) mask.logicalActiveTextWidth = Number(mask.activeTextWidth) || Number(mask.logicalTextWidth);
   if (!isFinite(Number(mask.logicalTextHeight)) || Number(mask.logicalTextHeight) <= 0) mask.logicalTextHeight = Number(mask.textHeight) || Number(mask.logicalFontSize);
   var widthBudget = lyricRowTextureWidthBudget();
-  if (sourceWidth <= widthBudget + 8) return mask;
+  if (sourceWidth < widthBudget * 0.95) return mask;
   var scale = widthBudget / sourceWidth;
   var compactCanvas = document.createElement('canvas');
   compactCanvas.width = Math.max(1, Math.round(sourceWidth * scale));

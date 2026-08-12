@@ -49,12 +49,57 @@ function detectRuntimeHardwareProfile() {
   var veryLargeSurface = renderPixels >= 7200000;
   var lowSpec = lowCore || lowMemory || (cores > 0 && cores <= 6 && veryLargeSurface);
   var balancedSpec = lowSpec || (cores > 0 && cores <= 8) || largeSurface;
+  var gpuMemoryMB = 0;
+  try {
+    var gl = renderer && renderer.getContext ? renderer.getContext() : null;
+    if (!gl) {
+      var tempCanvas = document.createElement('canvas');
+      gl = tempCanvas.getContext('webgl') || tempCanvas.getContext('experimental-webgl');
+    }
+    if (gl) {
+      var debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (debugInfo) {
+        var rendererString = (gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase();
+        var match = rendererString.match(/(\d+)\s*(MB|GB)/i);
+        if (match) {
+          gpuMemoryMB = parseInt(match[1], 10) * (match[2].toUpperCase() === 'GB' ? 1024 : 1);
+        } else {
+          if (/nvidia|geforce|quadro|tesla/.test(rendererString)) {
+            if (/rtx\s*(40|30)/.test(rendererString)) gpuMemoryMB = 8192;
+            else if (/rtx\s*20/.test(rendererString)) gpuMemoryMB = 6144;
+            else if (/gtx\s*(10|16)/.test(rendererString)) gpuMemoryMB = 4096;
+            else gpuMemoryMB = 2048;
+          } else if (/amd|radeon/.test(rendererString)) {
+            if (/rx\s*[67]/.test(rendererString)) gpuMemoryMB = 8192;
+            else gpuMemoryMB = 4096;
+          } else if (/intel.*iris.*xe/.test(rendererString)) {
+            gpuMemoryMB = 512;
+          } else if (/intel/.test(rendererString) && memory > 0) {
+            gpuMemoryMB = memory <= 4 ? 256 : (memory <= 8 ? 512 : 1024);
+          } else if (/apple.*m[123]/.test(rendererString)) {
+            gpuMemoryMB = 4096;
+          }
+        }
+      }
+      if (gpuMemoryMB === 0) {
+        var maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+        if (maxTextureSize >= 16384) gpuMemoryMB = 4096;
+        else if (maxTextureSize >= 8192) gpuMemoryMB = 2048;
+        else if (maxTextureSize >= 4096) gpuMemoryMB = 1024;
+        else gpuMemoryMB = 512;
+      }
+    }
+  } catch (e) {}
+  if (gpuMemoryMB === 0 && memory > 0) {
+    gpuMemoryMB = memory <= 4 ? 512 : (memory <= 8 ? 1024 : 2048);
+  }
   return {
     cores: cores,
     deviceMemoryGB: memory,
     devicePixelRatio: dpr,
     cssPixels: cssPixels,
     renderPixels: Math.round(renderPixels),
+    gpuMemoryMB: gpuMemoryMB,
     lowCore: lowCore,
     lowMemory: lowMemory,
     largeSurface: largeSurface,

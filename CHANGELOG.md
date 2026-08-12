@@ -2,6 +2,13 @@
 
 ## 未发布
 
+### 性能优化
+
+- 修复 high 档 1440p@1.5x 和 4K 分辨率下歌词纹理压缩失效导致显存翻倍的 bug：压缩触发条件从 `sourceWidth <= widthBudget + 8` 改为 `sourceWidth < widthBudget * 0.95`，影响 1440p@1.5x 从 270MB/60行 降到 ~130MB。
+- 新增 GPU 显存探测：通过 `WEBGL_debug_renderer_info` 识别 NVIDIA/AMD/Intel 型号并估算显存，回退方案为 `MAX_TEXTURE_SIZE` 或 `deviceMemory` 推断。
+- 新增歌词质量自适应降级：加载长歌词前检查显存压力，超 15-25% 自动 high→balanced→eco 降档或限制常驻行数，防止 4GB 内存 512MB 显存机器 OOM 崩溃。
+- Google Fonts 改为异步加载（`media="print" onload="this.media='all'"`），不再阻塞首屏渲染，墙内/断网环境首屏快 3-10 秒。
+
 ## v1.3.2
 
 - 新增舞台式 3D 音乐库封面墙：支持本地歌曲、文件夹和在线歌单的分层浏览，并在本地歌曲页提供搜索、定位当前歌曲、悬浮“下一首播放”和回到顶部操作。
