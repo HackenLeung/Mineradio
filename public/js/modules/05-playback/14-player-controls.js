@@ -72,6 +72,24 @@ function currentResumeSeconds(fallback) {
   return Math.max(0, Number(fallback) || 0);
 }
 
+// 本地歌的起播卡死不该按在线歌的节奏等：文件已经在本机、缓冲往往几十上百秒，
+// 6500ms 那档纯粹是白等（实测 stall.jsonl 里本地 MP3 缓冲 139s 仍冻 5762ms）。
+// 判定同时看队列项和 media.src —— 队列项在恢复/换歌竞态里可能还没对上，
+// 而 `/api/local-media` 这个来源是服务端注册过的本地文件，足以单独定性。
+function playbackSongIsLocalFile(song) {
+  return !!(song && (song.type === 'local' || song.source === 'local' || song.localUrl || song.localKey));
+}
+function playbackMediaIsLocalFile(media) {
+  if (playbackSongIsLocalFile(playQueue && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null)) return true;
+  var src = String(media && (media.currentSrc || media.src) || '');
+  return src.indexOf('/api/local-media') >= 0;
+}
+function playbackTrackSwitchClockTimeoutMs(media, startTime) {
+  if (Number(startTime) >= 0.35) return AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS;
+  if (playbackMediaIsLocalFile(media)) return AUDIO_LOCAL_TRACK_SWITCH_CLOCK_TIMEOUT_MS;
+  return AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS;
+}
+
 function canRefreshCurrentPlaybackUrlForResume(song) {
   if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return false;
   var provider = normalizePlaybackProvider(songProviderKey(song));
@@ -289,6 +307,7 @@ function playbackAttemptStillCurrent(media, token) {
 // a normal track switch must advance promptly. Explicit mid-track recovery or
 // source switching gets the wider clock budget; fresh 0:00 switches fail over quickly.
 var AUDIO_PLAY_REQUEST_TIMEOUT_MS = 22000;
+var AUDIO_LOCAL_TRACK_SWITCH_CLOCK_TIMEOUT_MS = 1600;
 var AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS = 6500;
 var AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS = 12000;
 var AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS = 4200;
@@ -469,9 +488,7 @@ async function completeAudioPlayStart(opts, reason, expectedMedia, expectedToken
   if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
   if (opts.trackSwitch) {
     var trackStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
-    var trackClockTimeoutMs = trackStartTime >= 0.35
-      ? AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS
-      : AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS;
+    var trackClockTimeoutMs = playbackTrackSwitchClockTimeoutMs(expectedMedia, trackStartTime);
     var trackStarted = await waitForAudioPlaybackProgress(expectedMedia, expectedToken, trackStartTime, trackClockTimeoutMs, 0.04);
     if (!trackStarted && audioPlaybackWaitingForNetwork(expectedMedia)) {
       trackStarted = await waitForAudioPlaybackProgress(expectedMedia, expectedToken, trackStartTime, AUDIO_NETWORK_STARVATION_GRACE_MS, 0.04);
@@ -674,16 +691,15 @@ async function attemptAudioPlay(opts) {
         : createAudioClockStalledError(expectedMedia, 'manual-resume');
     }
     if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
-    if (!audioGraphHealthy()) initAudio();
     if (opts.manual || opts.trackSwitch) {
       var directStartTime = isFinite(Number(expectedMedia.currentTime)) ? Number(expectedMedia.currentTime) : 0;
-      var directPlay = expectedMedia.play();
+      // 输出设备和 WebAudio 图必须在 play() 之前稳定下来。尤其本地歌上，
+      // play() 后再次 setSinkId 会让 Chromium 偶发把媒体时钟卡在 0 秒。
       await applyAudioOutputDevice(expectedMedia);
-      if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) {
-        Promise.resolve(directPlay).catch(function () { });
-        return false;
-      }
-      await ensurePlaybackAudioGraph(opts.manual ? 'manual-after-play-request' : 'track-switch-after-play-request');
+      if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
+      await ensurePlaybackAudioGraph(opts.manual ? 'manual-before-play' : 'track-switch-before-play');
+      if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;
+      var directPlay = expectedMedia.play();
       await awaitMediaPlayWithTimeout(expectedMedia, directPlay, expectedToken);
       if (opts.manual && !opts.trackSwitch && !await waitForAudioPlaybackProgress(expectedMedia, expectedToken, directStartTime, AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS, 0.04)) {
         throw audioPlaybackHasTransientNetworkFailure(expectedMedia)
