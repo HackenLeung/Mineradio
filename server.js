@@ -553,6 +553,47 @@ function serveStatic(res, filePath) {
     res.end(data);
   });
 }
+
+// index-loader 必须在 DOMContentLoaded 前同步注入模块（有两个模块直接监听该事件，
+// 改异步会让它们静默失效）。旧实现为此让浏览器同步请求 110 个文件，冷启动时会
+// 卡到 loadURL 的 15s 上限。模块顺序仍只维护在 index-loader.js；服务端读同一份名单，
+// 并行读盘后按原顺序拼成一次响应，把 110 次浏览器往返收成一次。
+function indexModulePathsFromLoader(loaderText) {
+  const declaration = /const\s+modulePaths\s*=\s*\[([\s\S]*?)\];/.exec(String(loaderText || ''));
+  if (!declaration) throw new Error('INDEX_MODULE_PATHS_MISSING');
+  const paths = [];
+  const literal = /'([^'\\]*(?:\\.[^'\\]*)*)'/g;
+  let match;
+  while ((match = literal.exec(declaration[1]))) paths.push(match[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\'));
+  if (!paths.length) throw new Error('INDEX_MODULE_PATHS_EMPTY');
+  return paths;
+}
+
+async function serveIndexModulesBundle(res) {
+  try {
+    const publicDir = path.join(__dirname, 'public');
+    const loaderText = await fs.promises.readFile(path.join(publicDir, 'js', 'index-loader.js'), 'utf8');
+    const modulePaths = indexModulePathsFromLoader(loaderText);
+    const modules = await Promise.all(modulePaths.map(async (relativePath) => {
+      const normalized = String(relativePath || '').replace(/\\/g, '/');
+      if (!normalized || normalized.startsWith('/') || normalized.includes('../')) throw new Error('INDEX_MODULE_PATH_INVALID');
+      const absolutePath = path.resolve(publicDir, normalized);
+      if (absolutePath !== publicDir && !absolutePath.startsWith(publicDir + path.sep)) throw new Error('INDEX_MODULE_PATH_OUTSIDE_PUBLIC');
+      return fs.promises.readFile(absolutePath, 'utf8');
+    }));
+    res.writeHead(200, {
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+    res.end(modules.join('\n;\n') + '\n//# sourceURL=mineradio-index-modules.js\n');
+  } catch (error) {
+    console.error('[StartupBundle]', error && (error.stack || error.message || error));
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('Failed to build startup module bundle');
+  }
+}
 // 这里以前固定发 Access-Control-Allow-Origin: *，等于允许任何网页跨站读取账号态、
 // 歌单、听歌数据 —— 服务只绑回环挡不住这类攻击，因为恶意页面的 JS 就跑在本机浏览器里，
 // 127.0.0.1 对它完全可达。去掉之后 sendJSON 和 sendPrivateJSON 等价，直接转发，
@@ -8633,6 +8674,16 @@ async function handleHttpRequest(req, res) {
   }
 
   // ---------- 静态资源 ----------
+  if (pn === '/js/index-modules-bundle.js') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'Cache-Control': 'no-store' });
+      res.end('Method not allowed');
+      return;
+    }
+    await serveIndexModulesBundle(res);
+    return;
+  }
+
   if (pn === '/favicon.ico') {
     serveStatic(res, path.join(__dirname, 'build', 'icon.ico'));
     return;

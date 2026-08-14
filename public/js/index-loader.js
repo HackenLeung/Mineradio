@@ -128,7 +128,25 @@
     return request.responseText;
   }
 
+  // 服务端把上面这份名单按同样顺序拼成一份，这里同步请求一次即可，省掉 110 次往返。
+  // 必须保持同步：10-shell/03-splash.js 和 03-beat/06-sonic-audio-monitor.js 是无保护的
+  // DOMContentLoaded 监听，异步注入会落到该事件之后，让它们静默失效。
+  function readBundle() {
+    try {
+      const request = new XMLHttpRequest();
+      request.open('GET', 'js/index-modules-bundle.js?v=' + moduleCacheBust, false);
+      request.send(null);
+      if (request.status < 200 || request.status >= 300) return '';
+      return request.responseText || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  // 合并端点出问题就退回逐个加载：慢，但页面照样能起来。
+  const bundled = readBundle();
   const script = document.createElement('script');
-  script.text = modulePaths.map(readModule).join('') + '\n//# sourceURL=mineradio-index-modules.js\n';
+  script.text = bundled
+    || (modulePaths.map(readModule).join('') + '\n//# sourceURL=mineradio-index-modules.js\n');
   document.currentScript.parentNode.insertBefore(script, document.currentScript.nextSibling);
 })();

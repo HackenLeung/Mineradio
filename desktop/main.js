@@ -107,6 +107,19 @@ let tray = null;
 let trayPlaybackState = { title: '未播放', artist: '', playing: false, volume: 1, cover: '', muted: false };
 let startupCompleted = false;
 let startupErrorReported = false;
+// 用户用魔方/托盘主动隐藏过主窗口。启动阶段的显示时机（兜底定时器、
+// dom-ready、did-finish-load、ready-to-show）都是无条件 show()，而页面加载
+// 慢时它们会落在用户已经隐藏之后，把隐藏推翻。这个标记让它们让路；
+// 托盘点击、魔方「打开主程序」、第二实例唤起是明确的显示意图，会清掉它。
+let mainWindowUserHidden = false;
+const STARTUP_DRIVEN_SHOW_REASONS = new Set([
+  'watchdog',
+  'dom-ready',
+  'did-finish-load',
+  'ready-to-show',
+  'navigation-complete',
+  'startup-in-progress',
+]);
 let localServerStartPromise = null;
 let mainWindowCreatePromise = null;
 let startupState = {
@@ -2041,6 +2054,8 @@ function isZoomShortcutInput(input) {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  // 托盘点击、魔方「打开主程序」、第二实例唤起都走这里：明确要看到窗口。
+  mainWindowUserHidden = false;
   const desktopMode = fullDesktopModeRuntime.getStatus('focus-main-window');
   if (desktopMode.enabled === true) {
     setFullDesktopModeInteractive(true, 'focus-main-window').catch((error) => {
@@ -2064,6 +2079,7 @@ async function toggleMainWindowFromCube() {
     return !!(result && (result.interactive === true || result.status && result.status.interactive === true));
   }
   if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindowUserHidden = true;
     mainWindow.hide();
     sendWindowState(mainWindow);
     scheduleAppMemoryTrim('cube-remote-hide', 2200);
@@ -4984,9 +5000,13 @@ async function ensureLocalServerStarted() {
 
 function showMainWindowSafely(win, reason) {
   if (!win || win.isDestroyed()) return false;
+  // 定时器无论这次显不显示都要清掉，否则它稍后又会把窗口翻出来。
   if (win.__mineradioStartupShowTimer) {
     clearTimeout(win.__mineradioStartupShowTimer);
     win.__mineradioStartupShowTimer = null;
+  }
+  if (win === mainWindow && mainWindowUserHidden && STARTUP_DRIVEN_SHOW_REASONS.has(String(reason || ''))) {
+    return false;
   }
   ensureMainWindowInsideDisplay(win);
   if (win.isMinimized()) win.restore();
@@ -5000,6 +5020,15 @@ function showMainWindowSafely(win, reason) {
   return true;
 }
 
+// 文档已经到 dom-ready 且渲染进程还活着，就算这次导航可用 —— 剩下的子资源
+// 慢不该等同于启动失败（历史上三次 MR-BOOT-WINDOW-LOAD 都是这个误杀）。
+function mainWindowNavigationUsable(win) {
+  if (!win || win.isDestroyed()) return false;
+  const contents = win.webContents;
+  if (!contents || contents.isDestroyed() || contents.isCrashed()) return false;
+  return win.__mineradioDocumentUsable === true;
+}
+
 async function loadMainWindowWithRetry(win) {
   const port = mainServerPort || process.env.PORT || 3000;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -5007,6 +5036,7 @@ async function loadMainWindowWithRetry(win) {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     if (!win || win.isDestroyed()) throw new Error('Main BrowserWindow was destroyed before navigation');
     const targetUrl = `${baseUrl}/?startupAttempt=${attempt}&startupAt=${Date.now()}`;
+    win.__mineradioDocumentUsable = false;
     try {
       writeStartupState('navigation-attempt', { navigationAttempt: attempt, navigationAt: Date.now(), targetUrl });
       if (attempt === 1 && process.env.MINERADIO_STARTUP_TEST_FAIL_FIRST_NAV === '1') {
@@ -5018,10 +5048,23 @@ async function loadMainWindowWithRetry(win) {
         win.loadURL(targetUrl),
         STARTUP_NAVIGATION_TIMEOUT_MS,
         `loadURL attempt ${attempt}`,
-        () => { try { win.webContents.stop(); } catch (_) {} },
+        () => {
+          // 页面已经可用时别 stop()：那会掐断剩下的子资源，把一个好页面弄残。
+          if (mainWindowNavigationUsable(win)) return;
+          try { win.webContents.stop(); } catch (_) {}
+        },
       );
       return targetUrl;
     } catch (error) {
+      if (mainWindowNavigationUsable(win)) {
+        writeStartupState('navigation-usable', {
+          navigationAttempt: attempt,
+          usableAt: Date.now(),
+          deferredNavigationError: String(error && error.message || error),
+        });
+        console.warn(`[StartupWindow] navigation attempt ${attempt} timed out after DOM became usable; continuing`);
+        return targetUrl;
+      }
       lastError = error;
       writeStartupState('navigation-retry', { navigationAttempt: attempt, retryAt: Date.now(), lastNavigationError: String(error && error.message || error) });
       console.warn(`[StartupWindow] navigation attempt ${attempt} failed:`, error.message || error);
@@ -5074,6 +5117,7 @@ async function createWindowOnce() {
     },
   });
   mainWindow = win;
+  mainWindowUserHidden = false;
   hookExplorerRestartForFullDesktop(win);
   writeStartupState('window-created', { windowCreatedAt: Date.now() });
 
@@ -5108,6 +5152,9 @@ async function createWindowOnce() {
     showMainWindowSafely(win, 'did-finish-load');
   });
   win.webContents.on('dom-ready', () => {
+    // loadURL 只在 did-finish-load 才兑现，而那要等所有子资源。文档到这一步
+    // 就已经可用了，记下来，别让某个慢子资源把启动判成失败。
+    win.__mineradioDocumentUsable = true;
     showMainWindowSafely(win, 'dom-ready');
   });
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -5214,6 +5261,7 @@ async function createWindowOnce() {
       createOrUpdateTray();
       flushMainWindowFxAutosave('tray-hide').finally(() => {
         if (win.isDestroyed()) return;
+        if (win === mainWindow) mainWindowUserHidden = true;
         win.hide();
         sendWindowState(win);
         scheduleAppMemoryTrim('tray-hide', 2200);
