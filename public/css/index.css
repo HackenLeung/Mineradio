@@ -17702,7 +17702,9 @@ body.panel-reordering .mini-queue-item.is-reordering {
 /* Visual console task-first layout. Keep the established panel/button glass; only reorganize information. */
 .fx-console-toolbar {
   position: sticky;
-  top: -18px;
+  /* Keep the complete search row visible while a search hit scrolls the
+     console content. A negative inset lets the toolbar itself be clipped. */
+  top: 0;
   z-index: 14;
   margin: -2px -2px 14px;
   padding: 5px;
@@ -18052,7 +18054,7 @@ body.panel-reordering .mini-queue-item.is-reordering {
 
 @media (max-width:720px) {
   .fx-console-toolbar {
-    top: -14px
+    top: 0
   }
 
   .fx-console-toolbar .fx-panel-tabs {
@@ -18092,7 +18094,7 @@ body.panel-reordering .mini-queue-item.is-reordering {
 
 @media (max-height:760px) {
   .fx-console-toolbar {
-    top: -14px
+    top: 0
   }
 
   #fx-panel .fx-console-group .fx-console-group-head {

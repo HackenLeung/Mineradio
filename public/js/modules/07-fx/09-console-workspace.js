@@ -567,6 +567,35 @@ function closeFxConsolePopovers() {
 
 var fxConsoleSearchHitDelayTimer = 0;
 var fxConsoleSearchHitClearTimer = 0;
+function fxConsoleScrollEntryIntoView(entry, reduceMotion) {
+  var panel = document.getElementById('fx-panel');
+  if (!panel || !entry || !entry.element || !panel.contains(entry.element)) return;
+
+  // Do not call Element#scrollIntoView here. The console is a fixed, nested
+  // scroll surface; the native helper is allowed to scroll every ancestor,
+  // which can move the window viewport and leave the console header clipped.
+  var panelRect = panel.getBoundingClientRect();
+  var toolbar = document.getElementById('fx-console-toolbar');
+  var toolbarHeight = toolbar && Number.isFinite(toolbar.offsetHeight) ? toolbar.offsetHeight : 0;
+  var topInset = Math.min(Math.max(toolbarHeight + 10, 18), Math.max(18, panel.clientHeight - 24));
+  var bottomInset = 12;
+  var targetRect = entry.element.getBoundingClientRect();
+  var targetCenter = (targetRect.top + targetRect.bottom) / 2;
+  var visibleTop = panelRect.top + topInset;
+  var visibleBottom = panelRect.bottom - bottomInset;
+  var visibleCenter = (visibleTop + visibleBottom) / 2;
+  var delta = targetCenter - visibleCenter;
+  var maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+  var nextScrollTop = Math.max(0, Math.min(maxScrollTop, panel.scrollTop + delta));
+  if (Math.abs(nextScrollTop - panel.scrollTop) < 1) return;
+
+  if (typeof panel.scrollTo === 'function') {
+    panel.scrollTo({ top: nextScrollTop, behavior: reduceMotion ? 'auto' : 'smooth' });
+  } else {
+    panel.scrollTop = nextScrollTop;
+  }
+}
+
 function fxConsoleFocusEntry(entry) {
   if (!entry || !entry.element) return;
   setFxPanelTab(entry.tab);
@@ -579,7 +608,7 @@ function fxConsoleFocusEntry(entry) {
   closeFxConsolePopovers();
   requestAnimationFrame(function () {
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    entry.element.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    fxConsoleScrollEntryIntoView(entry, reduceMotion);
     var focusTarget = entry.element.matches && entry.element.matches('input,button,select,textarea,[tabindex]')
       ? entry.element
       : (entry.element.querySelector && entry.element.querySelector('input:not([type="hidden"]),button,select,textarea,[tabindex]'));
