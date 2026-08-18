@@ -129,10 +129,10 @@ const UPDATE_FALLBACK_NOTES = [
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const WEATHER_DEFAULT_LOCATION = {
-  name: '上海',
+  name: '广州',
   country: 'China',
-  latitude: 31.2304,
-  longitude: 121.4737,
+  latitude: 23.1291,
+  longitude: 113.2644,
   timezone: 'Asia/Shanghai',
 };
 

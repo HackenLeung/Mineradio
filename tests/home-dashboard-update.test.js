@@ -142,6 +142,21 @@ test('homepage update does not import LX-only data paths', () => {
   }
 });
 
+test('weather defaults to Guangzhou and IP location stays manual-only', () => {
+  assert.match(dashboardScript, /HOME_DASHBOARD_WEATHER_DEFAULT_CITY\s*=\s*'广州'/);
+  assert.doesNotMatch(dashboardScript, /HOME_DASHBOARD_WEATHER_CITY_MANUAL_KEY/);
+  assert.match(dashboardScript, /if\s*\(!savedCity\)/, 'only users without a saved city should receive the default');
+  assert.equal((dashboardScript.match(/\/api\/weather\/ip-location\?/g) || []).length, 1);
+  const locate = namedFunctionSource(dashboardScript, 'locateHomeDashboardWeather');
+  assert.match(locate, /\/api\/weather\/ip-location\?/);
+  assert.match(dashboardScript, /id="home-dashboard-editor-locate"[^>]*>定位</);
+});
+
+test('weather backend fallback defaults to Guangzhou', () => {
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  assert.match(serverText, /const WEATHER_DEFAULT_LOCATION = \{[\s\S]{0,140}name: '广州'[\s\S]{0,180}latitude: 23\.1291[\s\S]{0,100}longitude: 113\.2644/);
+});
+
 test('discovery CSS stays scoped to the homepage surface', () => {
   const discoverySelectors = cssRuleSelectors(indexCss).filter((selector) => selector.includes('.home-discovery-'));
   assert.ok(discoverySelectors.length > 0, 'expected CSS rules for the homepage discovery strip');

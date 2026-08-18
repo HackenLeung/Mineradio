@@ -10,6 +10,7 @@ var HOME_DASHBOARD_VIDEO_BLOB_ID = 'home-hero-video';
 var HOME_DASHBOARD_VIDEO_META_KEY = 'mineradio-home-dashboard-video-meta-v1';
 var HOME_DASHBOARD_VIDEO_MAX_BYTES = 300 * 1024 * 1024;
 var HOME_DASHBOARD_WEATHER_CITY_KEY = 'mineradio-weather-city';
+var HOME_DASHBOARD_WEATHER_DEFAULT_CITY = '广州';
 var HOME_DASHBOARD_IMAGE_KEY = 'mineradio-daily-review-image-v1';
 var HOME_DASHBOARD_CUSTOM_KEY = 'mineradio-home-custom-v1';
 var homeDashboardVideoDbPromise = null;
@@ -25,7 +26,16 @@ var homeDashboardWeatherPromise = null;
 var homeDashboardWeatherState = {
   loading: false,
   loaded: false,
-  city: (function () { try { return localStorage.getItem(HOME_DASHBOARD_WEATHER_CITY_KEY) || '上海'; } catch (_) { return '上海'; } })(),
+  city: (function () {
+    try {
+      var savedCity = String(localStorage.getItem(HOME_DASHBOARD_WEATHER_CITY_KEY) || '').trim();
+      if (!savedCity) {
+        localStorage.setItem(HOME_DASHBOARD_WEATHER_CITY_KEY, HOME_DASHBOARD_WEATHER_DEFAULT_CITY);
+        return HOME_DASHBOARD_WEATHER_DEFAULT_CITY;
+      }
+      return savedCity;
+    } catch (_) { return HOME_DASHBOARD_WEATHER_DEFAULT_CITY; }
+  })(),
   weather: null,
   error: ''
 };
@@ -116,7 +126,7 @@ function homeDashboardHasWeather(weather) {
 
 function homeDashboardWeatherTitle() {
   var weather = homeDashboardWeatherState.weather;
-  var city = weather && weather.location && weather.location.name || homeDashboardWeatherState.city || '上海';
+  var city = weather && weather.location && weather.location.name || homeDashboardWeatherState.city || HOME_DASHBOARD_WEATHER_DEFAULT_CITY;
   var temperature = homeDashboardFiniteWeather(weather && weather.temperature);
   if (temperature === null) return city + ' · 天气暂不可用';
   return city + ' · ' + Math.round(temperature) + '° · ' + (weather.label || '天气');
@@ -146,7 +156,7 @@ function homeDashboardWeatherUrl(options) {
     params.push('lat=' + encodeURIComponent(options.lat));
     params.push('lon=' + encodeURIComponent(options.lon));
     params.push('city=' + encodeURIComponent(options.city || '当前位置'));
-  } else params.push('city=' + encodeURIComponent(options.city || homeDashboardWeatherState.city || '上海'));
+  } else params.push('city=' + encodeURIComponent(options.city || homeDashboardWeatherState.city || HOME_DASHBOARD_WEATHER_DEFAULT_CITY));
   params.push('timezone=' + encodeURIComponent(options.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'auto'));
   params.push('t=' + Date.now());
   return '/api/weather/radio?' + params.join('&');
@@ -193,7 +203,7 @@ async function loadHomeDashboardWeather(force, options) {
 }
 
 async function locateHomeDashboardWeather() {
-  var previousCity = homeDashboardWeatherState.city || '上海';
+  var previousCity = homeDashboardWeatherState.city || HOME_DASHBOARD_WEATHER_DEFAULT_CITY;
   try {
     var data = await apiJson('/api/weather/ip-location?t=' + Date.now(), { timeoutMs: 12000 });
     var location = data && data.location;
@@ -640,7 +650,7 @@ function openHomeDashboardEditor() {
   positionY.value = config.positionY;
   zoom.value = config.zoom;
   showWeather.checked = config.showWeather;
-  cityInput.value = homeDashboardWeatherState.city || '上海';
+  cityInput.value = homeDashboardWeatherState.city || HOME_DASHBOARD_WEATHER_DEFAULT_CITY;
   function pendingConfig() {
     return normalizeHomeDashboardCustom({
       text: textInput.value,

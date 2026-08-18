@@ -29,7 +29,6 @@ function updateProgressDetailText() {
 function initUpdatePreview() {
   renderUpdatePreviewPanel();
   setUpdatePreviewVisible(true);
-  setTimeout(startUpdateIconBreathing, 760);
 }
 
 function setUpdatePreviewVisible(visible) {
@@ -37,17 +36,6 @@ function setUpdatePreviewVisible(visible) {
   var entry = document.getElementById('update-entry');
   if (!entry) return;
   entry.classList.toggle('available', updatePreviewState.visible);
-  if (!updatePreviewState.visible && window.gsap) {
-    window.gsap.killTweensOf(entry);
-    window.gsap.set(entry, { autoAlpha: 0, y: 0, clearProps: 'boxShadow,filter,scale' });
-    return;
-  }
-  if (updatePreviewState.visible && window.gsap) {
-    window.gsap.fromTo(entry,
-      { autoAlpha: 0, y: -6, scale: 0.92, filter: 'blur(6px)' },
-      { autoAlpha: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.62, delay: 0.18, ease: 'expo.out', overwrite: true }
-    );
-  }
 }
 
 async function checkLatestUpdate() {
@@ -92,33 +80,6 @@ function applyLatestUpdateInfo(data) {
 
 function isUpdateVersionOnlyText(text) {
   return /^(?:mineradio\s*)?v?\d+(?:\.\d+){1,3}$/i.test(String(text || '').trim());
-}
-
-function startUpdateIconBreathing() {
-  var entry = document.getElementById('update-entry');
-  if (!entry || !window.gsap) return;
-  var ring = entry.querySelector('.update-ring');
-  window.gsap.killTweensOf(entry, 'y,boxShadow');
-  window.gsap.set(entry, { autoAlpha: 1 });
-  if (ring) window.gsap.killTweensOf(ring);
-  window.gsap.to(entry, {
-    y: -1.4,
-    boxShadow: '0 16px 44px rgba(0,0,0,.32),0 0 24px rgba(244,210,138,.18),0 0 13px rgba(157,184,207,.06),inset 0 1px 0 rgba(255,255,255,.11)',
-    duration: 2.6,
-    repeat: -1,
-    yoyo: true,
-    ease: 'sine.inOut'
-  });
-  if (ring) {
-    window.gsap.to(ring, {
-      rotate: 18,
-      duration: 3.8,
-      repeat: -1,
-      yoyo: true,
-      ease: 'sine.inOut',
-      transformOrigin: '50% 50%'
-    });
-  }
 }
 
 function renderUpdatePreviewPanel() {
@@ -179,16 +140,12 @@ function updateUpdatePreviewProgress(progress) {
 
 function openUpdatePanel() {
   var mask = document.getElementById('update-modal');
-  var entry = document.getElementById('update-entry');
   if (!mask) return;
   updatePreviewState.status = 'downloading';
   updatePreviewState.hero = '正在检查 GitHub 最新版本。';
   updatePreviewState.notes = ['只检查是否有新版本', '不会在软件内下载或安装'];
   updateUpdatePreviewProgress(0);
   renderUpdatePreviewPanel();
-  if (entry && window.gsap) {
-    window.gsap.fromTo(entry, { scale: 0.93 }, { scale: 1, duration: 0.42, ease: 'back.out(1.7)', overwrite: 'auto' });
-  }
   openGsapModal(mask);
   updatePreviewState.open = true;
   animateUpdatePanelContents();
@@ -472,15 +429,8 @@ function startUpdatePreviewDownload() {
 }
 
 function pulseUpdateReady() {
-  var entry = document.getElementById('update-entry');
   var btn = document.getElementById('update-primary-btn');
   if (!window.gsap) return;
-  if (entry) {
-    window.gsap.fromTo(entry,
-      { scale: 0.96, filter: 'drop-shadow(0 0 0 rgba(244,210,138,0))' },
-      { scale: 1.04, filter: 'drop-shadow(0 0 14px rgba(244,210,138,.28))', duration: 0.34, yoyo: true, repeat: 1, ease: 'sine.inOut', overwrite: 'auto' }
-    );
-  }
   if (btn) {
     window.gsap.fromTo(btn,
       { boxShadow: '0 0 0 rgba(244,210,138,0), inset 0 1px 0 rgba(255,255,255,.09)' },

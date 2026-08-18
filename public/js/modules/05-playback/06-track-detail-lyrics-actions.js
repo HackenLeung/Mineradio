@@ -8,6 +8,20 @@ function songDurationLabel(song) {
   if (!sec) return '未知';
   return formatProgramTime(sec);
 }
+function albumReleaseDateLabel(value) {
+  if (value == null || value === '') return '未知';
+  var text = String(value).trim();
+  var dateParts = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(text);
+  if (!dateParts && /^\d{8}$/.test(text)) dateParts = [text, text.slice(0, 4), text.slice(4, 6), text.slice(6, 8)];
+  if (dateParts) return dateParts[1] + '-' + String(dateParts[2]).padStart(2, '0') + '-' + String(dateParts[3]).padStart(2, '0');
+  var timestamp = Number(text);
+  if (timestamp === 0) return '';
+  if (!isFinite(timestamp) || timestamp < 0) return text || '未知';
+  if (timestamp < 100000000000) timestamp *= 1000;
+  var date = new Date(timestamp);
+  if (isNaN(date.getTime())) return text;
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+}
 function songSourceLabel(song) {
   if (!song) return '未知';
   if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return '小Q';
@@ -839,7 +853,7 @@ function openTrackDetailModal(type, songOverride) {
       '<div class="detail-sub" id="album-detail-sub">' + escHtml(song.artist || '未知歌手') + ' · ' + escHtml(songSourceLabel(song)) + '</div></div>' +
       '</div>' +
       '<div class="detail-grid">' +
-      detailRow('当前歌曲', title) +
+      '<div class="detail-k">发行时间</div><div class="detail-v" id="album-detail-release-date">未知</div>' +
       detailRow('专辑', albumTitle) +
       detailRow('歌手', song.artist || '未知歌手') +
       detailRow('来源', songSourceLabel(song)) +
@@ -874,8 +888,10 @@ function openTrackDetailModal(type, songOverride) {
         }
         var titleEl = document.getElementById('album-detail-title');
         var subEl = document.getElementById('album-detail-sub');
+        var releaseDateEl = document.getElementById('album-detail-release-date');
         if (titleEl && albumInfo.name) titleEl.textContent = albumInfo.name;
         if (subEl) subEl.textContent = (albumInfo.artist || song.artist || '未知歌手') + ' · ' + songSourceLabel(song);
+        if (releaseDateEl) releaseDateEl.textContent = albumReleaseDateLabel(albumInfo.releaseDate);
         var detailCover = body.querySelector('.detail-cover');
         var albumCover = albumInfo.cover || (songs[0] && songs[0].cover) || cover;
         if (detailCover && albumCover) {

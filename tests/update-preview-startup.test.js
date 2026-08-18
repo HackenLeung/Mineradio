@@ -52,6 +52,8 @@ test('update check is manual and runs when the panel is opened', () => {
   const check = functionSource(updateText, 'checkLatestUpdate');
   const open = functionSource(updateText, 'openUpdatePanel');
   const startDownload = functionSource(updateText, 'startUpdatePreviewDownload');
+  const setVisible = functionSource(updateText, 'setUpdatePreviewVisible');
+  const pulseReady = functionSource(updateText, 'pulseUpdateReady');
 
   assert.doesNotMatch(stateText, /startupCheckStarted/);
   assert.doesNotMatch(init, /checkLatestUpdate\(/);
@@ -60,6 +62,8 @@ test('update check is manual and runs when the panel is opened', () => {
   assert.match(check, /setUpdatePreviewVisible\(true\)/);
   assert.match(open, /checkLatestUpdate\(\)/);
   assert.match(startDownload, /checkLatestUpdate\(\)/);
+  assert.doesNotMatch(updateText, /startUpdateIconBreathing/);
+  assert.doesNotMatch(setVisible + open + pulseReady, /gsap\.(?:to|fromTo)\(entry/);
   assert.match(startupText, /\ninitUpdatePreview\(\);/);
   assert.doesNotMatch(startupText, /setTimeout\(initUpdatePreview,\s*9000\)/);
   assert.match(indexText, /id="visual-guide-btn"[\s\S]{0,260}<svg viewBox="0 0 24 24"/);
