@@ -9,6 +9,9 @@ var SEARCH_HISTORY_MODES = ['song', 'netease', 'qq', 'kugou', 'podcast'];
 var MUSIC_SEARCH_INITIAL_VISIBLE = 18;
 var MUSIC_SEARCH_APPEND_BATCH = 14;
 var MUSIC_SEARCH_MAX_RESULTS = 180;
+// apiJson 不传 timeoutMs 就不设上限，请求会一直悬着。每个音源各自计时，
+// 慢的那个掉队就好，不能拖住整批（三个音源是并行 allSettled）。
+var MUSIC_SEARCH_TIMEOUT_MS = 12000;
 var searchLoadMoreObserver = null;
 var pendingSearchProviderPages = null;
 var searchMusicRenderState = {
@@ -157,6 +160,12 @@ function runSearchHistory(q) {
   if (!q) return;
   $input.value = q;
   setPeek(document.getElementById('search-area'), true, 'search');
+  // 音乐搜索的结果在弹窗里，历史点击也走同一条路，别再往下拉塞列表。
+  if (isMusicSearchMode(searchMode) && typeof openSearchWall === 'function') {
+    $results.classList.remove('show');
+    openSearchWall(q, { mode: searchMode });
+    return;
+  }
   doSearch(q);
   $input.focus();
 }
@@ -193,9 +202,24 @@ function updateSearchModeTabs() {
   }
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
+// 只同步模式本身，不动结果、不弹下拉。搜索弹窗切音源时用这个 ——
+// 走完整的 setSearchMode 会 clearSearchResults() 把弹窗正在用的 playlist 清空。
+function syncSearchModeOnly(mode) {
+  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou') ? mode : 'song';
+  if (searchMode === mode) return false;
+  searchMode = mode;
+  updateSearchModeTabs();
+  return true;
+}
 function setSearchMode(mode) {
   mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou') ? mode : 'song';
   if (searchMode === mode) return;
+  // 弹窗开着时它自己管音源与结果。这里必须在 clearSearchResults() 之前就让开，
+  // 否则会把弹窗正在用的 playlist 清空（那 6 个 index 型 action 全靠它）。
+  if (typeof isSearchWallOpen === 'function' && isSearchWallOpen()) {
+    syncSearchModeOnly(mode);
+    return;
+  }
   searchMode = mode;
   updateSearchModeTabs();
   clearSearchResults();
@@ -206,7 +230,9 @@ function setSearchMode(mode) {
     if (q) doSearch(q);
     else if (!renderSearchHistory()) loadPodcastHot();
   } else if (q) {
-    doSearch(q);
+    // 音乐搜索的结果在弹窗里，不走下拉。
+    if (typeof openSearchWall === 'function') openSearchWall(q, { mode: searchMode });
+    else doSearch(q);
   } else {
     renderSearchHistory();
   }
@@ -348,6 +374,8 @@ function playPodcastProgram(i) {
   playSearchResult(i);
 }
 
+// 下拉只保留两件事：搜索历史，以及 Podcast 的结果列表（它没有弹窗形态）。
+// 音乐搜索的结果一律进弹窗，所以打字时不再往下拉里塞歌曲列表。
 $input.addEventListener('input', function () {
   clearTimeout(searchTimer);
   var q = $input.value.trim();
@@ -360,9 +388,11 @@ $input.addEventListener('input', function () {
     return;
   }
   if (isMusicSearchMode(searchMode)) {
-    setSearchHistorySurface(false);
-    $results.innerHTML = '<div class="search-empty">正在搜索 “' + escHtml(q) + '”…</div>';
-    $results.classList.add('show');
+    // 有词了就把历史收起来，等回车进弹窗；不在下拉里预览歌曲结果。
+    playlist = [];
+    $results.innerHTML = '';
+    $results.classList.remove('show', 'search-history-surface');
+    return;
   }
   searchTimer = setTimeout(function () { doSearch(q); }, 180);
 });
@@ -371,6 +401,8 @@ $input.addEventListener('focus', function () {
   if (searchArea) setPeek(searchArea, true, 'search');
   if (!$input.value.trim()) {
     if (!renderSearchHistory() && searchMode === 'podcast') loadPodcastHot();
+  } else if (isMusicSearchMode(searchMode)) {
+    $results.classList.remove('show');
   } else if ($results.children.length > 0) {
     $results.classList.add('show');
   }
@@ -386,8 +418,13 @@ $input.addEventListener('keydown', function (e) {
     e.preventDefault();
     clearTimeout(searchTimer);
     var q = $input.value.trim();
-    if (isMusicSearchMode(searchMode) && q && playlist.length && searchLastResultQuery === searchResultKey(q)) $results.classList.add('show');
-    else doSearch(q, { autoPlayFirst: false });
+    // 音乐搜索一律交给弹窗；空词也开，弹窗里有历史记录可点。
+    if (isMusicSearchMode(searchMode) && typeof openSearchWall === 'function') {
+      $results.classList.remove('show');
+      openSearchWall(q, { mode: searchMode });
+      return;
+    }
+    doSearch(q, { autoPlayFirst: false });
   } else if (e.key === 'Escape') {
     clearTimeout(searchTimer);
     $input.blur();
@@ -1055,9 +1092,13 @@ async function fetchMusicSearchResults(q, mode, previousPages) {
     var previous = previousPages && previousPages[provider];
     var offset = previous ? Math.max(0, Number(previous.nextOffset) || 0) : 0;
     var limit = pageLimitByProvider[provider] || 12;
-    return apiJson(searchProviderUrl(provider, q, limit, offset)).then(function (value) {
-      return { provider: provider, offset: offset, requestedLimit: limit, value: value || {} };
-    });
+    // 必须带超时：apiJson 不传 timeoutMs 就完全不设上限，某个音源挂住会让
+    // 整个 allSettled 悬着，界面永远停在「正在搜索」。带上之后慢的那个音源
+    // 自己掉队（allSettled 记为 rejected），其余照常出结果。
+    return apiJson(searchProviderUrl(provider, q, limit, offset), { timeoutMs: MUSIC_SEARCH_TIMEOUT_MS })
+      .then(function (value) {
+        return { provider: provider, offset: offset, requestedLimit: limit, value: value || {} };
+      });
   }));
   var songsByProvider = { netease: [], qq: [], kugou: [] };
   fetchProviders.forEach(function (provider, index) {
@@ -1217,6 +1258,8 @@ function appendNextSearchResults(expectedKey) {
   });
   return true;
 }
+// 音乐搜索已改由弹窗承担。这条路径只在 openSearchWall 不可用时兜底走到，
+// 分页机制（IntersectionObserver / loadNextMusicSearchPage）也一并留在这儿。
 function renderSongSearchResults(songs) {
   setSearchHistorySurface(false);
   var plan = pendingSearchProviderPages || {};

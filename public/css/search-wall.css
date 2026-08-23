@@ -1,0 +1,1003 @@
+/* 搜索弹窗：沿用音乐库封面墙的卡片/网格语言，套在标准 .modal-mask/.modal 里。
+   显隐由 openGsapModal/closeGsapModal 经 .show 类驱动，不自己造一套过渡。 */
+#search-wall {
+  --sw-accent-rgb: 244, 210, 138;
+  --sw-bg-alpha: .72;
+  z-index: 46;
+  padding: clamp(16px, 3vh, 44px) clamp(12px, 3vw, 48px);
+  box-sizing: border-box;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px)
+}
+
+/* 桌面模式有 44px 自绘标题栏，遮罩不能盖住它的拖拽区与窗口按钮。 */
+body.desktop-shell #search-wall { top: 44px }
+
+.sw-modal {
+  width: min(1180px, 100%);
+  max-width: min(1180px, 100%);
+  height: min(760px, 100%);
+  max-height: min(760px, 100%);
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  border-radius: clamp(16px, 1.6vw, 24px)
+}
+
+/* 播放条留在遮罩之上：边搜边控制播放是这个 App 的常态，不该被弹窗挡死。 */
+body.search-wall-active #bottom-bar {
+  z-index: 52;
+  opacity: .96 !important;
+  pointer-events: auto !important;
+  transform: translateX(-50%) translateY(0) scale(1) !important;
+  filter: none !important
+}
+
+/* 顶部胶囊让位：弹窗自带输入框，两个搜索框同时可见会抢焦点。 */
+body.search-wall-active #search-area {
+  opacity: 0 !important;
+  pointer-events: none !important
+}
+
+.sw-shell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column
+}
+
+/* topbar 走正常文档流。之前是 height:0 的 absolute 层，子元素只能各自
+   absolute 定位；一旦有元素忘了定位就会溢出到左上角（音源 chip 就踩过）。 */
+.sw-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.6vw, 22px);
+  padding: clamp(14px, 1.6vw, 20px) clamp(16px, 2vw, 28px);
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+  background: rgba(8, 9, 12, .38)
+}
+
+.sw-topbar-lead {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.2vw, 16px)
+}
+
+.sw-topbar-trail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 1vw, 14px)
+}
+
+.sw-to-top,
+.sw-footer button {
+  border: 1px solid rgba(255, 255, 255, .11);
+  color: rgba(245, 248, 252, .92);
+  background: rgba(255, 255, 255, .055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+  font: inherit;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease
+}
+
+/* 左上返回按钮。两种语义共用左向箭头：结果页退出搜索，歌手页回结果页。 */
+.sw-back {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 50%;
+  color: rgba(245, 248, 252, .82);
+  background: rgba(255, 255, 255, .055);
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, color .18s ease
+}
+
+.sw-back svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round
+}
+
+.sw-back:hover {
+  border-color: rgba(var(--fc-accent-rgb), .42);
+  background: rgba(var(--fc-accent-rgb), .15);
+  color: #fff
+}
+
+/* 箭头指左，悬停就往左推一点，比通用的上浮更贴合「返回」。 */
+.sw-back:hover svg { transform: translateX(-1.5px) }
+
+.sw-back svg { transition: transform .18s ease }
+
+.sw-back:focus-visible {
+  outline: 2px solid rgba(var(--fc-accent-rgb), .74);
+  outline-offset: 2px
+}
+
+/* ---------- 顶部搜索框 ---------- */
+.sw-search {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 460px;
+  min-height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px 0 14px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 14px;
+  color: rgba(245, 248, 252, .72);
+  background: rgba(11, 13, 17, .54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1)
+}
+
+/* 本项目没有全局 [hidden]{display:none} 兜底，凡是设了 display 又会被切 hidden
+   的类都必须自带兜底，且要带 !important —— 否则媒体查询里同优先级的 display
+   规则会把它盖回来，表现为一个内容为空但仍占位的框，且不报错。 */
+.sw-search[hidden],
+.sw-search-clear[hidden],
+.sw-to-top[hidden] { display: none !important }
+
+.sw-search > svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round
+}
+
+/* input[type=search] 自带 -webkit-appearance: textfield，UA 内部布局会把文字
+   顶偏。必须连输入框本身一起重置 appearance，只重置那两个伪元素不够。
+   line-height 直接取容器高度，单行文本就精确居中，不依赖 UA 的基线处理。 */
+.sw-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  color: rgba(250, 252, 255, .94);
+  background: transparent;
+  font: 500 13px/42px 'Noto Sans SC', 'Inter', sans-serif
+}
+
+.sw-search input[type="search"]::-webkit-search-cancel-button,
+.sw-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none
+}
+
+.sw-search input::placeholder { color: rgba(221, 227, 236, .46) }
+
+.sw-search:focus-within {
+  border-color: rgba(var(--fc-accent-rgb), .46);
+  box-shadow: 0 0 0 3px rgba(var(--fc-accent-rgb), .08), inset 0 1px 0 rgba(255, 255, 255, .08), 0 14px 34px rgba(0, 0, 0, .22)
+}
+
+.sw-search-clear {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: rgba(245, 248, 252, .66);
+  background: transparent;
+  cursor: pointer
+}
+
+.sw-search-clear:hover {
+  color: rgba(250, 252, 255, .98);
+  background: rgba(255, 255, 255, .10)
+}
+
+.sw-search-clear svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round
+}
+
+/* ---------- 音源筛选 chip ---------- */
+.sw-sources {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 13px;
+  background: rgba(11, 13, 17, .54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06)
+}
+
+.sw-sources[hidden] { display: none !important }
+
+.sw-source-chip {
+  height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, .46);
+  font: 650 11.5px/1 'Noto Sans SC', 'Inter', sans-serif;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .22s, color .22s, box-shadow .22s
+}
+
+.sw-source-chip:hover:not(:disabled) { color: rgba(255, 255, 255, .82) }
+
+.sw-source-chip[aria-pressed="true"] {
+  color: rgba(246, 251, 255, .98);
+  background: rgba(var(--fc-accent-rgb), .14);
+  box-shadow: inset 0 0 0 1px rgba(var(--fc-accent-rgb), .26)
+}
+
+.sw-source-chip:disabled {
+  cursor: not-allowed;
+  opacity: .34
+}
+
+.sw-source-chip:focus-visible {
+  outline: 2px solid rgba(var(--fc-accent-rgb), .74);
+  outline-offset: 2px
+}
+
+/* ---------- 内容类型 tab ---------- */
+.sw-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  margin: clamp(12px, 1.4vw, 18px) clamp(16px, 2vw, 28px) 0;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 12px;
+  background: rgba(11, 13, 17, .48)
+}
+
+.sw-tabs:empty,
+.sw-tabs[hidden] { display: none !important }
+
+.sw-tab {
+  height: 32px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, .46);
+  font: 650 12px/1 'Noto Sans SC', 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background .22s, color .22s, box-shadow .22s
+}
+
+.sw-tab:hover:not(:disabled) { color: rgba(255, 255, 255, .84) }
+
+.sw-tab[aria-selected="true"] {
+  color: rgba(246, 251, 255, .98);
+  background: rgba(var(--fc-accent-rgb), .13);
+  box-shadow: inset 0 0 0 1px rgba(var(--fc-accent-rgb), .24)
+}
+
+.sw-tab:focus-visible {
+  outline: 2px solid rgba(var(--fc-accent-rgb), .74);
+  outline-offset: 2px
+}
+
+/* ---------- 滚动容器 ---------- */
+.sw-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* 底部留白要够，播放条浮在弹窗之上，否则最后一排卡片会被它压住。 */
+  padding: clamp(16px, 1.8vw, 24px) clamp(16px, 2vw, 28px) clamp(96px, 12vh, 132px);
+  outline: none
+}
+
+.sw-content::-webkit-scrollbar { width: 8px }
+.sw-content::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(255, 255, 255, .14) }
+
+.sw-body {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-bottom: auto
+}
+
+.sw-section + .sw-section { margin-top: clamp(30px, 3.4vw, 52px) }
+
+.sw-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 clamp(14px, 1.4vw, 20px);
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .06)
+}
+
+.sw-section-head h2 {
+  margin: 0;
+  color: rgba(250, 252, 255, .96);
+  font: 700 clamp(16px, 1.5vw, 21px)/1.2 'Noto Sans SC', 'Inter', sans-serif;
+  letter-spacing: -.015em
+}
+
+.sw-section-count {
+  color: rgba(var(--fc-accent-rgb), .72);
+  font: 650 10.5px/1 'JetBrains Mono', monospace;
+  letter-spacing: .1em
+}
+
+/* 分区里的说明文字（例如某个音源没有歌手搜索接口）。 */
+.sw-section-note {
+  padding: 14px 2px;
+  color: rgba(221, 227, 236, .44);
+  font-size: 12px;
+  letter-spacing: .02em
+}
+
+/* ---------- 歌手 ---------- */
+/* 歌手横排一行，卡片略小；不换行、可横向滚动，避免挤掉下面的歌曲区。
+   上下留点内边距：overflow-y 是 hidden，悬停放大若没余量会被裁掉。 */
+.sw-grid.is-artist-row {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 2px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .16) transparent
+}
+
+/* 默认滚动条会带两端箭头按钮和浅色轨道，在深色弹窗里非常刺眼。
+   按钮必须显式收掉，只留一根细横条。 */
+.sw-grid.is-artist-row::-webkit-scrollbar {
+  height: 8px
+}
+
+.sw-grid.is-artist-row::-webkit-scrollbar-button,
+.sw-grid.is-artist-row::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0
+}
+
+.sw-grid.is-artist-row::-webkit-scrollbar-track {
+  margin: 0 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .04)
+}
+
+.sw-grid.is-artist-row::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  background-clip: content-box
+}
+
+.sw-grid.is-artist-row::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--sw-accent-rgb), .46);
+  background-clip: content-box
+}
+
+.sw-grid.is-artist-row .sw-card {
+  flex: 0 0 auto;
+  width: clamp(116px, 12vw, 148px)
+}
+
+/* 歌手头像用圆形，和方形的歌曲/专辑卡一眼区分。 */
+.sw-card.is-artist .sw-art,
+.sw-card.is-artist .sw-art img {
+  border-radius: 50%
+}
+
+/* ::before 是「唱片架」的立体背板，inset 故意往右下偏（5px -5px -6px 6px），
+   在方卡上是层次感，在圆头像后面就成了露出来的圆角方块。歌手卡直接收掉。 */
+.sw-card.is-artist::before { display: none }
+
+/* 背板没了，悬停/聚焦的立体位移也没意义了，改成只放大不抬起。 */
+.sw-card.is-artist:hover,
+.sw-card.is-artist:focus-visible {
+  transform: scale(1.05)
+}
+
+.sw-card.is-artist .sw-card-copy {
+  justify-content: flex-end;
+  padding-bottom: clamp(10px, 1vw, 15px);
+  text-align: center
+}
+
+.sw-card.is-artist .sw-card-copy i { display: none }
+
+.sw-card.is-artist:focus-visible .sw-art {
+  outline-offset: 4px
+}
+
+/* ---------- 歌手页 hero ---------- */
+.sw-artist-hero {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 2vw, 28px);
+  margin-bottom: clamp(22px, 2.6vw, 36px)
+}
+
+.sw-artist-avatar {
+  position: relative;
+  width: clamp(88px, 10vw, 132px);
+  height: clamp(88px, 10vw, 132px);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 24%, rgba(var(--sw-accent-rgb), .18), transparent 40%), linear-gradient(145deg, rgba(30, 32, 38, .98), rgba(7, 9, 13, .99));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 16px 38px rgba(0, 0, 0, .30)
+}
+
+/* z-index 必须显式给：兜底 span 在 DOM 里排在 img 之后且自带 z-index:0，
+   img 不标层级就会被它盖住（卡片网格里的 .sw-art img 是靠 z-index:1 压的）。 */
+.sw-artist-avatar img {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover
+}
+
+.sw-artist-avatar .sw-art-fallback {
+  font-size: clamp(24px, 2.6vw, 38px)
+}
+
+.sw-artist-meta { min-width: 0 }
+
+.sw-artist-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(var(--fc-accent-rgb), .76);
+  font: 600 10px/1.2 'JetBrains Mono', monospace;
+  letter-spacing: .16em
+}
+
+.sw-artist-meta h2 {
+  margin: 0;
+  overflow: hidden;
+  color: rgba(250, 252, 255, .97);
+  font: 700 clamp(21px, 2.1vw, 32px)/1.1 'Noto Sans SC', 'Inter', sans-serif;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.sw-artist-meta p {
+  margin: 8px 0 0;
+  color: rgba(221, 227, 236, .52);
+  font-size: 12.5px
+}
+
+.sw-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  align-items: start;
+  gap: 18px;
+  overflow-anchor: none;
+  transform-style: preserve-3d
+}
+
+.sw-spacer {
+  grid-column: 1 / -1;
+  width: 100%;
+  pointer-events: none
+}
+
+/* ---------- 卡片 ---------- */
+.sw-card {
+  --sw-rack-x: 1.1deg;
+  --sw-rack-y: -5.4deg;
+  --sw-tilt-x: 0deg;
+  --sw-tilt-y: 0deg;
+  --sw-shadow-x: 0px;
+  --sw-shadow-y: 24px;
+  --sw-glare-x: 50%;
+  --sw-glare-y: 35%;
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  perspective: 820px;
+  perspective-origin: 50% 50%;
+  transform: translateY(0) scale(.985);
+  transform-origin: 50% 55%;
+  transform-style: preserve-3d;
+  transition: transform .32s cubic-bezier(.16, 1, .3, 1), filter .28s ease;
+  will-change: transform, filter
+}
+
+.sw-card::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 5px -5px -6px 6px;
+  border: 1px solid rgba(255, 255, 255, .055);
+  border-radius: clamp(15px, 1.45vw, 22px);
+  background: linear-gradient(145deg, rgba(38, 40, 45, .90), rgba(3, 4, 7, var(--sw-bg-alpha)));
+  box-shadow: 10px 18px 32px rgba(0, 0, 0, .34);
+  opacity: .86;
+  transform: translateZ(-16px) rotateX(calc(var(--sw-rack-x) + var(--sw-tilt-x))) rotateY(calc(var(--sw-rack-y) + var(--sw-tilt-y)));
+  transition: opacity .28s ease, box-shadow .28s ease
+}
+
+.sw-card:hover,
+.sw-card:focus-visible {
+  z-index: 4;
+  transform: translateY(-10px) scale(1.055);
+  filter: drop-shadow(var(--sw-shadow-x) var(--sw-shadow-y) 30px rgba(0, 0, 0, .54))
+}
+
+.sw-card:hover::before,
+.sw-card:focus-visible::before {
+  opacity: 1;
+  box-shadow: 12px 22px 42px rgba(0, 0, 0, .46), 0 0 22px rgba(var(--sw-accent-rgb), .07)
+}
+
+.sw-card:focus-visible { outline: 0 }
+
+.sw-card:focus-visible .sw-art {
+  outline: 2px solid rgba(var(--sw-accent-rgb), .78);
+  outline-offset: 3px
+}
+
+.sw-art {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: clamp(14px, 1.4vw, 21px);
+  background: radial-gradient(circle at 28% 22%, rgba(var(--sw-accent-rgb), .16), transparent 38%), linear-gradient(145deg, rgba(30, 32, 38, .98), rgba(7, 9, 13, .99));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 15px 34px rgba(0, 0, 0, .24);
+  transform: translateZ(0) rotateX(calc(var(--sw-rack-x) + var(--sw-tilt-x))) rotateY(calc(var(--sw-rack-y) + var(--sw-tilt-y)));
+  transform-style: preserve-3d;
+  transition: transform .32s cubic-bezier(.16, 1, .3, 1), border-color .26s ease, box-shadow .26s ease
+}
+
+.sw-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(2, 3, 5, .04) 15%, rgba(2, 3, 5, .18) 43%, rgba(2, 3, 5, .92) 100%);
+  transition: opacity .26s ease
+}
+
+.sw-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--sw-glare-x) var(--sw-glare-y), rgba(255, 255, 255, .19), rgba(255, 255, 255, .045) 18%, transparent 45%);
+  transition: opacity .26s ease
+}
+
+.sw-card:hover .sw-art,
+.sw-card:focus-visible .sw-art {
+  border-color: rgba(var(--sw-accent-rgb), .30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 22px 48px rgba(0, 0, 0, .34)
+}
+
+.sw-card:hover .sw-art::before,
+.sw-card:focus-visible .sw-art::before { opacity: 1 }
+
+.sw-card:hover .sw-art::after,
+.sw-card:focus-visible .sw-art::after { opacity: .58 }
+
+.sw-art img {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter .28s ease
+}
+
+.sw-card:hover .sw-art img,
+.sw-card:focus-visible .sw-art img { filter: saturate(1.04) brightness(.88) }
+
+.sw-art-fallback {
+  position: relative;
+  z-index: 0;
+  color: rgba(241, 245, 250, .66);
+  font: 700 clamp(24px, 3vw, 44px)/1 'Noto Sans SC', sans-serif;
+  letter-spacing: -.08em
+}
+
+.sw-art.is-missing img { display: none }
+
+/* 图片加载成功就把首字母兜底收掉。只靠 z-index 压不住透明底的头像。 */
+.sw-art.has-art .sw-art-fallback,
+.sw-artist-avatar.has-art .sw-art-fallback { display: none }
+
+/* ---------- 卡片角标 ---------- */
+.sw-badge,
+.sw-flag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 999px;
+  color: rgba(248, 249, 252, .78);
+  background: rgba(5, 6, 9, .58);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font: 650 9px/1 'JetBrains Mono', monospace;
+  letter-spacing: .055em
+}
+
+.sw-eyebrow {
+  min-height: 21px;
+  display: flex;
+  align-items: center;
+  gap: 6px
+}
+
+.sw-flag.is-vip {
+  border-color: rgba(255, 206, 122, .40);
+  color: rgba(255, 236, 198, .96);
+  background: rgba(150, 105, 24, .40)
+}
+
+.sw-flag.is-now {
+  border-color: rgba(var(--sw-accent-rgb), .38);
+  color: rgba(246, 251, 255, .96);
+  background: rgba(var(--sw-accent-rgb), .20)
+}
+
+.sw-card-copy {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  padding: clamp(14px, 1.35vw, 20px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 14px, 22px);
+  transition: opacity .22s ease, transform .30s cubic-bezier(.16, 1, .3, 1)
+}
+
+.sw-card:hover .sw-card-copy,
+.sw-card:focus-visible .sw-card-copy {
+  opacity: 1;
+  transform: translate3d(0, 0, 28px)
+}
+
+.sw-card-copy strong,
+.sw-card-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.sw-card-copy strong {
+  margin-top: 9px;
+  color: rgba(252, 252, 253, .98);
+  font-size: clamp(13px, 1.05vw, 16px);
+  font-weight: 720;
+  line-height: 1.34;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .65)
+}
+
+.sw-card-copy small {
+  margin-top: 5px;
+  color: rgba(231, 234, 240, .62);
+  font-size: 10px;
+  line-height: 1.4
+}
+
+.sw-card-copy i {
+  width: clamp(48px, 42%, 94px);
+  height: 2px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--sw-accent-rgb), .94), rgba(var(--sw-accent-rgb), .16));
+  box-shadow: 0 0 13px rgba(var(--sw-accent-rgb), .24)
+}
+
+.sw-card.is-current .sw-art {
+  border-color: rgba(var(--sw-accent-rgb), .46);
+  box-shadow: 0 0 0 1px rgba(var(--sw-accent-rgb), .12), 0 18px 46px rgba(var(--sw-accent-rgb), .10)
+}
+
+/* ---------- 卡片快捷操作 ---------- */
+.sw-card-actions {
+  position: absolute;
+  z-index: 5;
+  top: clamp(10px, 1vw, 14px);
+  right: clamp(10px, 1vw, 14px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity .2s ease, transform .24s cubic-bezier(.16, 1, .3, 1)
+}
+
+.sw-card:hover .sw-card-actions,
+.sw-card:focus-visible .sw-card-actions,
+.sw-card-actions:focus-within {
+  opacity: 1;
+  transform: translateY(0)
+}
+
+.sw-card-action {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 50%;
+  color: rgba(246, 249, 253, .90);
+  background: rgba(6, 8, 11, .68);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform .18s ease, background .18s ease, border-color .18s ease, color .18s ease
+}
+
+.sw-card-action:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--sw-accent-rgb), .48);
+  background: rgba(var(--sw-accent-rgb), .22);
+  color: #fff
+}
+
+.sw-card-action:focus-visible {
+  outline: 2px solid rgba(var(--sw-accent-rgb), .78);
+  outline-offset: 2px
+}
+
+.sw-card-action.is-liked {
+  border-color: rgba(255, 107, 129, .52);
+  color: #ff8ba0
+}
+
+/* 只统一尺寸，不碰 fill/stroke —— 图标复用队列那几个函数，各自的
+   presentation 属性已经对了。这里若写 fill:none，会把实心的 .heart-svg
+   （优先级只有 10，压不过这条的 11）整颗弄成透明。 */
+.sw-card-action svg {
+  width: 15px;
+  height: 15px;
+  display: block
+}
+
+.sw-card-action .heart-svg {
+  width: 15px;
+  height: 15px
+}
+
+/* 「下一首播放」跟队列一致，用汉字「下」而不是图标。 */
+.sw-card-action.is-next {
+  font: 600 13px/1 'Noto Sans SC', 'Inter', sans-serif
+}
+
+/* ---------- footer / 回到顶部 ---------- */
+.sw-footer {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 22px 12px 8px;
+  color: rgba(218, 224, 232, .45);
+  font-size: 11px;
+  text-align: center
+}
+
+.sw-footer button {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 11px;
+  font-size: 11px
+}
+
+.sw-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(48px, 9vh, 110px) 12px;
+  color: rgba(221, 227, 236, .46);
+  font-size: 12.5px;
+  letter-spacing: .03em;
+  text-align: center
+}
+
+.sw-retry {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 11px;
+  color: rgba(245, 248, 252, .90);
+  background: rgba(255, 255, 255, .055);
+  font: 600 12px/1 'Noto Sans SC', 'Inter', sans-serif;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease
+}
+
+.sw-retry:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--fc-accent-rgb), .42);
+  background: rgba(var(--fc-accent-rgb), .15)
+}
+
+.sw-retry:focus-visible {
+  outline: 2px solid rgba(var(--fc-accent-rgb), .74);
+  outline-offset: 2px
+}
+
+.sw-to-top:hover,
+.sw-footer button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--fc-accent-rgb), .42);
+  background: rgba(var(--fc-accent-rgb), .15);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .10)
+}
+
+.sw-to-top:focus-visible,
+.sw-footer button:focus-visible {
+  outline: 2px solid rgba(var(--fc-accent-rgb), .74);
+  outline-offset: 3px
+}
+
+/* 相对 .sw-shell 定位（它是 flex 容器，需要 position 才能当锚点）。 */
+.sw-to-top {
+  position: absolute;
+  right: clamp(18px, 2vw, 30px);
+  bottom: clamp(84px, 10vh, 112px);
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(11, 13, 17, .72);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1)
+}
+
+.sw-to-top svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round
+}
+
+.sw-loading-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(var(--fc-accent-rgb), .82);
+  box-shadow: 0 0 14px rgba(var(--fc-accent-rgb), .48);
+  animation: search-wall-loading 1.05s ease-in-out infinite alternate
+}
+
+@keyframes search-wall-loading {
+  from { opacity: .35; transform: scale(.78) }
+  to { opacity: 1; transform: scale(1.12) }
+}
+
+/* 窄屏：topbar 换行成两段，标题让位给搜索框。 */
+@media (max-width: 860px) {
+  #search-wall { padding: 0 }
+  .sw-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0
+  }
+  .sw-topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px
+  }
+  .sw-topbar-lead { flex: 1 1 100%; order: 1 }
+  .sw-topbar-trail { flex: 1 1 100%; order: 2; justify-content: flex-start }
+  .sw-search { max-width: none }
+  .sw-source-chip { height: 32px; padding: 0 10px; font-size: 11px }
+  .sw-tabs { margin: 10px 14px 0 }
+  .sw-tab { height: 30px; padding: 0 12px; font-size: 11.5px }
+  .sw-content { padding: 14px 14px clamp(92px, 13vh, 128px) }
+  .sw-grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 12px }
+  .sw-to-top { right: 14px; bottom: clamp(80px, 11vh, 104px); width: 42px; height: 42px }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #search-wall,
+  .sw-card,
+  .sw-art,
+  .sw-art img,
+  .sw-card-actions,
+  .sw-card-action,
+  .sw-back,
+  .sw-back svg,
+  .sw-search,
+  .sw-search-clear,
+  .sw-source-chip,
+  .sw-tab,
+  .sw-to-top,
+  .sw-footer button {
+    transition: none !important;
+    animation: none !important
+  }
+
+  .sw-card:hover,
+  .sw-card:focus-visible { transform: translateY(-2px) scale(1.01) }
+
+  .sw-card:hover .sw-art,
+  .sw-card:focus-visible .sw-art,
+  .sw-card:hover .sw-card-copy,
+  .sw-card:focus-visible .sw-card-copy { transform: none }
+}

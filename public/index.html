@@ -18,6 +18,7 @@
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css?v=20260810-cover-delivery-v2">
   <link rel="stylesheet" href="css/music-library-wall.css?v=20260811-library-wall-controls-v5">
+  <link rel="stylesheet" href="css/search-wall.css?v=20260823-search-wall-v1">
 </head>
 
 <body>
@@ -347,6 +348,48 @@
         </button>
       </div>
     </section>
+
+    <!-- 搜索弹窗：沿用音乐库封面墙的封面网格语言，套在标准 .modal-mask/.modal 里。 -->
+    <div id="search-wall" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+      aria-label="搜索">
+      <div class="modal sw-modal">
+        <div class="sw-shell">
+          <header class="sw-topbar">
+            <div class="sw-topbar-lead">
+              <button id="search-wall-back" class="sw-back" type="button" aria-label="关闭搜索" title="关闭搜索">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+              </button>
+              <form id="search-wall-search" class="sw-search" role="search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
+                <input id="search-wall-input" type="search" autocomplete="off" spellcheck="false"
+                  placeholder="搜索歌曲、歌手" aria-label="搜索歌曲、歌手" />
+                <button id="search-wall-clear" class="sw-search-clear" type="button" aria-label="清除搜索"
+                  title="清除搜索" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
+                </button>
+              </form>
+            </div>
+            <div class="sw-topbar-trail">
+              <div id="search-wall-sources" class="sw-sources" role="group" aria-label="音源筛选">
+                <button class="sw-source-chip" type="button" data-sw-source="song" aria-pressed="true">全部</button>
+                <button class="sw-source-chip" type="button" data-sw-source="netease" aria-pressed="false">小云</button>
+                <button class="sw-source-chip" type="button" data-sw-source="qq" aria-pressed="false">小Q</button>
+                <button class="sw-source-chip" type="button" data-sw-source="kugou" aria-pressed="false">小狗</button>
+              </div>
+            </div>
+          </header>
+          <!-- 内容类型 tab：P1 只有歌曲区，由 JS 在出现第二种分区时才显示。 -->
+          <div id="search-wall-tabs" class="sw-tabs" role="tablist" aria-label="搜索结果类型" hidden></div>
+          <div id="search-wall-content" class="sw-content" tabindex="-1">
+            <div id="search-wall-body" class="sw-body"></div>
+            <div id="search-wall-footer" class="sw-footer" aria-live="polite"></div>
+          </div>
+          <button id="search-wall-to-top" class="sw-to-top" type="button" aria-label="回到顶部" title="回到顶部" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6M12 8v10" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div id="listen-report-view" class="modal-mask listen-report-mask" role="dialog" aria-modal="true"
       aria-hidden="true" aria-labelledby="listen-report-title">

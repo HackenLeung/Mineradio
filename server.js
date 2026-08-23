@@ -25,6 +25,7 @@ const {
   artist_detail,
   artist_top_song,
   artist_songs,
+  artist_album,
   like: like_song,
   likelist,
   song_like_check,
@@ -2955,6 +2956,39 @@ function mapArtists(raw) {
   return (raw || [])
     .map(a => ({ id: a && a.id, name: (a && a.name) || '' }))
     .filter(a => a.name);
+}
+// 与 /api/artist/detail 返回的 artist 形状保持一致，前端才能一套渲染通吃
+// 「搜索结果里的歌手卡」和「歌手页 hero」。
+function mapArtistRecord(a) {
+  a = a || {};
+  const aliases = []
+    .concat(Array.isArray(a.alias) ? a.alias : [])
+    .concat(Array.isArray(a.alia) ? a.alia : [])
+    .concat(Array.isArray(a.transNames) ? a.transNames : [])
+    .map(v => String(v || '').trim())
+    .filter(Boolean);
+  return {
+    id: a.id == null ? '' : String(a.id),
+    name: a.name || a.artistName || '',
+    avatar: a.picUrl || a.img1v1Url || a.avatar || a.cover || '',
+    alias: aliases.slice(0, 3),
+    musicSize: Number(a.musicSize || a.songSize || 0) || 0,
+    albumSize: Number(a.albumSize || 0) || 0,
+    mvSize: Number(a.mvSize || 0) || 0,
+    followed: a.followed === true,
+  };
+}
+function mapAlbumRecord(al) {
+  al = al || {};
+  return {
+    id: al.id == null ? '' : String(al.id),
+    name: al.name || '',
+    cover: al.picUrl || al.blurPicUrl || al.cover || '',
+    artist: (al.artist && al.artist.name) || (Array.isArray(al.artists) && al.artists[0] && al.artists[0].name) || '',
+    size: Number(al.size || al.trackCount || 0) || 0,
+    publishTime: Number(al.publishTime || 0) || 0,
+    type: al.type || al.subType || '',
+  };
 }
 function mapSongRecord(s) {
   s = s || {};
@@ -7305,6 +7339,36 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  // 歌手搜索。cloudsearch type=100 只有小云支持；小狗只有 song_search_v2，
+  // 没有歌手搜索接口，所以这里是单一 provider，前端要如实标明。
+  if (pn === '/api/search/artists') {
+    try {
+      const kw = String(url.searchParams.get('keywords') || '').trim();
+      const limit = Math.max(1, Math.min(40, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!kw) { sendJSON(res, { provider: 'netease', artists: [], hasMore: false }); return; }
+      const result = await cloudsearch({ keywords: kw, type: 100, limit, offset, cookie: userCookie, timestamp: Date.now() });
+      const body = (result && result.body) || {};
+      const raw = (body.result && (body.result.artists || body.result.artist)) || [];
+      const artists = (Array.isArray(raw) ? raw : []).map(mapArtistRecord).filter(a => a.id && a.name);
+      const total = Number(body.result && body.result.artistCount) || 0;
+      const nextOffset = offset + (Array.isArray(raw) ? raw.length : 0);
+      sendJSON(res, {
+        provider: 'netease',
+        artists,
+        offset,
+        limit,
+        total,
+        nextOffset,
+        hasMore: !!(Array.isArray(raw) && raw.length >= limit && (!total || nextOffset < total)),
+      });
+    } catch (err) {
+      console.error('[ArtistSearch]', err);
+      sendJSON(res, { provider: 'netease', error: err.message, artists: [] }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qq/search') {
     try {
       const kw = url.searchParams.get('keywords') || '';
@@ -8446,6 +8510,34 @@ async function handleHttpRequest(req, res) {
     } catch (err) {
       console.error('[ArtistDetail]', err);
       sendJSON(res, { error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
+  // 歌手专辑列表。歌手页的专辑区用它，点进专辑再走已有的 /api/album/detail。
+  if (pn === '/api/artist/albums') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      const limit = Math.max(1, Math.min(60, parseInt(url.searchParams.get('limit') || '24', 10) || 24));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!id) { sendJSON(res, { error: 'Missing artist id', albums: [] }, 400); return; }
+      const result = await artist_album({ id, limit, offset, cookie: userCookie, timestamp: Date.now() });
+      const body = (result && result.body) || {};
+      const raw = body.hotAlbums || body.albums || [];
+      const albums = (Array.isArray(raw) ? raw : []).map(mapAlbumRecord).filter(a => a.id && a.name);
+      sendJSON(res, {
+        provider: 'netease',
+        id,
+        artist: body.artist ? mapArtistRecord(body.artist) : null,
+        albums,
+        offset,
+        limit,
+        nextOffset: offset + (Array.isArray(raw) ? raw.length : 0),
+        hasMore: body.more === true,
+      });
+    } catch (err) {
+      console.error('[ArtistAlbums]', err);
+      sendJSON(res, { error: err.message, albums: [] }, 500);
     }
     return;
   }
