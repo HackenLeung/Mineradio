@@ -21,7 +21,9 @@ var PLAYBACK_SNAPSHOT_IDENTITY_KEYS = [
 ];
 var PLAYBACK_SNAPSHOT_EXTRA_KEYS = [
   'album', 'fee', 'playable', 'playbackMode', 'recommendationSource',
-  'localFolderPath', 'localFolderName'
+  'localFolderPath', 'localFolderName',
+  // 不带上 mv，重启恢复出来的歌就丢了「有没有 MV」，明明有 MV 的歌按钮也是灰的。
+  'mv'
 ];
 var PLAYBACK_SNAPSHOT_URL_KEYS = ['cover', 'sidecarCover'];
 // data URL 一律丢弃：体积不可控，且能从本地文件重新读取。

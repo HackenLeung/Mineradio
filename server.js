@@ -26,6 +26,8 @@ const {
   artist_top_song,
   artist_songs,
   artist_album,
+  mv_detail,
+  mv_url,
   like: like_song,
   likelist,
   song_like_check,
@@ -2990,6 +2992,65 @@ function mapAlbumRecord(al) {
     type: al.type || al.subType || '',
   };
 }
+const MV_RESOLUTIONS = [240, 480, 720, 1080];
+function normalizeMvResolution(value) {
+  const raw = parseInt(value, 10);
+  if (!Number.isFinite(raw)) return 1080;
+  // 只收小云真实存在的四档，别把任意数字透传给上游。
+  let best = MV_RESOLUTIONS[0];
+  for (const r of MV_RESOLUTIONS) {
+    if (Math.abs(r - raw) < Math.abs(best - raw)) best = r;
+  }
+  return best;
+}
+// mv_detail 的 brs 有两种形状：老接口是 { "1080": url } 映射，新接口是
+// [{ br, size, point }] 数组。两种都归一成清晰度数字升序列表，前端只认这一种。
+function mapMvResolutions(brs) {
+  const found = new Set();
+  if (Array.isArray(brs)) {
+    brs.forEach(item => {
+      const r = parseInt(item && (item.br != null ? item.br : item.r), 10);
+      if (MV_RESOLUTIONS.includes(r)) found.add(r);
+    });
+  } else if (brs && typeof brs === 'object') {
+    Object.keys(brs).forEach(key => {
+      const r = parseInt(key, 10);
+      if (MV_RESOLUTIONS.includes(r)) found.add(r);
+    });
+  }
+  return Array.from(found).sort((a, b) => a - b);
+}
+function mapMvRecord(data, fallbackId) {
+  data = data || {};
+  const artists = mapArtists(data.artists);
+  const resolutions = mapMvResolutions(data.brs);
+  return {
+    id: data.id == null ? String(fallbackId || '') : String(data.id),
+    name: data.name || '',
+    artist: artists.map(a => a.name).join(' / ') || data.artistName || '',
+    artists,
+    artistId: (artists[0] && artists[0].id) || data.artistId || '',
+    cover: data.cover || data.imgurl16v9 || data.imgurl || '',
+    // 小云这里给的是毫秒。
+    duration: Number(data.duration || 0) || 0,
+    playCount: Number(data.playCount || 0) || 0,
+    publishTime: data.publishTime || '',
+    desc: data.desc || data.briefDesc || '',
+    resolutions,
+    // 没拿到 brs 时不要谎报可选档位，交给前端退回单档 1080。
+    maxResolution: resolutions.length ? resolutions[resolutions.length - 1] : 0,
+  };
+}
+function videoContentTypeForUrl(videoUrl, upstreamType) {
+  let pathname = '';
+  try { pathname = new URL(videoUrl).pathname.toLowerCase(); } catch (e) {}
+  if (/\.webm$/.test(pathname)) return 'video/webm';
+  if (/\.m3u8$/.test(pathname)) return 'application/vnd.apple.mpegurl';
+  if (/\.(mp4|m4v)$/.test(pathname)) return 'video/mp4';
+  // 上游偶尔回 application/octet-stream，那样 <video> 会直接拒播。
+  if (upstreamType && /^video\//i.test(upstreamType)) return upstreamType;
+  return 'video/mp4';
+}
 function mapSongRecord(s) {
   s = s || {};
   const artists = mapArtists(s.ar || s.artists);
@@ -3012,6 +3073,9 @@ function mapSongRecord(s) {
     popularity: Number(s.pop || s.popularity || s.score || s.hotScore || 0) || 0,
     searchRank: s.rank === null || s.rank === undefined || s.rank === '' ? null : Number(s.rank),
     fee: s.fee,
+    // 小云在 search / song_detail 里就返回 mv（0 = 没有 MV）。带上它，前端才能
+    // 在不额外发请求的情况下知道哪首歌能看 MV。小Q / 小狗没有 MV 接口，恒为 0。
+    mv: Number(s.mv || s.mvid || 0) || 0,
   };
 }
 function mapNeteaseCloudArtists(raw) {
@@ -8538,6 +8602,120 @@ async function handleHttpRequest(req, res) {
     } catch (err) {
       console.error('[ArtistAlbums]', err);
       sendJSON(res, { error: err.message, albums: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- MV ----------
+  // MV 只有小云有：kugou-api.js / qq-vip-api.js 里没有任何 MV 接口。
+  // 前端必须按 song.mv 判断能否看，不要对小Q / 小狗的歌调这两个端点。
+  if (pn === '/api/mv/detail') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { error: 'Missing mv id' }, 400); return; }
+      const result = await mv_detail({ mvid: id, cookie: userCookie, timestamp: Date.now() });
+      const data = (result && result.body && result.body.data) || {};
+      sendJSON(res, { provider: 'netease', mv: mapMvRecord(data, id) });
+    } catch (err) {
+      console.error('[MvDetail]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/mv/url') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { error: 'Missing mv id' }, 400); return; }
+      const r = normalizeMvResolution(url.searchParams.get('r'));
+      const result = await mv_url({ id, r, cookie: userCookie, timestamp: Date.now() });
+      const data = (result && result.body && result.body.data) || {};
+      const playUrl = String(data.url || '');
+      if (!playUrl) { sendJSON(res, { error: 'MV url unavailable', id, r }, 404); return; }
+      sendJSON(res, {
+        provider: 'netease',
+        id: String(data.id || id),
+        url: playUrl,
+        // 请求的清晰度和上游实际给的可能不一样（版权/档位缺失），两个都回，
+        // 前端拿 resolution 回填画质 chip，不然 UI 会显示一个并没生效的档位。
+        requested: r,
+        resolution: Number(data.r || r) || r,
+        size: Number(data.size || 0) || 0,
+        proxyUrl: '/api/video?url=' + encodeURIComponent(playUrl),
+      });
+    } catch (err) {
+      console.error('[MvUrl]', err);
+      sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
+  // 视频代理。刻意不走 /api/audio：那条分支带 range 分片缓存（audioProxyRangeCache
+  // 有总字节上限），视频体积会把音频分片全部挤出去。这里只做纯流式转发。
+  if (pn === '/api/video') {
+    try {
+      const videoUrl = url.searchParams.get('url');
+      if (!videoUrl) { res.writeHead(400); res.end('Missing url'); return; }
+      const headers = audioProxyHeadersFor(videoUrl, req.headers.range || '');
+      const lifecycle = { clientClosed: false, responseFinished: false, reader: null };
+      const closeUpstream = () => {
+        if (lifecycle.responseFinished) return;
+        lifecycle.clientClosed = true;
+        const reader = lifecycle.reader;
+        lifecycle.reader = null;
+        if (reader) {
+          try { Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {}
+        }
+      };
+      res.once('finish', () => { lifecycle.responseFinished = true; });
+      res.once('close', closeUpstream);
+      const up = await fetch(videoUrl, { headers });
+      if (lifecycle.clientClosed) {
+        if (up && up.body) { try { await up.body.cancel(); } catch (_) {} }
+        return;
+      }
+      const out = {
+        'Content-Type': videoContentTypeForUrl(videoUrl, up.headers.get('content-type')),
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      };
+      const contentRange = up.headers.get('content-range');
+      if (contentRange) out['Content-Range'] = contentRange;
+      const contentLength = up.headers.get('content-length');
+      if (contentLength) out['Content-Length'] = contentLength;
+      res.writeHead(up.status, out);
+      if (!up.body) { res.end(); return; }
+      const reader = up.body.getReader();
+      lifecycle.reader = reader;
+      try {
+        while (!lifecycle.clientClosed) {
+          const chunk = await readStreamChunkWithTimeout(reader, AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS);
+          if (chunk.done) break;
+          if (!res.write(chunk.value)) {
+            await new Promise((resolve) => {
+              let settled = false;
+              const done = () => {
+                if (settled) return;
+                settled = true;
+                res.removeListener('drain', done);
+                res.removeListener('close', done);
+                resolve();
+              };
+              res.once('drain', done);
+              res.once('close', done);
+            });
+          }
+        }
+      } finally {
+        if (lifecycle.reader === reader) lifecycle.reader = null;
+        try { await reader.cancel(); } catch (_) {}
+      }
+      res.end();
+    } catch (err) {
+      console.error('[VideoProxy]', err && (err.message || err));
+      if (!res.headersSent) { res.writeHead(502); res.end('Video proxy failed'); }
+      else { try { res.end(); } catch (_) {} }
     }
     return;
   }

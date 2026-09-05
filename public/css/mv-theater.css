@@ -1,0 +1,375 @@
+/* ============================================================
+   MV 剧场 —— 中央 16:9 卡片
+   层级刻意压在 #bottom-bar (z-index 6) 和 #thumb-wrap (z-index 6) 之下：
+   底栏那条继续管播放 / 进度 / 音量 / 时间，MV 只借用中间那块画面区，
+   不另造一套播放控件。所有弹窗 (.modal-mask, z-index 50) 依然压在它上面。
+   ============================================================ */
+
+.mv-theater {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .34s ease;
+  /* 卡片大小的唯一旋钮：从视口高度里预留掉底栏和上下留白，剩下的高度按 16:9
+     反推宽度。卡片底边与底栏顶边的间隙 = 这个值/2 + 上移量 - 150px（底栏加进度
+     条约占 150px），和视口高度无关 —— 所以任何屏高下调这一个数就够。
+     300px + 上移 22px 得到 22px 间隙。 */
+  --mv-reserve: 300px;
+}
+
+.mv-theater.is-open {
+  display: flex;
+  opacity: 1;
+}
+
+/* 背景不做全黑：底下的封面/粒子/壁纸还在，压暗一层就够，
+   这样切进切出不像换了个应用。 */
+.mv-theater-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(0, 0, 0, .34), rgba(0, 0, 0, .76) 68%),
+    rgba(6, 7, 10, .58);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+}
+
+.mv-stage {
+  position: relative;
+  width: 94vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-22px);
+}
+
+.mv-frame {
+  position: relative;
+  /* 卡片大小由「能用的高度」反推，不写死 px 上限。之前是 min(74vw, 1180px)，
+     宽屏上永远停在 1180px：3440×1440 上只用掉 34% 宽度和 55% 高度，一大片空着。
+     现在长到高度用满为止；窄屏/竖屏上仍然由 94vw 那一项决定。
+     不能靠「宽度放大 + max-height 夹住」实现 —— 宽度是显式值时 aspect-ratio 只
+     决定高度，max-height 一夹就变成非 16:9 的框，视频会被 contain 加上左右黑边。 */
+  width: min(100%, calc((100vh - var(--mv-reserve)) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #05070b;
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow:
+    0 42px 120px rgba(0, 0, 0, .62),
+    0 0 0 1px rgba(255, 255, 255, .04) inset;
+  transform: scale(.972);
+  opacity: 0;
+  transition: transform .42s cubic-bezier(.22, .9, .26, 1), opacity .32s ease;
+}
+
+.mv-theater.is-open .mv-frame {
+  transform: scale(1);
+  opacity: 1;
+}
+
+#mv-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #05070b;
+}
+
+/* ---------- 卡上 chrome ---------- */
+/* 鼠标不动 2.5s 后整条淡掉：看 MV 时画面上不该常驻文字。 */
+.mv-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px 30px;
+  background: linear-gradient(180deg, rgba(4, 5, 8, .78), rgba(4, 5, 8, 0));
+  opacity: 1;
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+
+.mv-theater.chrome-idle .mv-chrome {
+  opacity: 0;
+}
+
+.mv-chrome-lead {
+  min-width: 0;
+  flex: 1;
+}
+
+.mv-title {
+  font-family: var(--font-sans, 'Inter', 'Noto Sans SC', sans-serif);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  color: #f4f6fa;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, .7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mv-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(226, 232, 240, .70);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mv-chrome-trail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+/* ---------- 画质 chip：沿用底栏 quality-pill 的语言 ---------- */
+.mv-quality {
+  position: relative;
+}
+
+.mv-quality-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(16, 19, 26, .62);
+  color: rgba(233, 238, 246, .92);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background .2s ease, border-color .2s ease, color .2s ease;
+}
+
+.mv-quality-btn:hover {
+  background: rgba(30, 35, 46, .78);
+  border-color: rgba(255, 255, 255, .26);
+  color: #fff;
+}
+
+.mv-quality-btn[disabled] {
+  opacity: .5;
+  cursor: default;
+}
+
+.mv-quality-list {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  min-width: 104px;
+  padding: 5px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(12, 14, 19, .92);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, .58);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mv-quality.open .mv-quality-list {
+  display: flex;
+}
+
+.mv-quality-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(226, 232, 240, .84);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease;
+}
+
+.mv-quality-option:hover {
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+}
+
+.mv-quality-option.is-active {
+  background: rgba(244, 210, 138, .14);
+  color: #f4d28a;
+}
+
+.mv-close {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(16, 19, 26, .62);
+  color: rgba(233, 238, 246, .9);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+}
+
+.mv-close svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.mv-close:hover {
+  background: rgba(198, 62, 62, .76);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+/* ---------- 加载 / 失败态 ---------- */
+.mv-status {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(5, 7, 11, .82);
+  color: rgba(226, 232, 240, .88);
+  font-family: var(--font-sans, 'Inter', 'Noto Sans SC', sans-serif);
+  font-size: 13px;
+  letter-spacing: .2px;
+}
+
+.mv-theater.is-loading .mv-status,
+.mv-theater.is-error .mv-status {
+  display: flex;
+}
+
+.mv-status-spin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .16);
+  border-top-color: rgba(244, 210, 138, .9);
+  animation: mv-status-spin .82s linear infinite;
+}
+
+.mv-theater.is-error .mv-status-spin {
+  display: none;
+}
+
+@keyframes mv-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+.mv-status-retry {
+  padding: 6px 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .06);
+  color: rgba(233, 238, 246, .92);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease;
+}
+
+.mv-status-retry:hover {
+  background: rgba(255, 255, 255, .13);
+  border-color: rgba(255, 255, 255, .3);
+}
+
+/* ---------- 底栏那颗 MV 按钮 ---------- */
+/* 没 MV 的歌（小Q / 小狗全部，小云 mv=0）置灰但不隐藏：位置稳定比少一颗按钮重要。 */
+#mv-btn[disabled] {
+  opacity: .34;
+  cursor: default;
+  pointer-events: none;
+}
+
+#mv-btn.is-on {
+  color: #f4d28a;
+  background: rgba(244, 210, 138, .14);
+}
+
+/* ---------- MV 播放中的全局让位 ---------- */
+/* 封面 / 粒子 / 舞台歌词淡出，画面只留 MV。canvas 不能 display:none —— WebGL
+   上下文和 animate() 循环还在跑，隐掉可见性就够，省掉一次上下文重建。 */
+body.mv-theater-active #canvas-container,
+body.mv-theater-active #stage-lyrics,
+body.mv-theater-active #album-bg-next,
+body.mv-theater-active #idle-guide-canvas {
+  opacity: 0;
+  transition: opacity .34s ease;
+  pointer-events: none;
+}
+
+body.mv-theater-active #album-bg {
+  opacity: .28;
+  transition: opacity .34s ease;
+}
+
+/* MV 自带音轨，音调位移挂在音频链上，对视频无效 —— 置灰，别让它看起来能用。 */
+body.mv-theater-active .pitch-tuning-row {
+  opacity: .38;
+  pointer-events: none;
+}
+
+/* 双击铺满：不再给底栏留高度，整个视口都归 MV。超宽屏（21:9）上高度先用满，
+   两侧由暗场补齐 —— 16:9 的片源在 21:9 屏上不该被裁掉左右。 */
+.mv-theater.is-fullscreen .mv-stage {
+  width: 100vw;
+  transform: none;
+}
+
+.mv-theater.is-fullscreen .mv-frame {
+  width: min(100vw, calc(100vh * 16 / 9));
+  border-radius: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 1100px) {
+  .mv-stage {
+    width: 88vw;
+  }
+}
+
+/* 矮屏：预留收窄，否则卡片会缩得太小。间隙公式同上，260px 约留 12px。 */
+@media (max-height: 720px) {
+  .mv-theater {
+    --mv-reserve: 260px;
+  }
+
+  .mv-stage {
+    transform: translateY(-12px);
+  }
+}

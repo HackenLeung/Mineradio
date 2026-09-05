@@ -772,6 +772,12 @@ async function playAudio(opts) {
 }
 async function togglePlay() {
   if (playToggleBusy) return;
+  // MV 剧场开着时底栏播放键作用于视频。放在 playToggleBusy 之前：MV 分支不碰
+  // 音频链，没有需要串行化的异步起播。
+  if (typeof toggleMvPlayback === 'function' && toggleMvPlayback()) {
+    forcePlaybackControlsInteractive();
+    return;
+  }
   playToggleBusy = true;
   try {
     forcePlaybackControlsInteractive();

@@ -42,7 +42,10 @@ function lanRemoteCoverSource() {
 
 function lanRemoteStatePayload() {
   var base = typeof cubeRemotePayload === 'function' ? cubeRemotePayload() : {};
-  var media = typeof audio !== 'undefined' ? audio : null;
+  // 和底栏进度读同一个时钟来源：MV 模式下读音频会推给遥控端一条冻结的进度。
+  var media = typeof playbackClockMedia === 'function'
+    ? playbackClockMedia()
+    : (typeof audio !== 'undefined' ? audio : null);
   var cover = lanRemoteCoverSource();
   return {
     title: base.title || '未播放',

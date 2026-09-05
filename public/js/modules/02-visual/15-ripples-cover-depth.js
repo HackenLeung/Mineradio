@@ -539,9 +539,10 @@ function updateControlTrackInfo(song) {
     var titleText = document.getElementById('control-title-text');
     var titleBadges = document.getElementById('control-title-badges');
     if (!titleText) {
-      title.innerHTML = '<span id="control-title-text" class="control-title-text"></span><span id="control-title-badges" class="control-title-badges"></span>';
+      // 只补歌名那一个 span。徽章现在住在歌名上面那行 .control-chip-row 里，
+      // 在这儿一起重建会在歌名同排造出第二份，又把歌名挤没了。
+      title.innerHTML = '<span id="control-title-text" class="control-title-text"></span>';
       titleText = document.getElementById('control-title-text');
-      titleBadges = document.getElementById('control-title-badges');
     }
     if (titleText) titleText.textContent = song.name || '';
     else title.textContent = song.name || '';
@@ -554,6 +555,7 @@ function updateControlTrackInfo(song) {
   if (artist) artist.textContent = song.artist || '';
   updatePlaybackQualityUi();
   if (typeof updateLyricTimingOffsetUi === 'function') updateLyricTimingOffsetUi(song);
+  if (typeof syncMvButton === 'function') syncMvButton(song);
 }
 
 function applyCoverCanvas(cv, thumbSrc, opts) {

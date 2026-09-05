@@ -533,6 +533,12 @@ function closeTrackDetailModal() {
     detailCommentSubmitBusy = false;
   });
 }
+// 详情弹窗（z-index 50）压在 MV 剧场（z-index 5）上面，不先关掉就看不见画面。
+function openMvTheaterFromDetail() {
+  var song = currentCoverSong();
+  closeTrackDetailModal();
+  if (typeof openMvTheater === 'function') openMvTheater(song);
+}
 function localDetailOnlineSubject(song) {
   if (!song || !(song.type === 'local' || song.source === 'local' || song.localUrl)) return song;
   return typeof localOnlineSongForMetadata === 'function' ? (localOnlineSongForMetadata(song) || song) : song;
@@ -994,6 +1000,11 @@ function openTrackDetailModal(type, songOverride) {
       (isSongLiked(song) ? '<span class="detail-chip">红心喜欢</span>' : '') +
       (getCustomCoverForSong(song) ? '<span class="detail-chip">自定义封面</span>' : '') +
       (hasCustomLyricForSong(song) ? '<span class="detail-chip">自定义歌词</span>' : '') +
+      // 底栏那颗 MV 按钮在窄窗口下会被收纳梯度隐掉（index.css @media max-width:1040px）。
+      // 详情弹窗任何宽度都在，是 MV 的第二个入口。
+      (typeof songCanPlayMv === 'function' && songCanPlayMv(song)
+        ? '<button type="button" class="detail-chip detail-chip-action" onclick="openMvTheaterFromDetail()">看 MV</button>'
+        : '') +
       '</div>' +
       '<div class="detail-section"><div class="detail-section-head"><div class="detail-section-title">' + detailCommentTitle + '</div></div>' +
       renderDetailCommentComposer(commentConfig) +

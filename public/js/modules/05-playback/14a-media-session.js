@@ -79,9 +79,17 @@ function bindMediaSessionToAudio(media) {
 function bindMediaSessionActions() {
   if (!mediaSessionAvailable() || bindMediaSessionActions.bound) return;
   bindMediaSessionActions.bound = true;
+  // MV 模式下全局 playing 是 false（音频已暂停），不能拿它判断该不该响应系统
+  // 媒体键 —— 否则 MV 放着而媒体键的 pause 什么都不做。这里单独看视频的状态。
+  // 刻意不在 MV 播放时把 playing 置真：那个标志有 70 多处消费方，绝大多数是
+  // 音频恢复链、seek 恢复、空场首页判定，让它撒谎会渗进所有这些地方。
+  function mvMediaPlaying() {
+    var mv = typeof mvTheaterActiveMedia === 'function' ? mvTheaterActiveMedia() : null;
+    return !!(mv && !mv.paused && !mv.ended);
+  }
   var handlers = {
-    play: function () { if (!playing) togglePlay(); },
-    pause: function () { if (playing) togglePlay(); },
+    play: function () { if (!playing && !mvMediaPlaying()) togglePlay(); },
+    pause: function () { if (playing || mvMediaPlaying()) togglePlay(); },
     previoustrack: function () { prevTrack(true); },
     nexttrack: function () { nextTrack(true); }
   };

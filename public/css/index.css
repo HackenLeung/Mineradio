@@ -6408,7 +6408,10 @@ body.home-controls-locked #bottom-bar {
 
 .control-cluster.modes {
   grid-column: 3;
-  justify-content: flex-end
+  justify-content: flex-end;
+  /* 右簇的间距要比另两簇小：它的宽度在等分三列里被摊两次，每 1px 间距要花
+     2px 条宽。这里全是图标按钮，收到 9px 视觉上仍然分得开。 */
+  gap: 9px
 }
 
 .control-divider {
@@ -6490,6 +6493,19 @@ body.home-controls-locked #bottom-bar {
   gap: 5px;
   flex: 0 0 auto;
   max-width: none
+}
+
+/* 徽章 + 音质胶囊那一行。都没内容时高度塌成 0，不会白占一行。 */
+.control-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  line-height: 0
+}
+
+.control-chip-row:empty {
+  display: none
 }
 
 .control-title-badges .tag-source {
@@ -8750,19 +8766,26 @@ body.diy-mode #bottom-bar.stage-mode {
 #bottom-bar.stage-mode,
 body.simple-mode #bottom-bar {
   box-sizing: border-box;
-  width: min(1120px, calc(100vw - clamp(20px, 5vw, 72px)));
+  /* 三列是「等分 | 中轴 | 等分」，右簇的宽度要被摊两次，所以条长是个算得出来的
+     下限：右簇 356px 时需要约 1050px。1160 留了 55px 余量，也回到项目原本给
+     body.diy-mode 写的那个值 —— 1440 是按「倍速胶囊还在右簇」算的，胶囊挪走后
+     那么宽只会顶到屏幕边上。 */
+  width: min(1240px, calc(100vw - clamp(24px, 5vw, 148px)));
   padding: clamp(8px, 1.2vw, 11px) clamp(12px, 2.2vw, 24px) clamp(10px, 1.35vw, 14px);
 }
 
 body.diy-mode #bottom-bar,
 body.diy-mode #bottom-bar.stage-mode {
   left: 50%;
-  width: min(1120px, calc(100vw - clamp(28px, 8vw, 148px)));
+  width: min(1240px, calc(100vw - clamp(24px, 5vw, 148px)));
 }
 
 #controls,
 body.simple-mode #controls,
 body.diy-mode #controls {
+  /* 两侧必须等分：中间那列是 max-content + justify-self:center，只有左右等宽
+     播放键才落在正中。第三列换成 auto 会让中轴偏左（左列 1fr 吃掉全部剩余）。
+     代价是 modes 的宽度被摊两次，靠上面把条子拉长和下面的收纳梯度来还。 */
   grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   gap: clamp(8px, 1.7vw, 18px);
 }
@@ -8823,6 +8846,8 @@ body.diy-mode #controls {
   #controls,
   body.simple-mode #controls,
   body.diy-mode #controls {
+    /* 同样保持等分，播放键才在正中 —— 这个断点下 modes 的间距和网格间距都收紧了，
+       宽度已经降下来。 */
     grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   }
 
@@ -8855,10 +8880,19 @@ body.diy-mode #controls {
   }
 }
 
-@media (max-width:1040px) {
+/* modes 簇的宽度在等分三列里要摊两次，所以窄一点就得开始收纳。
+   「控制条自动隐藏」是这簇里最不常用的一颗（简约模式本来就不显示它），第一个走。 */
+@media (max-width:1300px) {
+  body.diy-mode #controls-hide-btn {
+    display: none !important
+  }
+}
+
+/* 再窄一档：时间显示和 MV 一起收。MV 藏了还能从歌曲详情弹窗进。 */
+@media (max-width:1100px) {
 
   body.diy-mode #time-display,
-  body.diy-mode #controls-hide-btn {
+  body.diy-mode #mv-btn {
     display: none !important
   }
 
@@ -10971,6 +11005,21 @@ body.login-guide-active #login-guide-canvas {
   align-items: center
 }
 
+/* 可点的 chip：和只读 chip 同一个形状，靠亮度和 hover 区分。 */
+.detail-chip-action {
+  cursor: pointer;
+  font-family: inherit;
+  border-color: rgba(var(--fc-accent-rgb), .42);
+  background: rgba(var(--fc-accent-rgb), .14);
+  color: rgba(255, 255, 255, .94);
+  transition: background .18s ease, border-color .18s ease
+}
+
+.detail-chip-action:hover {
+  background: rgba(var(--fc-accent-rgb), .24);
+  border-color: rgba(var(--fc-accent-rgb), .62)
+}
+
 .detail-section {
   margin-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, .07);
@@ -12256,10 +12305,13 @@ body.desktop-shell.diy-mode.controls-visible #fx-fab {
   bottom: 126px
 }
 
+/* 这条才是 Electron 里真正生效的宽度：body.desktop-shell 在桌面端启动时加上，
+   选择器 (0,3,1) 比上面 body.diy-mode #bottom-bar (0,2,1) 更具体，位置也更靠后。
+   只改上面那条的话装机版宽度不变，底栏怎么调都还挤 —— 两条必须同一个公式。 */
 body.desktop-shell.diy-mode #bottom-bar,
 body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   left: 50%;
-  width: min(1080px, calc(100vw - 72px))
+  width: min(1240px, calc(100vw - clamp(24px, 5vw, 148px)))
 }
 
 @media (max-height:760px) {

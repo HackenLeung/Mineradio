@@ -281,7 +281,13 @@ function updatePlaybackTuningUi() {
   if (label) label.textContent = formatPlaybackSpeed(playbackTuning.speed);
   if (root) root.classList.toggle('unsupported', !pitchShiftSupported);
 }
-function applyPlaybackTuning() { configurePlaybackAudioElement(audio); applyPitchShiftValue(); updatePlaybackTuningUi(); }
+function applyPlaybackTuning() {
+  configurePlaybackAudioElement(audio);
+  applyPitchShiftValue();
+  updatePlaybackTuningUi();
+  // 倍速对 MV 有效（元素属性），音调无效（AudioWorklet 挂在音频链上，视频不接图）。
+  if (typeof applyMvVideoOutput === 'function') applyMvVideoOutput();
+}
 function setPlaybackSpeed(value, silent) {
   playbackTuning.speed = clampRange(Math.round((Number(value) || 1) * 20) / 20, .5, 2); savePlaybackTuningSettings(); applyPlaybackTuning();
   if (!silent) showToast('倍速 ' + formatPlaybackSpeed(playbackTuning.speed));

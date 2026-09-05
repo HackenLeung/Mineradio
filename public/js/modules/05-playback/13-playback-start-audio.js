@@ -281,6 +281,11 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
 async function playQueueAt(idx, opts) {
   opts = opts || {};
   if (idx < 0 || idx >= playQueue.length) return false;
+  // MV 绑在具体某一首上，切歌就退出剧场。resumeAudio:false —— 这次调用本身
+  // 就要起播新歌，再恢复一次旧音频会打两次起播。
+  if (typeof closeMvTheater === 'function' && typeof mvTheaterState !== 'undefined' && mvTheaterState.active) {
+    closeMvTheater({ resumeAudio: false });
+  }
   if (typeof coverDeliveryPreparePlayback === 'function' && !coverDeliveryPreparePlayback(opts)) return false;
   // 投递 token 只授权这一次根播放调用。后续音源回退、质量重试等内部重入
   // 应视作正常播放，不能在投递层已经释放后被旧 token 拦住。

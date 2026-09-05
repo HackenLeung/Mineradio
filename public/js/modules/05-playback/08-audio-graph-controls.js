@@ -529,6 +529,8 @@ function restorePlaybackGain() {
 function applyVolumeToAudio() {
   if (typeof configurePlaybackAudioElement === 'function') configurePlaybackAudioElement(audio);
   writeAudioOutputGain(targetVolume);
+  // MV 走自带音轨、不接 audioCtx，音量只能写到元素上，得单独镜像一份。
+  if (typeof applyMvVideoOutput === 'function') applyMvVideoOutput();
 }
 
 function updateVolumeUi() {

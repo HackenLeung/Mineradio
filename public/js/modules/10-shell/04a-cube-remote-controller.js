@@ -21,6 +21,10 @@ function cubeRemoteCurrentSong() {
   return playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
 }
 
+function cubeRemoteMvPlaying() {
+  var mv = typeof mvTheaterActiveMedia === 'function' ? mvTheaterActiveMedia() : null;
+  return !!(mv && !mv.paused && !mv.ended);
+}
 function cubeRemotePayload() {
   var meta = typeof currentDesktopSongMeta === 'function' ? currentDesktopSongMeta() : {};
   var song = cubeRemoteCurrentSong();
@@ -36,7 +40,9 @@ function cubeRemotePayload() {
     title: meta.title || '未播放',
     artist: meta.artist || '',
     cover: cubeRemoteCoverUrl(cover),
-    playing: !!playing,
+    // MV 模式下音频是暂停的，全局 playing 为 false。遥控端要报真实的出声状态，
+    // 否则用户看到「已暂停」而 MV 正在放。
+    playing: !!playing || cubeRemoteMvPlaying(),
     volume: clampRange(Number(targetVolume) || 0, 0, 1),
     muted: Number(targetVolume) <= 0.001,
     lyricsEnabled: !!(fx && fx.desktopLyrics),

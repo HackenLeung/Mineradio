@@ -138,12 +138,21 @@ function playbackDurationFromSong(song) {
   if (!song) return 0;
   return normalizePlaybackDurationSeconds(song.duration || song.durationMs || song.dt || 0);
 }
+// MV 剧场开着时，底栏那条进度/时间要读视频的时钟 —— MV 有片头，时长和音频版
+// 本来就不是一回事，读 audio 会显示一条和画面无关的进度。
+function playbackClockMedia() {
+  var mv = typeof mvTheaterActiveMedia === 'function' ? mvTheaterActiveMedia() : null;
+  return mv || audio;
+}
 function getPlaybackDurationSeconds() {
-  if (audio && isFinite(audio.duration) && audio.duration > 0) return audio.duration;
+  var media = playbackClockMedia();
+  if (media && isFinite(media.duration) && media.duration > 0) return media.duration;
+  if (media !== audio) return 0;
   return playbackDurationFromSong(currentCoverSong());
 }
 function getPlaybackCurrentSeconds() {
-  return audio && isFinite(audio.currentTime) && audio.currentTime > 0 ? audio.currentTime : 0;
+  var media = playbackClockMedia();
+  return media && isFinite(media.currentTime) && media.currentTime > 0 ? media.currentTime : 0;
 }
 function setProgressVisual(percent) {
   percent = clampRange(percent || 0, 0, 100);
@@ -430,6 +439,13 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
 }
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function (e) {
+  // MV 模式交给 17-mv-theater.js 里那条轻量拖拽：这里整条链绑死 audio
+  // （progressSeekMediaStillCurrent 里 audio === media），还要压 gainNode、
+  // 复位智能过渡，对 <video> 一样都不适用。
+  // 判定用 mvTheaterOwnsPlayback() 而不是 mvTheaterActiveMedia()：后者要求视频
+  // 已有 src，取址那段时间里它是 null，拖拽会落回这条链，去 seek 并起播刚被剧场
+  // 暂停的音频。剧场开着就一律不接，视频够不够就绪由 MV 那条自己判断。
+  if (typeof mvTheaterOwnsPlayback === 'function' && mvTheaterOwnsPlayback()) return;
   if (!audio || !getPlaybackDurationSeconds()) return;
   if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('manual-seek');
   progressDragState.active = true;
