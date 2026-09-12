@@ -211,6 +211,8 @@ function testNetworkStarvationRetainsSourceAndResumePosition() {
     'audioPlaybackWaitingForNetwork',
     'audioPlaybackHasTransientNetworkFailure',
     'clearRecoverableNetworkPlaybackStall',
+    'clearPlaybackResumeWatchdogs',
+    'cancelPlaybackStart',
     'playbackMediaHasRecoverableNetworkStall',
     'settleRecoverableNetworkPlaybackStall',
   ].map(name => extractFunction(controlsText, name)).join('\n');
@@ -230,8 +232,8 @@ function testNetworkStarvationRetainsSourceAndResumePosition() {
   assert.strictEqual(sandbox.syncReason, 'network-stalled');
   assert.strictEqual(notices.length, 1);
 
-  assert(/scheduleAudioResumePosition\(expectedMedia, recoverableResumeAt, expectedToken\)/.test(controlsText));
-  assert(/waitForAudioResumePosition\(expectedMedia, recoverableResumeAt, expectedToken, 1800\)/.test(controlsText));
+  assert(/scheduleAudioResumePosition\(expectedMedia, resumeAt, expectedToken\)/.test(controlsText));
+  assert(/waitForAudioResumePosition\(media, resumeAt, token,/.test(controlsText));
 
   const graphClockStall = {
     src: media.src,
@@ -419,6 +421,32 @@ async function testLateAsyncCannotReviveTerminal() {
   assert.strictEqual(sandbox.notices.filter(item => item.title === '当前没有可用音源').length, 1);
 }
 
+async function testCancelledCandidatePlaybackKeepsPausedSource() {
+  const source = { provider: 'netease', id: 'source-a', name: 'Same Song', artist: 'Same Artist' };
+  const sandbox = createSandbox([source], { qq: { loggedIn: true, playbackKeyReady: true } });
+  const candidate = { provider: 'qq', id: 'qq-a', mid: 'qq-a', name: source.name, artist: source.artist };
+  sandbox.apiJson = async () => ({ songs: [candidate] });
+  let childCalls = 0;
+  let pausedSong;
+  sandbox.playQueueAt = async function () {
+    childCalls++;
+    sandbox.trackSwitchToken++;
+    pausedSong = sandbox.playQueue[0];
+    sandbox.audio.src = 'https://example.invalid/paused-candidate';
+    sandbox.audio.__mineradioQueueItemKey = sandbox.queueItemKey(pausedSong);
+    sandbox.audio.pause();
+    sandbox.cancelSourceFallbackRecovery('manual-pause');
+    return false;
+  };
+  assert.strictEqual(await sandbox.tryAutoPlaybackFallback(source, { category: 'url_unavailable' }, 0, 1, {}), false);
+  assert.strictEqual(childCalls, 1, 'cancelling must stop further provider attempts');
+  assert.strictEqual(sandbox.playQueue[0], pausedSong, 'a cancelled start is not a failed candidate to roll back');
+  assert.strictEqual(sandbox.audio.__mineradioQueueItemKey, sandbox.queueItemKey(pausedSong));
+  assert.strictEqual(sandbox.audio.src, 'https://example.invalid/paused-candidate');
+  assert.strictEqual(sandbox.audio.paused, true);
+  assert.strictEqual(pausedSong._lastPlaybackFailAt, undefined);
+}
+
 async function testDeadlineAndManualSupersession() {
   const source = { provider: 'netease', id: 'deadline-a', name: 'Deadline Song', artist: 'Deadline Artist' };
   const sandbox = createSandbox([source], {
@@ -474,9 +502,9 @@ function testStaticRecoveryWiring() {
   assert(/audioErrorHasCode\(originalErr, 'AUDIO_CLOCK_STALLED'\)[\s\S]{0,180}rebuildTrackSwitchMediaAfterClockStall/.test(controlsText));
   const completeStartBlock = controlsText.slice(
     controlsText.indexOf('async function completeAudioPlayStart'),
-    controlsText.indexOf('function canResumePausedAudioFast')
+    controlsText.indexOf('function audioErrorHasCode')
   );
-  assert(/opts\.trackSwitch[\s\S]{0,320}waitForAudioPlaybackProgress/.test(completeStartBlock), 'natural track switches must wait for the media clock before showing playback');
+  assert(/waitForAudioPlaybackProgress/.test(completeStartBlock), 'all play paths must wait for the media clock before showing playback');
   assert(/AUDIO_CLOCK_STALLED/.test(controlsText));
   assert(/AUDIO_NETWORK_STALLED/.test(controlsText));
   assert(/playbackMediaHasRecoverableNetworkStall\(playbackMedia, token\)/.test(startText));
@@ -490,9 +518,9 @@ function testStaticRecoveryWiring() {
   assert(/startEventPendingClock[\s\S]{0,260}!startEventPendingClock/.test(switchCoreText), 'play events at 0:00 must not mark the player as running');
   assert(/sourceFallbackRecovery:\s*recovery/.test(controlsText));
   assert(/if \(recovered === true\) return true/.test(controlsText));
-  const attemptSource = extractFunction(controlsText, 'attemptAudioPlay');
+  const attemptSource = extractFunction(controlsText, 'runAudioPlayAttempt');
   const networkTerminalPos = attemptSource.indexOf("audioErrorHasCode(err, 'AUDIO_NETWORK_STALLED')");
-  const staleRetryGuardPos = attemptSource.lastIndexOf('if (!playbackAttemptStillCurrent(expectedMedia, expectedToken)) return false;', networkTerminalPos);
+  const staleRetryGuardPos = attemptSource.lastIndexOf('if (!playbackAttemptStillCurrent(expectedMedia, expectedToken, attempt)) return false;', networkTerminalPos);
   const fallbackLogPos = attemptSource.indexOf("console.warn('Audio play blocked:");
   assert(staleRetryGuardPos >= 0 && staleRetryGuardPos < networkTerminalPos && networkTerminalPos < fallbackLogPos, 'stale track-switch retries must stop before network or fresh-url recovery');
   assert(/clearPlaybackResumeWatchdogs\(\)/.test(fallbackText));
@@ -505,7 +533,12 @@ function testStaticRecoveryWiring() {
   assert(/function playbackStallRecoveryOwnerStillCurrent/.test(controlsText));
   assert((controlsText.match(/playbackStallRecoveryOwnerStillCurrent\(/g) || []).length >= 4);
   assert(/recoverySerial !== playbackResumeRecovery\.serial/.test(controlsText));
-  assert(/clearPlaybackResumeWatchdogs\(\);\s*playbackResumeRecovery\.serial =/.test(controlsText));
+  const watchdogState = { serial: 7, timerIds: [] };
+  vm.runInNewContext(extractFunction(controlsText, 'clearPlaybackResumeWatchdogs') + '\nclearPlaybackResumeWatchdogs();', {
+    playbackResumeRecovery: watchdogState,
+    clearTimeout() {},
+  });
+  assert(watchdogState.serial > 7, 'clearing watchdogs must invalidate in-flight work even when no timer remains');
   assert(/\['play', 'playing', 'pause'[\s\S]{0,500}audioEl !== audio/.test(progressText));
   assert(/\['error', 'stalled'\][\s\S]{0,700}schedulePlaybackStallRecovery/.test(progressText));
   assert((startText.match(/else setTimeout\(nextTrack, 0\)/g) || []).length >= 2, 'normal ended playback must still advance');
@@ -541,6 +574,7 @@ async function run() {
   await testFiniteQueueRecovery();
   await testDuplicateSongProviderDeduplication();
   await testLateAsyncCannotReviveTerminal();
+  await testCancelledCandidatePlaybackKeepsPausedSource();
   await testDeadlineAndManualSupersession();
   testPendingResumeSurvivesGraphRecovery();
   testNetworkStarvationRetainsSourceAndResumePosition();

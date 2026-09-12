@@ -96,11 +96,13 @@ function createPlaySandbox(media, song) {
     playQueue: [song],
     currentIdx: 0,
     playing: false,
+    playbackStartAttempt: null,
+    playbackStartSequence: 0,
     AUDIO_PLAY_REQUEST_TIMEOUT_MS: 22000,
     AUDIO_NETWORK_STARVATION_GRACE_MS: 9000,
     AUDIO_MANUAL_RESUME_CLOCK_TIMEOUT_MS: 4200,
     applyAudioOutputDevice: async () => { order.push('setSinkId'); return true; },
-    ensurePlaybackAudioGraph: async (reason) => { order.push('graph:' + reason); return true; },
+    ensurePlaybackAudioGraph: async (reason) => { order.push('graph:' + reason); order.push('setSinkId'); return true; },
     awaitMediaPlayWithTimeout: async () => { order.push('awaitPlay'); return undefined; },
     audioGraphHealthy: () => true,
     initAudio: () => true,
@@ -110,7 +112,10 @@ function createPlaySandbox(media, song) {
     playbackResumePausedLongEnough: () => false,
     resumePausedAudioFast: async () => null,
     currentResumeSeconds: () => 0,
+    playbackMediaIsLocalFile: () => song.type === 'local',
+    AUDIO_LOCAL_PLAY_REQUEST_TIMEOUT_MS: 12000,
     playbackResumeRecovery: { pausedPosition: 0 },
+    clearPlaybackResumeWatchdogs: () => {},
     waitForAudioPlaybackProgress: async () => { order.push('waitClock'); return true; },
     completeAudioPlayStart: async () => { order.push('complete'); return true; },
     audioPlaybackHasTransientNetworkFailure: () => false,
@@ -130,6 +135,9 @@ function createPlaySandbox(media, song) {
   };
   const source = [
     namedFunctionSource(controlsText, 'playbackAttemptStillCurrent'),
+    namedFunctionSource(controlsText, 'adoptPlaybackAttemptMedia'),
+    namedFunctionSource(controlsText, 'startPlaybackAttemptMedia'),
+    namedFunctionSource(controlsText, 'runAudioPlayAttempt'),
     namedFunctionSource(controlsText, 'attemptAudioPlay'),
   ].join('\n');
   vm.runInNewContext(source, sandbox, { filename: 'attempt-audio-play.js' });
@@ -178,6 +186,7 @@ function createTimeoutSandbox(media, song) {
     playQueue: [song],
     currentIdx: 0,
     AUDIO_LOCAL_TRACK_SWITCH_CLOCK_TIMEOUT_MS: 1600,
+    AUDIO_LOCAL_RESUME_CLOCK_TIMEOUT_MS: 2500,
     AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS: 6500,
     AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS: 12000,
   };
@@ -207,10 +216,11 @@ test('在线歌不受影响，仍是 6500ms', () => {
     '慢网络需要这段宽限，不能被本地歌的短档误伤');
 });
 
-test('中途恢复（起点 >= 0.35s）仍走 12000ms，本地歌也一样', () => {
+test('本地中途恢复有独立的 2500ms 时钟预算，在线保留 12000ms', () => {
   const local = createTimeoutSandbox(localFrozenMedia({ currentTime: 42 }), { type: 'local', localUrl: 'file:///x.mp3' });
-  assert.equal(local.playbackTrackSwitchClockTimeoutMs(local.audio, 42), 12000,
-    'seek/恢复到中段是另一回事，短档只针对 0 秒起播');
+  assert.equal(local.playbackTrackSwitchClockTimeoutMs(local.audio, 42), 2500);
+  const remote = createTimeoutSandbox(remoteFrozenMedia({ currentTime: 42 }), { id: 1 });
+  assert.equal(remote.playbackTrackSwitchClockTimeoutMs(remote.audio, 42), 12000);
 });
 
 test('源码里 trackSwitch 等待必须走统一的时长判定', () => {

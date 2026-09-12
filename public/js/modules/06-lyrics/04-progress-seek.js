@@ -217,6 +217,7 @@ function bindPlaybackProgressEvents(audioEl) {
       if (audioEl !== audio) return;
       if (Number(audioEl.__mineradioTrackSwitchToken) !== Number(trackSwitchToken)) return;
       if (typeof playbackMediaMatchesCurrentQueueItem === 'function' && !playbackMediaMatchesCurrentQueueItem(audioEl)) return;
+      if (typeof reportPlaybackDiagnostic === 'function') reportPlaybackDiagnostic('media-' + name, audioEl);
       if (typeof schedulePlaybackStallRecovery === 'function') {
         schedulePlaybackStallRecovery(name, {
           silent: name !== 'error',
@@ -234,6 +235,13 @@ function bindPlaybackProgressEvents(audioEl) {
   audioEl.addEventListener('waiting', function () {
     if (audioEl !== audio) return;
     audioEl.__mineradioLastWaitingAt = performance.now();
+  });
+  audioEl.addEventListener('pause', function () {
+    if (audioEl !== audio || !audioEl.__mineradioPlaybackDesired || audioEl.ended || audioEl.seeking) return;
+    if (audioEl.__mineradioPlaybackAttempt && !audioEl.__mineradioPlaybackAttempt.settled) return;
+    if (typeof mvTheaterOwnsPlayback === 'function' && mvTheaterOwnsPlayback()) return;
+    if (typeof reportPlaybackDiagnostic === 'function') reportPlaybackDiagnostic('unexpected-pause', audioEl);
+    if (typeof recoverFrozenPlayback === 'function') recoverFrozenPlayback('unexpected-pause', audioEl);
   });
 }
 function emitProgressDragParticles(x, y) {
@@ -360,6 +368,7 @@ function restoreProgressSeekAudio(media, mediaSrc, resumeAfterSeek, serial) {
     return;
   }
   if (!resumeAfterSeek) {
+    if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(media, 'seek-paused');
     progressDragState.resumePlaySerial = 0;
     finishProgressPreviewHold(serial, 96);
     try { if (media && !media.paused) media.pause(); } catch (pauseErr) { }
@@ -376,7 +385,7 @@ function primeProgressSeekPlayback(media, mediaSrc, serial) {
   if (!progressSeekMediaStillCurrent(media, mediaSrc)) return false;
   progressDragState.resumePlaySerial = serial;
   if (typeof attemptAudioPlay === 'function') {
-    attemptAudioPlay({ manual: true, silent: true });
+    attemptAudioPlay({ manual: true, silent: true, expectedMedia: media, expectedToken: trackSwitchToken });
     return true;
   }
   try {
@@ -410,12 +419,15 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
     progressDragState.resumePlaySerial = 0;
     return false;
   }
+  if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(media, 'seek');
+  media.__mineradioPlaybackDesired = !!resumeAfterSeek;
   progressDragState.previewTime = targetTime;
   progressDragState.previewDuration = durationSec;
   beginProgressPreviewHold(serial, 2800, !!resumeAfterSeek, media, mediaSrc, targetTime);
   if (typeof setAudioOutputGainImmediate === 'function') setAudioOutputGainImmediate(0);
   try {
     media.currentTime = targetTime;
+    if (typeof scheduleAudioResumePosition === 'function') scheduleAudioResumePosition(media, targetTime, trackSwitchToken);
   } catch (err) {
     console.warn('[ProgressSeek] commit failed:', err && (err.message || err));
     progressDragState.previewClockRunning = false;
@@ -433,7 +445,11 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
     return waitForProgressSeekReady(media, targetTime, serial, 1200);
   }).then(function (ready) {
     if (serial !== progressDragState.commitSerial || !progressSeekMediaStillCurrent(media, mediaSrc)) return;
-    if (!ready) console.warn('[ProgressSeek] target did not settle before fallback handoff');
+    if (!ready && resumeAfterSeek && typeof recoverFrozenPlayback === 'function') {
+      reportPlaybackDiagnostic('seek-timeout', media, { resumeAt: targetTime });
+      recoverFrozenPlayback('seek-timeout', media);
+      return;
+    }
     restoreProgressSeekAudio(media, mediaSrc, !!resumeAfterSeek && !!ready, serial);
   });
 }
@@ -452,6 +468,7 @@ progressBar.addEventListener('pointerdown', function (e) {
   progressDragState.media = audio;
   progressDragState.mediaSrc = audio.currentSrc || audio.src || '';
   progressDragState.resumeAfterSeek = !!(audio && !audio.paused && !audio.ended && playing);
+  if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(audio, 'seek-drag');
   progressDragState.previewTime = getPlaybackCurrentSeconds();
   progressDragState.previewDuration = getPlaybackDurationSeconds();
   progressDragState.barRect = progressBar.getBoundingClientRect();
@@ -496,12 +513,10 @@ progressBar.addEventListener('pointerup', function (e) { endProgressDrag(e, true
 progressBar.addEventListener('pointercancel', function (e) { endProgressDrag(e, false); });
 progressBar.addEventListener('lostpointercapture', function (e) { endProgressDrag(e, true); });
 // ============================================================
-//  媒体时钟冻结检测（只观测并上报，不执行恢复）
+//  媒体时钟冻结检测
 // ============================================================
-// 现有恢复已覆盖起播、手动恢复和 error/stalled 事件三个入口。剩下的缺口是
-// 「稳态播放中途冻结、且浏览器不发任何事件」——起播 watchdog 早已到期。
-// 这里先只落一条日志到本机 /api/diag/stall-log，用真实字段判断该恢复到哪一层，
-// 再决定是否值得加第三层 watchdog（多层 watchdog 互相重入本身就是 bug 来源）。
+// Use the existing 200ms progress tick. Recovery joins the same playback request
+// as clicks, seeks and track starts; it never runs a second competing play chain.
 var PLAYBACK_FREEZE_TICKS_REQUIRED = 5;   // 5 × 200ms = 1s 无推进
 var PLAYBACK_FREEZE_MIN_ADVANCE = 0.02;
 var PLAYBACK_FREEZE_PENDING_STALE_MS = 10000;
@@ -510,6 +525,7 @@ var playbackFreezeWatch = {
   // 只记「检测到冻结」判断不出恢复有没有生效、花了多久，也就无法定位是哪一层救回来的。
   // 冻结未平息时保留这两个字段，时钟重新推进时补一条 clock-resumed。
   awaitingResume: false, frozenAt: 0, frozenTime: -1,
+  media: null, token: null, stuckSince: 0, seekStartedAt: 0, recoveryRequested: false,
 };
 function resetPlaybackFreezeWatch() {
   playbackFreezeWatch.lastTime = -1;
@@ -518,6 +534,11 @@ function resetPlaybackFreezeWatch() {
   playbackFreezeWatch.awaitingResume = false;
   playbackFreezeWatch.frozenAt = 0;
   playbackFreezeWatch.frozenTime = -1;
+  playbackFreezeWatch.media = null;
+  playbackFreezeWatch.token = null;
+  playbackFreezeWatch.stuckSince = 0;
+  playbackFreezeWatch.seekStartedAt = 0;
+  playbackFreezeWatch.recoveryRequested = false;
 }
 function playbackFreezeBufferedEnd(media) {
   try {
@@ -559,6 +580,9 @@ function reportPlaybackFreeze(media) {
     title: song ? String(song.name || song.title || '') : '',
     src: String(media.currentSrc || media.src || '')
   };
+  payload.sourceKind = typeof playbackMediaIsLocalFile === 'function' && playbackMediaIsLocalFile(media) ? 'local' : 'online';
+  payload.phase = media.__mineradioPlaybackAttempt && media.__mineradioPlaybackAttempt.phase || 'playing';
+  payload.trackToken = media.__mineradioTrackSwitchToken;
   console.warn('[PlaybackFreeze]', payload);
   fetch('/api/diag/stall-log', {
     method: 'POST',
@@ -601,12 +625,29 @@ function reportPlaybackFreezeResume(media, current) {
 
 function tickPlaybackFreezeWatch(media) {
   if (!media || media !== audio || !media.src) { resetPlaybackFreezeWatch(); return; }
-  if (media.paused || media.ended || media.seeking) { resetPlaybackFreezeWatch(); return; }
+  var token = media.__mineradioTrackSwitchToken;
+  if (playbackFreezeWatch.media !== media || playbackFreezeWatch.token !== token) {
+    resetPlaybackFreezeWatch();
+    playbackFreezeWatch.media = media;
+    playbackFreezeWatch.token = token;
+  }
+  if (media.ended || (media.paused && !media.__mineradioPlaybackDesired)) { resetPlaybackFreezeWatch(); return; }
+  if (typeof mvTheaterOwnsPlayback === 'function' && mvTheaterOwnsPlayback()) { resetPlaybackFreezeWatch(); return; }
+  if (media.seeking) {
+    if (!playbackFreezeWatch.seekStartedAt) playbackFreezeWatch.seekStartedAt = performance.now();
+    if (performance.now() - playbackFreezeWatch.seekStartedAt >= 8000 && !playbackFreezeWatch.recoveryRequested) {
+      playbackFreezeWatch.recoveryRequested = true;
+      if (typeof reportPlaybackDiagnostic === 'function') reportPlaybackDiagnostic('seek-timeout', media);
+      if (typeof recoverFrozenPlayback === 'function') recoverFrozenPlayback('seek-timeout', media);
+    }
+    return;
+  }
+  playbackFreezeWatch.seekStartedAt = 0;
   // 过渡期间 B deck 可能才是出声的那个，A deck 停住是正常的。
   if (typeof playbackTransitionHasAudibleNextDeck === 'function' && playbackTransitionHasAudibleNextDeck()) { resetPlaybackFreezeWatch(); return; }
   if (typeof playbackMediaMatchesCurrentQueueItem === 'function' && !playbackMediaMatchesCurrentQueueItem(media)) { resetPlaybackFreezeWatch(); return; }
   var current = isFinite(media.currentTime) ? media.currentTime : 0;
-  if (playbackFreezeWatch.lastTime < 0) { playbackFreezeWatch.lastTime = current; return; }
+  if (playbackFreezeWatch.lastTime < 0) { playbackFreezeWatch.lastTime = current; playbackFreezeWatch.stuckSince = performance.now(); return; }
   // 用绝对值:恢复链换 URL 后时钟会从 0 附近重新走,这个「倒跳」也是时钟在动。
   // 只认前进方向会把倒跳当成还在冻结,在新位置再报一条假冻结。
   // 主动 seek 不会走到这里 —— seeking 状态在上面已经 reset 掉了。
@@ -619,12 +660,18 @@ function tickPlaybackFreezeWatch(media) {
     playbackFreezeWatch.lastTime = current;
     playbackFreezeWatch.stuckTicks = 0;
     playbackFreezeWatch.reportedTime = -1;
+    playbackFreezeWatch.stuckSince = performance.now();
+    playbackFreezeWatch.recoveryRequested = false;
     return;
   }
   playbackFreezeWatch.lastTime = current;
   playbackFreezeWatch.stuckTicks++;
   if (playbackFreezeWatch.stuckTicks < PLAYBACK_FREEZE_TICKS_REQUIRED) return;
   reportPlaybackFreeze(media);
+  if (!playbackFreezeWatch.recoveryRequested && performance.now() - playbackFreezeWatch.stuckSince >= 2000) {
+    playbackFreezeWatch.recoveryRequested = true;
+    if (typeof recoverFrozenPlayback === 'function') recoverFrozenPlayback('clock-frozen', media);
+  }
 }
 setInterval(function () {
   if (!audio) {

@@ -286,6 +286,7 @@ async function openMvTheater(song) {
 
   // MV 用自带音轨，先把歌停掉，退出时按这个标记恢复。
   mvTheaterState.resumeAudio = !!(typeof audio !== 'undefined' && audio && !audio.paused && !audio.ended);
+  if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(audio, 'mv-open');
   if (typeof audio !== 'undefined' && audio) {
     if (typeof resetSmartCrossfade === 'function') resetSmartCrossfade('mv-theater-open');
     try { audio.pause(); } catch (e) { }

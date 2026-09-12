@@ -141,6 +141,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     && (!song.localUrl || (!song.customCover && !song.sidecarCover && !song.embeddedCover && !song.embeddedMediaParsed))) {
     await ensureFreshLocalPlaybackUrl(song);
   }
+  if (token !== trackSwitchToken || currentIdx !== idx) return false;
   if (!song || !song.localUrl) {
     showToast('本地文件已失效，请重新导入后继续');
     forcePlaybackControlsInteractive();
@@ -164,15 +165,16 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   }
   var transitionAdoptedGain = transitionHandoff ? clampRange(Number(audio.volume) || 0, 0, 1) : 0;
   resetPlaybackAudioGraphForSourceSwitch('local-track-switch');
-  audio.autoplay = true;
+  audio.autoplay = false;
   audio.preload = 'auto';
   bindPlaybackProgressEvents(audio);
   if (transitionHandoff) setAudioOutputGainImmediate(transitionAdoptedGain);
   else applyVolumeToAudio();
-  await applyAudioOutputDevice(audio);
   if (!transitionHandoff) audio.src = song.localUrl;
   audio.__mineradioQueueItemKey = queueItemKey(song);
   audio.__mineradioTrackSwitchToken = token;
+  audio.__mineradioRebuildHistory = [];
+  var localMedia = audio;
   updatePlaybackProgressUi();
   lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
   audio.onended = function () {
@@ -216,7 +218,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     });
     safeRenderQueuePanel('local-metadata', { scrollCurrent: miniQueueOpen });
   };
-  scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);
+  if (!transitionHandoff) scheduleAudioResumePosition(audio, opts.resumeAt != null ? opts.resumeAt : resumeAt, token);
   if (!transitionHandoff) audio.load();
   currentBeatMap = null;
   beatMapNextIdx = 0;
@@ -228,14 +230,20 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   djBeatMapToken++;
   resetDjBeatMapState();
   setDjModeActive(false);
-  var playbackStarted = await playAudio({
+  var playbackStart = playAudio({
     manual: !!opts.manual,
     silent: !!opts.startupAutoplay || !opts.manual,
     startupAutoplay: !!opts.startupAutoplay,
     trackSwitch: true,
     resumeRecovery: !!opts.resumeRecovery,
-    preserveGain: transitionHandoff
+    preserveGain: transitionHandoff,
+    expectedMedia: localMedia,
+    expectedToken: token
   });
+  var localAttempt = localMedia.__mineradioPlaybackAttempt;
+  var playbackStarted = await playbackStart;
+  if (token !== trackSwitchToken || currentIdx !== idx) return false;
+  if (!playbackStarted && localAttempt && localAttempt.cancelled && localAttempt.cancelReason !== 'playback-failed') return false;
   if (!playbackStarted) {
     forcePlaybackControlsInteractive();
     if (opts.startupAutoplay) {
@@ -587,7 +595,7 @@ async function playQueueAt(idx, opts) {
           ? clampRange(isFinite(preparedGraphGain) ? preparedGraphGain : (Number(audio.volume) || 0), 0, 1)
           : audioSilentFloor();
         audio.crossOrigin = 'anonymous';
-        audio.autoplay = true;
+        audio.autoplay = false;
         audio.preload = 'auto';
         if (!audio.src) audio.src = proxyAudioUrl;
         if (!transitionMixed) audio.volume = 0;
@@ -601,7 +609,7 @@ async function playQueueAt(idx, opts) {
         audio.pause();
       }
       resetPlaybackAudioGraphForSourceSwitch(transitionHandoff ? 'smart-transition-handoff' : 'track-switch');
-      audio.autoplay = true;
+      audio.autoplay = false;
       audio.preload = 'auto';
       // resetPlaybackAudioGraphForSourceSwitch may deliberately replace a
       // capture-backed element before a new src is assigned. Capture the
@@ -611,7 +619,6 @@ async function playQueueAt(idx, opts) {
       bindPlaybackProgressEvents(audio);
       if (transitionHandoff) setAudioOutputGainImmediate(transitionMixed ? transitionAdoptedGain : audioSilentFloor());
       else applyVolumeToAudio();
-      await applyAudioOutputDevice(playbackMedia);
       if (!playbackInvocationStillCurrent(playbackMedia)) {
         disposeStalePlaybackInvocationMedia(playbackMedia);
         return false;
@@ -626,6 +633,7 @@ async function playQueueAt(idx, opts) {
       if (!transitionHandoff) audio.src = proxyAudioUrl;
       audio.__mineradioQueueItemKey = queueItemKey(song);
       audio.__mineradioTrackSwitchToken = token;
+      audio.__mineradioRebuildHistory = [];
       if (typeof clearRecoverableNetworkPlaybackStall === 'function') clearRecoverableNetworkPlaybackStall(audio);
       updatePlaybackProgressUi();
       audio.onended = function () {
@@ -713,7 +721,10 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('audio-start');
       if (!playbackInvocationStillCurrent(playbackMedia)) return false;
-      var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
+      var playbackStart = playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, preserveGain: transitionMixed, expectedMedia: playbackMedia, expectedToken: token });
+      var playbackAttempt = playbackMedia.__mineradioPlaybackAttempt;
+      var playbackStarted = await playbackStart;
+      if (!playbackStarted && playbackAttempt && playbackAttempt.cancelled && playbackAttempt.cancelReason !== 'playback-failed') return false;
       // A confirmed frozen media clock may require a clean Audio element. The
       // retry keeps the same token/key, so adopt only that deliberate rebuild;
       // any other replacement is still a stale invocation and must be ignored.

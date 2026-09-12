@@ -80,6 +80,8 @@ function createSandbox(media) {
     playQueue: [{ name: '测试歌曲' }],
     currentIdx: 0,
     playbackResumeRecovery: { serial: 0, timerIds: [], pending: false },
+    playbackStartAttempt: null,
+    playbackMediaIsLocalFile: () => false,
     PLAYBACK_RESUME_STALL_DELAYS: [1600, 3600],
     AUDIO_NETWORK_STARVATION_GRACE_MS: 9000,
     trackSwitchStallRecoveryAllowed: () => true,

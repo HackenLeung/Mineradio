@@ -913,10 +913,10 @@ function checkProgressSeekDragGuard() {
   if (/progressBar\.addEventListener\('pointermove'[\s\S]{0,220}currentTime\s*=/.test(text)) {
     fail('progress pointermove must not write audio.currentTime while dragging');
   }
-  if (!/setAudioOutputGainImmediate\(0\)/.test(text) || !/resumeAfterSeek/.test(text) || !/attemptAudioPlay\(\{ manual: true, silent: true \}\)/.test(text)) {
+  if (!/setAudioOutputGainImmediate\(0\)/.test(text) || !/resumeAfterSeek/.test(text) || !/attemptAudioPlay\(\{ manual: true, silent: true, expectedMedia: media, expectedToken: trackSwitchToken \}\)/.test(text)) {
     fail('progress seek must mute during drag and resume directly after release without the removed fade feature');
   }
-  if (!/!audio\.paused && !audio\.ended && playing/.test(text) || !/if \(!resumeAfterSeek\)[\s\S]{0,260}media\.pause\(\)/.test(text)) {
+  if (!/!audio\.paused && !audio\.ended && playing/.test(text) || !/if \(!resumeAfterSeek\)[\s\S]{0,420}media\.pause\(\)/.test(text)) {
     fail('progress seek must only resume audio when it was actually playing before drag');
   }
   const commitStart = text.indexOf('function commitProgressSeek');
@@ -1276,14 +1276,14 @@ function checkLyricScrollPerformanceGuard() {
     fail('pause/resume must reuse the current lyric mesh and defer heavy lyric upgrades off the input frame');
   }
   if (
-    !/function canResumePausedAudioFast/.test(controlsText) ||
-    !/function resumePausedAudioFast/.test(controlsText) ||
-    !/function schedulePausedAudioResumeMaintenance/.test(controlsText) ||
-    !/var fastResume = await resumePausedAudioFast\(opts\);[\s\S]{0,80}if \(fastResume === true\) return true;[\s\S]{0,140}if \(!audioGraphHealthy\(\)\) initAudio\(\);/.test(controlsText) ||
-    !/restorePlaybackGain\(\);[\s\S]{0,120}await awaitMediaPlayWithTimeout\(media, media\.play\(\), token\);/.test(controlsText) ||
-    !/setTimeout\(async function \(\) \{[\s\S]{0,240}ensurePlaybackAudioGraph\(\(reason \|\| 'manual-resume-fast'\) \+ '-deferred-graph'\)/.test(controlsText)
+    !/function startPlaybackAttemptMedia/.test(controlsText) ||
+    !/function cancelPlaybackStart/.test(controlsText) ||
+    !/return active\.promise/.test(controlsText) ||
+    /function schedulePausedAudioResumeMaintenance/.test(controlsText) ||
+    !/await ensurePlaybackAudioGraph\(reason \+ '-before-play'\)/.test(controlsText) ||
+    !/awaitMediaPlayWithTimeout\(media, media\.play\(\), token,/.test(controlsText)
   ) {
-    fail('space/button pause resume must use a fast paused-audio path and defer graph maintenance off the input frame');
+    fail('pause/resume must share a cancellable start request and finish graph/output setup before play');
   }
   console.log('[OK] Lyric scrolling keeps one persistent whole-song text runway, bounded effect layers, realtime continuous drag, and warm lyric activation.');
 }
@@ -1404,23 +1404,23 @@ function checkPlaybackControlBadgesGuard() {
     /sourceCandidateRejectReason\(song, list\[i\], target\)/.test(fallbackText) &&
     /sourceCandidateRejectReason\(song, candidate, 'netease'\)/.test(lyricFetchText);
   if (!/control-title-text/.test(indexText) || !/control-title-badges/.test(indexText)) {
-    fail('bottom player title must reserve inline spans for source and VIP badges');
+    fail('bottom player must reserve separate spans for the title and source/VIP badges');
   }
   const qualityControlCount = (indexText.match(/id="quality-control"/g) || []).length;
-  const qualityChipInlineOk =
+  const qualityChipRowOk =
     qualityControlCount === 1 &&
-    /id="control-title"[\s\S]{0,260}id="control-title-badges"[\s\S]{0,260}id="quality-control"\s+class="quality-control control-quality-chip"/.test(indexText) &&
+    /<div\b[^>]*\bid="control-chip-row"[^>]*>\s*<span\b[^>]*\bid="control-title-badges"[^>]*>\s*<\/span>\s*<div\b[^>]*\bid="quality-control"\s+class="quality-control control-quality-chip"/.test(indexText) &&
     /\.control-quality-chip\s*\{[\s\S]{0,120}height:\s*15px/.test(cssText) &&
     /#quality-btn\.quality-pill\s*\{[\s\S]{0,220}height:\s*15px[\s\S]{0,120}font-size:\s*8px/.test(cssText) &&
     !/body\.diy-mode\s+#quality-control\s*\{[\s\S]{0,80}display:\s*none\s*!important/.test(cssText);
-  if (!qualityChipInlineOk) {
-    fail('bottom player quality selector must stay as a compact title-side chip and remain visible in windowed DIY mode');
+  if (!qualityChipRowOk) {
+    fail('bottom player quality selector must follow the badges inside control-chip-row and remain compact and visible in windowed DIY mode');
   }
   if (!/function songRequiresVip/.test(searchText) || !/function songVipTagHtml/.test(searchText) || !/only_vip_playable/.test(searchText)) {
     fail('song VIP detection must cover provider fee, trial, only-vip, and playback restriction metadata');
   }
   if (!/control-title-badges/.test(controlText) || !/songSourceTagHtml\(song, \{ switcher: true \}\)/.test(controlText) || !/songVipTagHtml\(song\)/.test(controlText)) {
-    fail('bottom player controls must render the active provider and VIP badges beside the title');
+    fail('bottom player controls must render the active provider and VIP badges in the badge row');
   }
   if (!/song\.resolvedPlaybackProvider/.test(playbackText) || !/song\.vipRequired/.test(playbackText) || !/updateControlTrackInfo\(song\)/.test(playbackText)) {
     fail('playback URL resolution must refresh bottom control badges with provider/VIP state');
@@ -1475,7 +1475,7 @@ function checkPlaybackControlBadgesGuard() {
   if (!/mineradio-account-pill-glass-filter/.test(indexText) || !/account-pill-glass-map/.test(indexText) || !/url\(#mineradio-account-pill-glass-filter\)/.test(cssText) || !/overflow:\s*hidden/.test(cssText) || !accountPillGlassSurfaceOk || accountPillDirectSvgFilter || !accountContainerGlassDisabledOk || !accountPillSimpleRefractionOk || !accountPillDedicatedMapOk || !accountPillVerticalStackOk || !/function updateAccountPillGlassDisplacementMap/.test(glassText) || !/accountPillKey/.test(glassText) || !/querySelectorAll\('\.top-account-pill'\)/.test(glassText) || !/requestAnimationFrame\(updateAccountPillGlassDisplacementMap\)/.test(loginStatusText)) {
     fail('top account VIP capsules must use a dedicated glass map/filter and refresh it after account rendering');
   }
-  console.log('[OK] Bottom player title shows source and VIP badges without stretching the control bar.');
+  console.log('[OK] Bottom player shows source/VIP badges and a compact quality chip in their own row above the title.');
 }
 
 async function checkProviderFallbackTerminalStateGuard() {
@@ -1500,7 +1500,7 @@ async function checkProviderFallbackTerminalStateGuard() {
   if (!/fallbackResult !== null/.test(playbackText) || /if \(isQQPlayback && await retryQQPlaybackWithCompatibleQuality\(song, idx, token, retryPlaybackOpts, data, requestedQuality\)\)/.test(playbackText)) {
     fail('normal playback must resolve fallback candidates itself and must not recursively retry QQ qualities after an empty URL response');
   }
-  if (!/AUDIO_PLAY_REQUEST_TIMEOUT_MS\s*=\s*22000/.test(controlsText) || !/AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS\s*=\s*6500/.test(controlsText) || !/AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS\s*=\s*12000/.test(controlsText) || !/function awaitMediaPlayWithTimeout/.test(controlsText) || (controlsText.match(/awaitMediaPlayWithTimeout\(/g) || []).length < 5 || !/function playbackMediaMatchesCurrentQueueItem/.test(controlsText)) {
+  if (!/AUDIO_PLAY_REQUEST_TIMEOUT_MS\s*=\s*22000/.test(controlsText) || !/AUDIO_TRACK_SWITCH_CLOCK_TIMEOUT_MS\s*=\s*6500/.test(controlsText) || !/AUDIO_TRACK_SWITCH_RESUME_CLOCK_TIMEOUT_MS\s*=\s*12000/.test(controlsText) || !/function awaitMediaPlayWithTimeout/.test(controlsText) || !/await awaitMediaPlayWithTimeout\(media, media\.play\(\), token,/.test(controlsText) || !/function playbackMediaMatchesCurrentQueueItem/.test(controlsText)) {
     fail('media.play promises must be time-bounded and manual resume must reject stale audio ownership');
   }
   if (!/var remotePlayback\s*=/.test(beatPrefetchText) || !/if \(remotePlayback\)[\s\S]{0,180}hideBeatChip\(\)/.test(beatPrefetchText) || /bufferedLead/.test(beatPrefetchText)) {
@@ -2290,7 +2290,7 @@ function checkPlaybackResumeRecoveryGuard() {
   if (!/function schedulePlaybackStallRecovery/.test(controlsText) || !/ensureAudiblePlaybackGain\('resume-stall-before-refresh'\)/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\(recoveryReason,/.test(controlsText) || !/'play-rejected'/.test(controlsText)) {
     fail('playback resume recovery must cover rejected play() and stalled media after WebAudio checks');
   }
-  if (!/function trackSwitchStallRecoveryAllowed/.test(controlsText) || !/return canRefreshCurrentPlaybackUrlForResume\(song\)/.test(controlsText) || !/\(opts\.trackSwitch \|\| opts\.manual \|\| opts\.fastResume\)/.test(controlsText) || /if \(opts\.trackSwitch && !opts\.resumeRecovery\) return;/.test(controlsText)) {
+  if (!/function trackSwitchStallRecoveryAllowed/.test(controlsText) || !/return canRefreshCurrentPlaybackUrlForResume\(song\)/.test(controlsText) || !/function recoverFrozenPlayback/.test(controlsText) || /if \(opts\.trackSwitch && !opts\.resumeRecovery\) return;/.test(controlsText)) {
     fail('Online track-start stalls must be watched and refreshed instead of poisoning later track switches');
   }
   if (!/var recoveryReason = opts\.trackSwitch \? 'track-switch-play-rejected' : 'play-rejected'/.test(controlsText) || !/recoverCurrentTrackPlaybackFromFreshUrl\(recoveryReason,/.test(controlsText)) {
@@ -2507,8 +2507,8 @@ function checkAlbumDetailGuard() {
   if (!/handleNeteaseAlbumDetail/.test(serverText) || !/pn === '\/api\/album\/detail'/.test(serverText) || !/handleQQAlbumDetail/.test(serverText) || !/pn === '\/api\/qq\/album\/detail'/.test(serverText)) {
     fail('server.js must expose Netease and QQ album detail endpoints');
   }
-  if (!/function playbackAttemptStillCurrent\(media, token\)/.test(controlsText) || !/expectedMedia: opts\.expectedMedia \|\| audio/.test(controlsText) || !/expectedToken: opts\.expectedToken == null \? trackSwitchToken/.test(controlsText) || !/expectedMedia: playbackMedia, expectedToken: token/.test(playbackText)) {
-    fail('stale play promises must be scoped to the media element and track token that started them');
+  if (!/function playbackAttemptStillCurrent\(media, token, attempt\)/.test(controlsText) || !/!attempt\.cancelled && media\.__mineradioPlaybackAttempt === attempt/.test(controlsText) || !/expectedMedia: opts\.expectedMedia \|\| audio/.test(controlsText) || !/expectedToken: opts\.expectedToken == null \? trackSwitchToken/.test(controlsText) || !/expectedMedia: playbackMedia, expectedToken: token/.test(playbackText)) {
+    fail('stale play promises must be scoped to their media element, track token and uncancelled playback request');
   }
   if (!/albumMid/.test(snapshotText) || !/albumUri/.test(snapshotText)) {
     fail('playback snapshots must preserve album identifiers for album detail entry after restore');

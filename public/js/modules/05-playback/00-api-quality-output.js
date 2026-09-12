@@ -856,9 +856,38 @@ function syncAudioOutputMirrors(reason) {
     audioOutputMirrorSyncTimer = setInterval(function () { syncAudioOutputMirrors('clock'); }, 2200);
   }
 }
+function setPlaybackOutputSink(target, sinkId) {
+  if (!target || typeof target.setSinkId !== 'function') return Promise.resolve(false);
+  var pending = target.__mineradioSinkRequest;
+  if (pending && pending.id === sinkId) return pending.promise;
+  if (!pending && (target.sinkId === sinkId || (target.sinkId == null && target.__mineradioAppliedSinkId === sinkId))) return Promise.resolve(true);
+  var request = { id: sinkId, promise: null };
+  request.promise = (pending ? pending.promise.catch(function () { }) : Promise.resolve()).then(async function () {
+    if (target.sinkId === sinkId || (target.sinkId == null && target.__mineradioAppliedSinkId === sinkId)) return true;
+    var timer;
+    try {
+      await Promise.race([
+        target.setSinkId(sinkId),
+        new Promise(function (_, reject) {
+          timer = setTimeout(function () { reject(new Error('AUDIO_OUTPUT_TIMEOUT')); }, 4000);
+        })
+      ]);
+      target.__mineradioAppliedSinkId = sinkId;
+      return true;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }).finally(function () {
+    if (target.__mineradioSinkRequest === request) delete target.__mineradioSinkRequest;
+  });
+  target.__mineradioSinkRequest = request;
+  return request.promise;
+}
 async function applyAudioOutputDevice(media) {
   var sinkId = audioOutputDeviceId || '';
-  var hasTarget = !!(media || audioCtx || uiSfxCtx);
+  var context = audioCtx;
+  var sfxContext = uiSfxCtx;
+  var hasTarget = !!(media || context || sfxContext);
   var mediaResult = null;
   var contextResult = null;
   var sfxResult = null;
@@ -867,18 +896,23 @@ async function applyAudioOutputDevice(media) {
     if (!target) return null;
     if (typeof target.setSinkId !== 'function') return false;
     try {
-      await target.setSinkId(sinkId);
-      return true;
+      return await setPlaybackOutputSink(target, sinkId);
     } catch (e) {
       errors.push({ label: label, error: e });
       return false;
     }
   }
   bindAudioOutputMirrorEvents(media);
-  mediaResult = await applySink(media, 'audio');
-  contextResult = await applySink(audioCtx, 'audio-context');
-  sfxResult = await applySink(uiSfxCtx, 'ui-sfx');
-  var webAudioRouteActive = !!(audioReady && audioCtx && gainNode);
+  var results = await Promise.all([
+    applySink(media, 'audio'),
+    applySink(context, 'audio-context'),
+    applySink(sfxContext, 'ui-sfx')
+  ]);
+  mediaResult = results[0];
+  contextResult = results[1];
+  sfxResult = results[2];
+  if (sinkId !== (audioOutputDeviceId || '')) return false;
+  var webAudioRouteActive = !!(audioReady && context === audioCtx && context && gainNode);
   var ok = webAudioRouteActive ? contextResult === true : (mediaResult === true || contextResult === true);
   if (sfxResult === true && !webAudioRouteActive && !media) ok = true;
   syncAudioOutputMirrors('apply-device');
@@ -895,6 +929,7 @@ async function applyAudioOutputDevice(media) {
     if (errors.some(function (item) { return item.error && item.error.name === 'NotFoundError'; })) {
       audioOutputDeviceId = '';
       saveAudioOutputDevicePreference();
+      if (sinkId) return applyAudioOutputDevice(media);
     }
   }
   renderAudioOutputDeviceUi();

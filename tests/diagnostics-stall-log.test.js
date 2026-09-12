@@ -155,6 +155,34 @@ async function run() {
   const playbackOnly = await request(port, route, { method: 'POST', body: JSON.stringify({ reason: 'clock-frozen', currentTime: 5 }) });
   assert.equal(JSON.parse(playbackOnly.body).entry.throughputKbps, null);
 
+  const recovery = await request(port, route, { method: 'POST', body: JSON.stringify({
+    reason: 'recovery-succeeded', sourceKind: 'local', phase: 'clock', trigger: 'clock-frozen',
+    resumeAt: 83.2, elapsedMs: 420, bufferedLead: 90, trackToken: 7, requestId: 12,
+  }) });
+  const recoveryEntry = JSON.parse(recovery.body).entry;
+  assert.equal(recoveryEntry.sourceKind, 'local');
+  assert.equal(recoveryEntry.phase, 'clock');
+  assert.equal(recoveryEntry.resumeAt, 83.2);
+  assert.equal(recoveryEntry.requestId, 12);
+  const recoveryReport = await request(port, route);
+  assert.match(recoveryReport.body, /time zone:/);
+  assert.match(recoveryReport.body, /source=local/);
+  assert.match(recoveryReport.body, /phase=clock/);
+
+  // Force trimming while concurrent writes arrive. Playback events must survive
+  // heavy throughput traffic and append/rename must not lose accepted records.
+  const oldFailure = { ts: new Date().toISOString(), reason: 'clock-frozen', songKey: 'keep-this-failure' };
+  const telemetry = { ts: new Date().toISOString(), reason: 'prefetch-throughput', throughputKbps: 123 };
+  fs.writeFileSync(STALL_LOG_FILE, [oldFailure, ...Array(550).fill(telemetry)].map(e => JSON.stringify(e)).join('\n') + '\n');
+  const writes = await Promise.all(Array.from({ length: 25 }, (_, i) => request(port, route, {
+    method: 'POST', body: JSON.stringify({ reason: 'recovery-start', songKey: 'concurrent-' + i }),
+  })));
+  assert.ok(writes.every(r => r.status === 200));
+  const retained = readLogLines().map(line => JSON.parse(line));
+  assert.ok(retained.some(e => e.songKey === 'keep-this-failure'));
+  assert.equal(retained.filter(e => String(e.songKey || '').startsWith('concurrent-')).length, 25);
+  assert.ok(retained.filter(e => e.reason === 'prefetch-throughput').length <= 100);
+
   assert.equal((await request(port, route, { method: 'DELETE' })).status, 405);
   console.log('OK diagnostics-stall-log');
 }

@@ -22,6 +22,7 @@ function restoreMediaTimeWhenReady(media, seconds) {
   seconds = Math.max(0, Number(seconds) || 0);
   if (!media || !seconds) return;
   function applyTime() {
+    if (media !== audio || Number(media.readyState) < 1) return;
     try {
       if (media.duration && isFinite(media.duration)) media.currentTime = Math.min(seconds, Math.max(0, media.duration - 0.25));
       else media.currentTime = seconds;
@@ -46,8 +47,7 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
     pendingResumeToken = null;
   }
   var seconds = preservePlayback && isFinite(oldAudio.currentTime) ? oldAudio.currentTime : 0;
-  if (hasPendingResume) seconds = Math.max(seconds, pendingResumeSeconds);
-  var wasPaused = oldAudio.paused;
+  if (hasPendingResume) seconds = pendingResumeSeconds;
   var rate = oldAudio.playbackRate || 1;
   var endedHandler = preservePlayback ? oldAudio.onended : null;
   var metadataHandler = preservePlayback ? oldAudio.onloadedmetadata : null;
@@ -61,12 +61,21 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   audioCtx = null;
   audio = new Audio();
   audio.crossOrigin = 'anonymous';
+  audio.autoplay = false;
   audio.preload = oldAudio.preload || 'auto';
+  audio.muted = !!oldAudio.muted;
   audio.playbackRate = rate;
   audio.onended = endedHandler;
   audio.onloadedmetadata = metadataHandler;
   audio.__mineradioQueueItemKey = queueItemKey;
   if (mediaToken != null) audio.__mineradioTrackSwitchToken = mediaToken;
+  audio.__mineradioPlaybackDesired = oldAudio.__mineradioPlaybackDesired;
+  audio.__mineradioRebuildHistory = oldAudio.__mineradioRebuildHistory;
+  var attempt = preservePlayback && oldAudio.__mineradioPlaybackAttempt;
+  if (attempt && !attempt.settled && !attempt.cancelled) {
+    audio.__mineradioPlaybackAttempt = attempt;
+    attempt.media = audio;
+  }
   if (hasPendingResume) {
     audio.__mineradioPendingResumeSeconds = pendingResumeSeconds;
     audio.__mineradioPendingResumeToken = pendingResumeToken;
@@ -75,15 +84,11 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   applyVolumeToAudio();
   if (src) {
     audio.src = src;
-    restoreMediaTimeWhenReady(audio, seconds);
-    if (hasPendingResume && typeof scheduleAudioResumePosition === 'function') {
-      scheduleAudioResumePosition(audio, pendingResumeSeconds, pendingResumeToken);
-    }
-    if (!wasPaused) {
-      try { audio.load(); } catch (e) { }
-    }
+    if (seconds >= 0.35 && typeof scheduleAudioResumePosition === 'function') scheduleAudioResumePosition(audio, seconds, mediaToken == null ? trackSwitchToken : mediaToken);
+    else restoreMediaTimeWhenReady(audio, seconds);
   }
-  applyAudioOutputDevice(audio);
+  if (typeof cancelAudioResumePosition === 'function') cancelAudioResumePosition(oldAudio);
+  try { oldAudio.removeAttribute('src'); oldAudio.load(); } catch (_) { }
   console.warn('audio graph recovery:', reason || 'unknown');
   return true;
 }
@@ -101,6 +106,9 @@ function resetPlaybackAudioGraphForSourceSwitch(reason) {
     replaceAudioElementForGraphRecovery(reason || 'capture-track-switch', { preservePlayback: false });
     return;
   }
+  // A normal src change can keep the lifetime MediaElementSource and effects.
+  // Reconnecting a healthy graph on every song creates an avoidable decode race.
+  if (!preparedGraph && !mediaElementChanged && audioGraphHealthy()) return;
   disconnectAudioGraphNodes(!sourceUsesCapture && !mediaElementChanged);
   if (
     preparedGraph
@@ -217,7 +225,6 @@ function initAudio() {
   beatTimeDomainData.fill(128);
   resetRealtimeBeatEngine();
   audioReady = true;
-  applyAudioOutputDevice(audio);
   return true;
 }
 function readPlaybackAnalyserSignal() {
@@ -269,7 +276,8 @@ function schedulePlaybackAnalyserRecovery(reason) {
       if (!audio || audio !== recoveryMedia || audio.paused || audio.ended || !audio.src) return;
       if ((audio.currentSrc || audio.src || '') !== recoverySrc) return;
       if (!audioReady || !analyser || !source) {
-        ensurePlaybackAudioGraph('analyser-health-missing-' + (reason || 'playback'));
+        if (typeof recoverFrozenPlayback === 'function') recoverFrozenPlayback('audio-graph-missing', audio);
+        else ensurePlaybackAudioGraph('analyser-health-missing-' + (reason || 'playback')).catch(function () { });
         return;
       }
       var current = isFinite(audio.currentTime) ? audio.currentTime : 0;
@@ -292,25 +300,39 @@ function schedulePlaybackAnalyserRecovery(reason) {
       if (advancingSilentSamples < 2) return;
       if (source && !source.__mineradioUsesCapture && audio.captureStream) {
         rebuildPlaybackGraphWithCapture(reason || 'silent-after-track-switch');
-        ensurePlaybackAudioGraph('analyser-health-capture-' + (reason || 'playback'));
+        ensurePlaybackAudioGraph('analyser-health-capture-' + (reason || 'playback')).catch(function () { });
       }
     }, delay);
   });
 }
 function resumeAudioAnalysis() {
-  if (audioCtx && audioCtx.state === 'closed') {
-    replaceAudioElementForGraphRecovery('resume-closed-context');
-    initAudio();
+  var context = audioCtx;
+  if (context && (context.state === 'suspended' || context.state === 'interrupted')) {
+    if (context.__mineradioResumePromise) return context.__mineradioResumePromise;
+    var timer;
+    context.__mineradioResumePromise = Promise.race([
+      context.resume(),
+      new Promise(function (_, reject) { timer = setTimeout(function () { reject(new Error('AUDIO_CONTEXT_RESUME_TIMEOUT')); }, 4000); })
+    ]).finally(function () {
+      if (timer) clearTimeout(timer);
+      delete context.__mineradioResumePromise;
+    });
+    return context.__mineradioResumePromise;
   }
-  if (audioCtx && audioCtx.state === 'suspended') return audioCtx.resume().catch(function (e) { console.warn('audio context resume failed:', e); });
   return Promise.resolve();
 }
 async function ensurePlaybackAudioGraph(reason) {
   if (!audio) return false;
+  var token = trackSwitchToken;
   if (!audioGraphHealthy()) initAudio();
+  var media = audio;
   await resumeAudioAnalysis();
+  if (token !== trackSwitchToken || audio !== media) return false;
   if (!audioGraphHealthy()) initAudio();
-  await resumeAudioAnalysis();
+  if (audio !== media) return false;
+  var outputReady = await applyAudioOutputDevice(media);
+  if (token !== trackSwitchToken || audio !== media) return false;
+  if (outputReady === false && (audioOutputDeviceId || typeof media.setSinkId === 'function' || (audioCtx && typeof audioCtx.setSinkId === 'function'))) throw new Error('AUDIO_OUTPUT_UNAVAILABLE');
   if (!audioGraphHealthy()) console.warn('audio graph still unhealthy:', reason || 'playback');
   return audioGraphHealthy();
 }

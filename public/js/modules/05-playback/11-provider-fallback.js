@@ -546,6 +546,7 @@ function settleSourceFallbackTerminal(idx, token, message, opts) {
     playbackResumeRecovery.pending = false;
   }
   if (audio) {
+    if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(audio, 'source-fallback-terminal');
     try {
       audioFadeSerial++;
       clearAudioFadeTimers();
@@ -710,7 +711,7 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
       var fallbackPromise = playQueueAt(idx, fallbackPlaybackOpts);
       var fallbackToken = trackSwitchToken;
       var fallbackStarted = await fallbackPromise;
-      if (fallbackToken !== trackSwitchToken) return false;
+      if (fallbackToken !== trackSwitchToken || recovery.cancelled) return false;
       if (fallbackStarted === true) {
         completeSourceFallbackRecovery(recovery);
         if (!opts.startupAutoplay) showSourceFallbackNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。');

@@ -88,8 +88,11 @@ function bindMediaSessionActions() {
     return !!(mv && !mv.paused && !mv.ended);
   }
   var handlers = {
-    play: function () { if (!playing && !mvMediaPlaying()) togglePlay(); },
-    pause: function () { if (playing || mvMediaPlaying()) togglePlay(); },
+    play: function () { if (!playing && !(audio && audio.__mineradioPlaybackDesired) && !mvMediaPlaying()) togglePlay(); },
+    pause: function () {
+      if (mvMediaPlaying()) togglePlay();
+      else if (playing || (audio && audio.__mineradioPlaybackDesired)) pauseAudioPlayback();
+    },
     previoustrack: function () { prevTrack(true); },
     nexttrack: function () { nextTrack(true); }
   };

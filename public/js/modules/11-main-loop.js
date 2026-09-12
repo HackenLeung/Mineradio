@@ -343,7 +343,7 @@ function animate() {
     : null;
   if (audioStepDt > 0) {
   if (analyser && playing && audio && !audio.paused) {
-    if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
+    if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis().catch(function () { });
     analyser.getByteFrequencyData(frequencyData);
     analyser.getByteTimeDomainData(timeDomainData);
     var len = frequencyData.length;

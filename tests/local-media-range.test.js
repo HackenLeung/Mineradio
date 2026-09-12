@@ -55,10 +55,30 @@ async function run() {
   assert.equal(Number(head.headers['content-length']), payload.length);
   assert.equal(head.body.length, 0);
 
+  const emptyPath = path.join(tempDir, 'empty.flac');
+  fs.writeFileSync(emptyPath, '');
+  const emptyRoute = `/api/local-media?id=${server.registerLocalMediaPath(emptyPath)}`;
+  const emptyHead = await request(port, emptyRoute, { method: 'HEAD' });
+  assert.equal(Number(emptyHead.headers['content-length']), 0);
+  assert.equal((await request(port, emptyRoute)).body.length, 0);
+  assert.equal((await request(port, emptyRoute, { headers: { Range: 'bytes=0-' } })).status, 416);
+
   const range = await request(port, route, { headers: { Range: 'bytes=3-7' } });
   assert.equal(range.status, 206);
   assert.equal(range.headers['content-range'], 'bytes 3-7/16');
   assert.equal(range.body.toString('ascii'), '34567');
+  const suffix = await request(port, route, { headers: { Range: 'bytes=-4' } });
+  assert.equal(suffix.status, 206);
+  assert.equal(suffix.headers['content-range'], 'bytes 12-15/16');
+  assert.equal(suffix.body.toString('ascii'), 'cdef');
+  assert.equal((await request(port, route, { headers: { Range: 'bytes=-0' } })).status, 416);
+  const flacPath = path.join(tempDir, 'sample.flac');
+  fs.writeFileSync(flacPath, Buffer.from('fLaC0123456789abcdef'));
+  const flacId = server.registerLocalMediaPath(flacPath);
+  const flac = await request(port, `/api/local-media?id=${flacId}`, { headers: { Range: 'bytes=4-' } });
+  assert.equal(flac.status, 206);
+  assert.equal(flac.headers['content-type'], 'audio/flac');
+  assert.equal(flac.body.toString('ascii'), '0123456789abcdef');
 
   const invalidRange = await request(port, route, { headers: { Range: 'bytes=99-100' } });
   assert.equal(invalidRange.status, 416);

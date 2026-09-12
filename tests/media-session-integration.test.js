@@ -28,6 +28,7 @@ test('media session publishes metadata, playback state, position, and transport 
     audio: { duration: 180, currentTime: 42, playbackRate: 1 },
     songCoverSrc: (song) => song.cover,
     togglePlay: () => calls.push('toggle'),
+    pauseAudioPlayback: () => calls.push('pause'),
     prevTrack: (manual) => calls.push(['previous', manual]),
     nextTrack: (manual) => calls.push(['next', manual]),
     console,
@@ -46,7 +47,15 @@ test('media session publishes metadata, playback state, position, and transport 
   actions.pause();
   actions.previoustrack();
   actions.nexttrack();
-  assert.deepEqual(calls, ['toggle', ['previous', true], ['next', true]]);
+  assert.deepEqual(calls, ['pause', ['previous', true], ['next', true]]);
+
+  context.playing = false;
+  context.audio.__mineradioPlaybackDesired = true;
+  calls.length = 0;
+  actions.play();
+  assert.deepEqual(calls, [], 'duplicate media-key play must not toggle an in-flight start off');
+  actions.pause();
+  assert.deepEqual(calls, ['pause'], 'media-key pause must cancel an in-flight start');
 
   context.playQueue = [];
   context.currentIdx = -1;

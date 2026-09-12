@@ -229,12 +229,17 @@ async function streamRegisteredLocalMedia(req, res, target) {
   }
 
   let start = 0;
-  let end = Math.max(0, stat.size - 1);
+  let end = stat.size - 1;
   let status = 200;
   const match = /^bytes=(\d*)-(\d*)$/i.exec(req.headers.range || '');
   if (match) {
-    start = match[1] ? Math.max(0, Number(match[1])) : 0;
-    end = match[2] ? Math.min(end, Number(match[2])) : end;
+    if (!match[1] && match[2]) {
+      const suffixLength = Number(match[2]);
+      start = suffixLength > 0 ? Math.max(0, stat.size - suffixLength) : stat.size;
+    } else {
+      start = match[1] ? Math.max(0, Number(match[1])) : stat.size;
+      end = match[2] ? Math.min(end, Number(match[2])) : end;
+    }
     if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= stat.size) {
       res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
       res.end();
@@ -256,7 +261,10 @@ async function streamRegisteredLocalMedia(req, res, target) {
     res.end();
     return;
   }
-  fs.createReadStream(target, { start, end }).on('error', () => res.destroy()).pipe(res);
+  if (stat.size === 0) { res.end(); return; }
+  const stream = fs.createReadStream(target, { start, end });
+  res.once('close', () => stream.destroy());
+  stream.on('error', () => res.destroy()).pipe(res);
 }
 
 function loadListenSyncJournal() {
@@ -680,6 +688,7 @@ const DIAGNOSTICS_DIR = process.env.MINERADIO_DIAG_DIR || path.join(STABLE_CACHE
 const STALL_LOG_FILE = path.join(DIAGNOSTICS_DIR, 'stall.jsonl');
 const STALL_LOG_MAX_LINES = 500;
 const STALL_LOG_MAX_BYTES = 1024 * 1024;
+let stallLogWriteQueue = Promise.resolve();
 
 // ====================================================================
 //  局域网遥控：配对鉴权
@@ -2615,34 +2624,62 @@ function normalizeStallLogEntry(body) {
     songKey: String((body && body.songKey) || '').slice(0, 120),
     title: String((body && body.title) || '').slice(0, 120),
     src: src.slice(0, 120),
+    sourceKind: String((body && body.sourceKind) || (src.includes('/api/local-media') ? 'local' : src.includes('/api/audio') ? 'online' : '')).slice(0, 20),
+    phase: String((body && body.phase) || '').slice(0, 40),
+    trigger: String((body && body.trigger) || '').slice(0, 100),
+    errorMessage: String((body && body.errorMessage) || '').slice(0, 200),
+    mediaError: compactDiagNumber(body && body.mediaError),
+    trackToken: compactDiagNumber(body && body.trackToken),
+    requestId: compactDiagNumber(body && body.requestId),
+    resumeAt: compactDiagNumber(body && body.resumeAt),
+    elapsedMs: compactDiagNumber(body && body.elapsedMs),
+    bufferedLead: compactDiagNumber(body && body.bufferedLead),
   };
 }
 async function appendStallLogEntry(body) {
   const entry = normalizeStallLogEntry(body);
-  await fs.promises.mkdir(DIAGNOSTICS_DIR, { recursive: true });
-  await fs.promises.appendFile(STALL_LOG_FILE, JSON.stringify(entry) + '\n', 'utf8');
-  await trimStallLogIfNeeded();
+  const write = stallLogWriteQueue.catch(() => {}).then(async () => {
+    await fs.promises.mkdir(DIAGNOSTICS_DIR, { recursive: true });
+    await fs.promises.appendFile(STALL_LOG_FILE, JSON.stringify(entry) + '\n', 'utf8');
+    await trimStallLogIfNeeded();
+  });
+  stallLogWriteQueue = write;
+  await write;
   return entry;
 }
 // 超限时砍掉最老的行。appendFile 本身不需要读全文，只有这里越界才读一次。
 async function trimStallLogIfNeeded() {
   try {
     const stat = await fs.promises.stat(STALL_LOG_FILE);
-    if (stat.size <= STALL_LOG_MAX_BYTES) {
-      const quickLines = Math.ceil(stat.size / 160);
-      if (quickLines <= STALL_LOG_MAX_LINES) return;
-    }
     const raw = await fs.promises.readFile(STALL_LOG_FILE, 'utf8');
     const lines = raw.split('\n').filter(Boolean);
     if (lines.length <= STALL_LOG_MAX_LINES && stat.size <= STALL_LOG_MAX_BYTES) return;
-    const kept = lines.slice(-STALL_LOG_MAX_LINES);
+    // Throughput is background telemetry. Keep a separate allowance so it
+    // cannot evict the failures and recovery outcomes it is meant to explain.
+    let throughputCount = 0;
+    let playbackCount = 0;
+    let bytes = 0;
+    const kept = [];
+    for (let index = lines.length - 1; index >= 0; index--) {
+      let entry;
+      try { entry = JSON.parse(lines[index]); } catch (_) { continue; }
+      const throughput = entry.reason === 'prefetch-throughput';
+      if (throughput ? throughputCount >= 100 : playbackCount >= STALL_LOG_MAX_LINES - 100) continue;
+      const lineBytes = Buffer.byteLength(lines[index] + '\n');
+      if (bytes + lineBytes > STALL_LOG_MAX_BYTES) continue;
+      bytes += lineBytes;
+      if (throughput) throughputCount++; else playbackCount++;
+      kept.push(lines[index]);
+    }
+    kept.reverse();
     const tmp = STALL_LOG_FILE + '.tmp';
     await fs.promises.writeFile(tmp, kept.join('\n') + '\n', 'utf8');
     await fs.promises.rename(tmp, STALL_LOG_FILE);
   } catch (_) {}
 }
 function formatStallLogLine(entry) {
-  const ts = String(entry.ts || '').replace('T', ' ').replace(/\.\d+Z$/, '');
+  const date = new Date(entry.ts);
+  const ts = Number.isFinite(date.getTime()) ? date.toLocaleString('sv-SE', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : String(entry.ts || '');
   const parts = [
     `[${ts}]`,
     String(entry.reason || 'unknown').padEnd(14),
@@ -2663,6 +2700,12 @@ function formatStallLogLine(entry) {
   if (entry.smartTransition) parts.push('smart-transition');
   if (entry.paused) parts.push('paused');
   if (entry.seeking) parts.push('seeking');
+  if (entry.sourceKind) parts.push(`source=${entry.sourceKind}`);
+  if (entry.phase) parts.push(`phase=${entry.phase}`);
+  if (entry.trigger) parts.push(`trigger=${entry.trigger}`);
+  if (entry.resumeAt != null) parts.push(`resume=${entry.resumeAt}`);
+  if (entry.elapsedMs != null) parts.push(`elapsed=${entry.elapsedMs}ms`);
+  if (entry.mediaError) parts.push(`mediaError=${entry.mediaError}`);
   if (entry.title) parts.push(`| ${entry.title}`);
   return parts.join(' ');
 }
@@ -2682,6 +2725,8 @@ async function readStallLogReport() {
     throw err;
   }
   header.push(`entries: ${lines.length}`);
+  header.push(`time zone: ${Intl.DateTimeFormat().resolvedOptions().timeZone} (JSON timestamps are UTC)`);
+  header.push('日志仅包含已观测事件；没有冻结条目不代表播放未发生故障。');
 
   // 攒到几百条时逐行读没法看，先给一份汇总：冻结次数、起播/中途分布、
   // 恢复时长的中位数与最大值。这几个数字直接对应「改动有没有效果」。

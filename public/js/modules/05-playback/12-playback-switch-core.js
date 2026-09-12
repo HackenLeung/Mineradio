@@ -1,6 +1,7 @@
 function pauseCurrentAudioForTrackSwitch() {
   playToggleBusy = false;
   if (!audio) return;
+  if (typeof cancelPlaybackStart === 'function') cancelPlaybackStart(audio, 'track-switch');
   try {
     audioFadeSerial++;
     clearAudioFadeTimers();
@@ -76,20 +77,25 @@ function playbackFailureToastText(err) {
   if (/copyright|unavailable|not playable|url.*empty|no url/.test(lower)) return '播放失败：平台没有返回可播放地址，建议换源';
   return '播放失败：' + (msg || '未知原因，请尝试换源或重新登录');
 }
+function cancelAudioResumePosition(media, preservePosition) {
+  if (!media) return;
+  if (typeof media.__mineradioCancelResumePosition === 'function') media.__mineradioCancelResumePosition();
+  media.__mineradioResumeSequence = (Number(media.__mineradioResumeSequence) || 0) + 1;
+  delete media.__mineradioCancelResumePosition;
+  if (!preservePosition) {
+    delete media.__mineradioPendingResumeSeconds;
+    delete media.__mineradioPendingResumeToken;
+  }
+  delete media.__mineradioPendingResumeRequestId;
+}
 function scheduleAudioResumePosition(media, seconds, token) {
   seconds = Math.max(0, Number(seconds) || 0);
   if (!media) return;
-  if (seconds < 0.35) {
-    if (Number(media.__mineradioPendingResumeToken) === Number(token)) {
-      delete media.__mineradioPendingResumeSeconds;
-      delete media.__mineradioPendingResumeToken;
-      delete media.__mineradioPendingResumeRequestId;
-    }
-    return;
-  }
+  cancelAudioResumePosition(media);
+  var requestId = media.__mineradioResumeSequence;
+  if (seconds < 0.35) return;
   // currentTime writes before metadata are not durable in every Chromium
   // recovery path. Keep the request on the element until its clock confirms it.
-  var requestId = (Number(media.__mineradioPendingResumeRequestId) || 0) + 1;
   media.__mineradioPendingResumeSeconds = seconds;
   media.__mineradioPendingResumeToken = token;
   media.__mineradioPendingResumeRequestId = requestId;
@@ -98,6 +104,7 @@ function scheduleAudioResumePosition(media, seconds, token) {
   function requestStillCurrent() {
     return !applied
       && token === trackSwitchToken
+      && audio === media
       && Number(media.__mineradioPendingResumeRequestId) === requestId;
   }
   function targetResumeTime() {
@@ -116,7 +123,7 @@ function scheduleAudioResumePosition(media, seconds, token) {
     }
   }
   function finishWhenApplied(target) {
-    if (!requestStillCurrent() || Number(media.readyState) < 1) return false;
+    if (!requestStillCurrent() || Number(media.readyState) < 1 || media.seeking) return false;
     var current = Number(media.currentTime);
     var tolerance = Math.min(0.35, Math.max(0.08, target * 0.2));
     if (!isFinite(current) || Math.abs(current - target) > tolerance) return false;
@@ -127,6 +134,7 @@ function scheduleAudioResumePosition(media, seconds, token) {
       delete media.__mineradioPendingResumeRequestId;
     }
     stopWatching();
+    delete media.__mineradioCancelResumePosition;
     if (typeof syncBeatMapPlaybackCursor === 'function') syncBeatMapPlaybackCursor(target, true);
     if (typeof syncPodcastDjMapCursor === 'function') syncPodcastDjMapCursor(target, true);
     updatePlaybackProgressUi();
@@ -138,6 +146,8 @@ function scheduleAudioResumePosition(media, seconds, token) {
       return;
     }
     var target = targetResumeTime();
+    if (Number(media.readyState) < 1 || media.seeking) return;
+    if (finishWhenApplied(target)) return;
     try {
       media.currentTime = target;
     } catch (e) { }
@@ -150,19 +160,23 @@ function scheduleAudioResumePosition(media, seconds, token) {
     }
     finishWhenApplied(targetResumeTime());
   }
-  media.addEventListener('loadedmetadata', applyResume, { once: true });
-  media.addEventListener('canplay', applyResume, { once: true });
-  media.addEventListener('seeked', verifyResume, { once: true });
-  media.addEventListener('timeupdate', verifyResume, { once: true });
+  media.__mineradioCancelResumePosition = stopWatching;
+  media.addEventListener('loadedmetadata', applyResume);
+  media.addEventListener('canplay', applyResume);
+  media.addEventListener('seeked', verifyResume);
+  media.addEventListener('timeupdate', verifyResume);
   retryTimer = setTimeout(applyResume, 520);
   applyResume();
 }
 
 function waitForAudioResumePosition(media, seconds, token, timeoutMs) {
   seconds = Math.max(0, Number(seconds) || 0);
-  if (!media || seconds < 0.35) return Promise.resolve(true);
+  if (!media) return Promise.resolve(false);
+  if (seconds < 0.35 && !media.seeking) return Promise.resolve(true);
   timeoutMs = Math.max(400, Number(timeoutMs) || 1800);
   return new Promise(function (resolve) {
+    var attempt = media.__mineradioPlaybackAttempt;
+    var resumeSequence = Number(media.__mineradioResumeSequence) || 0;
     var settled = false;
     var timer = 0;
     var poll = 0;
@@ -180,11 +194,14 @@ function waitForAudioResumePosition(media, seconds, token, timeoutMs) {
       resolve(!!ok);
     }
     function check(event) {
-      if (token !== trackSwitchToken || media.error || (event && /^(error|abort)$/.test(event.type))) return finish(false);
+      if (token !== trackSwitchToken || media !== audio || media.error || (event && /^(error|abort)$/.test(event.type))) return finish(false);
+      if (resumeSequence !== (Number(media.__mineradioResumeSequence) || 0)) return finish(false);
+      if (attempt && (attempt.cancelled || media.__mineradioPlaybackAttempt !== attempt)) return finish(false);
       var current = Number(media.currentTime);
       var target = Number(media.__mineradioPendingResumeSeconds) || seconds;
+      if (Number(media.duration) > 0) target = Math.min(target, Math.max(0, Number(media.duration) - 0.45));
       var tolerance = Math.min(0.35, Math.max(0.08, target * 0.2));
-      if (Number(media.readyState) >= 1 && isFinite(current) && Math.abs(current - target) <= tolerance) finish(true);
+      if (!media.seeking && Number(media.readyState) >= 1 && isFinite(current) && Math.abs(current - target) <= tolerance) finish(true);
     }
     ['loadedmetadata', 'canplay', 'seeked', 'timeupdate', 'error', 'abort'].forEach(function (name) {
       media.addEventListener(name, check);

@@ -1,7 +1,7 @@
 'use strict';
 
-// 冻结检测器只负责「发现稳态播放中途时钟停住并上报一次」。它不执行恢复，
-// 所以这里断言的是：该报的报、不该报的不报、同一次冻结不重复报。
+// 冻结检测器上报一次并加入共享恢复请求；主动暂停和正常 seek 不误报，
+// 持续冻结或 seek 超时必须进入有归属检查的恢复流程。
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -331,4 +331,36 @@ test('waiting 监听只记时间戳，不调恢复调度', () => {
     !/schedulePlaybackStallRecovery/.test(waitingHandler[0]),
     'waiting 不能直接调 schedulePlaybackStallRecovery：它进来就清定时器，会把已武装的恢复无限推后',
   );
+});
+
+test('稳态冻结两秒后只加入一次共享恢复请求', async () => {
+  const ctx = createSandbox();
+  const recoveries = [];
+  ctx.sandbox.recoverFrozenPlayback = (reason, media) => { recoveries.push({ reason, media }); };
+  tick(ctx, 11);
+  await flush();
+  assert.equal(recoveries.length, 1);
+  assert.equal(recoveries[0].reason, 'clock-frozen');
+  tick(ctx, 20);
+  assert.equal(recoveries.length, 1);
+});
+
+test('持续 seek 超时留下诊断并进入共享恢复', () => {
+  const ctx = createSandbox({ media: fakeMedia({ seeking: true, __mineradioPlaybackDesired: true }) });
+  const diagnostics = [];
+  const recoveries = [];
+  ctx.sandbox.reportPlaybackDiagnostic = reason => diagnostics.push(reason);
+  ctx.sandbox.recoverFrozenPlayback = reason => recoveries.push(reason);
+  tick(ctx, 45);
+  assert.deepEqual(diagnostics, ['seek-timeout']);
+  assert.deepEqual(recoveries, ['seek-timeout']);
+});
+
+test('Audio 更换或 token 改变时重新计时，旧冻结不能记成新歌恢复', async () => {
+  const ctx = createSandbox();
+  tick(ctx, 6); await flush();
+  ctx.sandbox.audio = fakeMedia({ currentTime: 50, __mineradioTrackSwitchToken: 2 });
+  tick(ctx, 1); await flush();
+  assert.equal(resumed(ctx).length, 0);
+  assert.equal(frozen(ctx).length, 1);
 });

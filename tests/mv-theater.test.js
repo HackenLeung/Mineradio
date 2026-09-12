@@ -220,7 +220,7 @@ test('双击全屏不能顺带把视频暂停再播放', () => {
 test('系统媒体键在 MV 模式下也能暂停', () => {
   const session = read('public/js/modules/05-playback/14a-media-session.js');
   assert.match(session, /function mvMediaPlaying/, '媒体键要能判断 MV 是否在出声');
-  assert.match(session, /pause: function \(\) \{ if \(playing \|\| mvMediaPlaying\(\)\)/,
+  assert.match(session, /pause: function \(\) \{\s*if \(mvMediaPlaying\(\)\) togglePlay\(\)/,
     'MV 放着时媒体键 pause 必须有效 —— 全局 playing 这时是 false');
   assert.doesNotMatch(session, /playing = true/, '不能靠把全局 playing 置真来绕过');
 });
