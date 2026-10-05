@@ -1143,6 +1143,8 @@ function searchSongResultHtml(s, i) {
     var sourceTag = songSourceTagHtml(s);
     var sourceClass = songProviderKey(s) + '-source';
     var thumb = songCoverSrc(s, 80);
+    // 非小云歌曲拿不到红心数，连宽按钮的样式都不加，保持原来的 28px 圆钮。
+    var heartBadge = heartCountBadgeHtml(s);
     var imgTag = thumb
       ? '<img src="' + thumb + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
       : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
@@ -1155,7 +1157,7 @@ function searchSongResultHtml(s, i) {
       '</div>' +
       '</div>' +
       '<div class="search-result-actions">' +
-      '<button class="song-action-btn' + (isSongLiked(s) ? ' liked' : '') + '" data-like-index="' + i + '" title="' + (isSongLiked(s) ? '取消红心' : '红心喜欢') + '" onclick="event.stopPropagation();toggleLikeSearchResult(' + i + ')">' + heartIconSvg() + '</button>' +
+      '<button class="song-action-btn' + (heartBadge ? ' search-heart-btn' : '') + (isSongLiked(s) ? ' liked' : '') + '" data-like-index="' + i + '" title="' + (isSongLiked(s) ? '取消红心' : '红心喜欢') + '" onclick="event.stopPropagation();toggleLikeSearchResult(' + i + ')">' + heartIconSvg() + heartBadge + '</button>' +
       '<button class="song-action-btn" title="收藏到歌单" onclick="event.stopPropagation();collectSearchResult(' + i + ')">' + playlistPlusIconSvg() + '</button>' +
       (typeof canDownloadSong === 'function' && canDownloadSong(s) ? '<button class="song-action-btn dl-btn" title="下载" onclick="event.stopPropagation();downloadSongFromSearch(' + i + ')">' + downloadIconSvg() + '</button>' : '') +
       '<button class="add-btn" title="下一首播放" onclick="event.stopPropagation();queueSearchResult(' + i + ')">+</button>' +
@@ -1253,6 +1255,7 @@ function appendNextSearchResults(expectedKey) {
     if (sentinel) sentinel.insertAdjacentHTML('beforebegin', html);
     else $results.insertAdjacentHTML('beforeend', html);
     syncLikeStatusForSongs(searchMusicRenderState.songs.slice(start, end));
+    ensureHeartCountForSongs(searchMusicRenderState.songs.slice(start, end));
     searchMusicRenderState.appending = false;
     refreshSearchLoadMoreSentinel();
   });
@@ -1277,6 +1280,7 @@ function renderSongSearchResults(songs) {
   $results.innerHTML = html + searchLoadMoreSentinelHtml();
   $results.classList.add('show');
   syncLikeStatusForSongs(playlist.slice(0, searchMusicRenderState.visibleCount));
+  ensureHeartCountForSongs(playlist.slice(0, searchMusicRenderState.visibleCount));
   if (window.gsap) animateListItems($results, '.search-result', { x: 0, y: 6, stagger: 0.012, duration: 0.18, limit: 18 });
   observeSearchLoadMoreSentinel();
 }

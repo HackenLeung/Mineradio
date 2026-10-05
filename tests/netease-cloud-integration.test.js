@@ -125,7 +125,7 @@ assert.equal(currentCloud.cover, 'https://cover.example/original.jpg');
 assert.equal(queuedCloud.cover, 'https://cover.example/original.jpg');
 assert.equal(customCoverCloud.cover, 'https://cover.example/custom-default.jpg');
 
-// 网易搜索结果里 al.pic 是纯数字图片 ID。它曾被当成封面地址写进 song.cover 和
+// 小云搜索结果里 al.pic 是纯数字图片 ID。它曾被当成封面地址写进 song.cover 和
 // localStorage，浏览器按相对路径请求成 localhost:3000/1099511689… 刷一屏 404。
 // 按「像不像地址」筛而不是按字段名删：酷狗的 pic 确实是真地址，不能一刀切。
 assert.match(lyrics, /function isCloudLyricRematchCoverUrl\(/);

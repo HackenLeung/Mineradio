@@ -59,7 +59,7 @@ function isInlineCoverSrc(src) {
 function isProxyableCoverUrl(url) {
   return /^https?:\/\//i.test(String(url || ''));
 }
-// 各家搜索结果里 pic/al.pic 这类字段有时是纯数字图片 ID 而不是地址（网易就是这样，
+// 各家搜索结果里 pic/al.pic 这类字段有时是纯数字图片 ID 而不是地址（小云就是这样，
 // 酷狗的 pic 才是真地址）。数字 ID 一旦当成 src，浏览器会按相对路径解析成
 // http://localhost:3000/109951168971888100，刷一屏 404。封面链路统一在这里收口：
 // 不是内联图、不是 http(s)、也不带路径分隔符的值，一律当没有封面。

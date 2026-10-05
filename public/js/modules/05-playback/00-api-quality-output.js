@@ -21,6 +21,7 @@ function escHtml(s) { var d = document.createElement('div'); d.textContent = s; 
 function normalizePlaybackQuality(value) {
   value = String(value || '').toLowerCase();
   if (value === 'jymaster' || value === 'master' || value === 'svip') return 'jymaster';
+  if (value === 'jyeffect' || value === 'effect' || value === 'spatial2') return 'jyeffect';
   if (value === 'hires' || value === 'hi-res' || value === 'highres' || value === 'highest') return 'hires';
   if (value === 'lossless' || value === 'flac' || value === 'sq') return 'lossless';
   if (value === 'exhigh' || value === 'high' || value === '320k' || value === 'hq') return 'exhigh';
@@ -80,6 +81,7 @@ function playbackQualityLabel(value, provider) {
     return '小狗无损';
   }
   if (value === 'jymaster') return '超清母带';
+  if (value === 'jyeffect') return '高清臻音';
   if (value === 'hires') return '高清臻音';
   if (value === 'lossless') return '无损';
   if (value === 'exhigh') return '极高';
@@ -104,6 +106,7 @@ function playbackQualityShortLabel(value, provider) {
     return 'KG SQ';
   }
   if (value === 'jymaster') return '母带';
+  if (value === 'jyeffect') return '臻音';
   if (value === 'hires') return '臻音';
   if (value === 'lossless') return 'SQ';
   if (value === 'exhigh') return 'HQ';
@@ -112,7 +115,8 @@ function playbackQualityShortLabel(value, provider) {
 }
 function playbackQualityRank(value, provider) {
   value = normalizePlaybackQualityForProvider(value, provider);
-  if (value === 'jymaster') return 5;
+  if (value === 'jymaster') return 6;
+  if (value === 'jyeffect') return 5;
   if (value === 'hires') return 4;
   if (value === 'lossless') return 3;
   if (value === 'exhigh') return 2;

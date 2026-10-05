@@ -1343,6 +1343,145 @@ function checkLyricTranslationCompletenessGuard() {
   console.log('[OK] Netease tlyric/ytlrc translation merge is guarded.');
 }
 
+function checkNeteaseApiPackageGuard() {
+  logStep('Netease API package and xeapi bootstrapping guard');
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  const qualityText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '00-api-quality-output.js'), 'utf8');
+  const packageJson = require(path.join(appRoot, 'package.json'));
+  // 两套小云 API 包并存时，真正生效的是旧的那套，行为与依赖声明对不上。
+  if (packageJson.dependencies.NeteaseCloudMusicApi) {
+    fail('only the maintained @neteasecloudmusicapienhanced/api may be depended on; the legacy package must stay removed');
+  }
+  if (!packageJson.dependencies['@neteasecloudmusicapienhanced/api']) {
+    fail('the enhanced netease API package must stay declared');
+  }
+  // 4.36.2 起 song/url/v1 走 xeapi，缺 xeapi 公钥时取播放地址会直接抛错。
+  if (!/require\('@neteasecloudmusicapienhanced\/api'\)/.test(serverText)
+    || /require\('NeteaseCloudMusicApi'\)/.test(serverText)) {
+    fail('server.js must import every netease endpoint from the enhanced package only');
+  }
+  if (!/function ensureNeteaseApiConfig/.test(serverText)
+    || !/require\('@neteasecloudmusicapienhanced\/api\/generateConfig'\)/.test(serverText)
+    || !/ensureNeteaseApiConfig\(\);/.test(serverText)) {
+    fail('server startup must generate the xeapi public key, otherwise song/url/v1 returns no playable url');
+  }
+  // jyeffect 是上游 4.38.0 之后的音频档位，只加标签不加权重会让降级判定永远把它当成低档。
+  if (!/'jyeffect'/.test(serverText) || !/level: 'jyeffect'/.test(serverText)) {
+    fail('server quality candidates must include the jyeffect level');
+  }
+  // 只校验相对档位，不钉死具体数字，避免调权重时守卫跟着失效。
+  const rankBody = (qualityText.match(/function playbackQualityRank[\s\S]*?\n\}/) || [''])[0];
+  const rankOf = (level) => {
+    const hit = rankBody.match(new RegExp("value === '" + level + "'\\) return (\\d+)"));
+    return hit ? Number(hit[1]) : NaN;
+  };
+  const rankMaster = rankOf('jymaster');
+  const rankEffect = rankOf('jyeffect');
+  const rankHires = rankOf('hires');
+  if (!/value === 'jyeffect'/.test(qualityText)
+    || !(rankMaster > rankEffect && rankEffect > rankHires)) {
+    fail('frontend quality normalization must know jyeffect and rank it between jymaster and hires');
+  }
+  if (!/key: 'jyeffect'/.test(fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '00-state', '00-core-stores.js'), 'utf8'))) {
+    fail('the netease quality menu must expose the jyeffect level');
+  }
+  console.log('[OK] Netease playback uses one maintained API package with a bootstrapped xeapi key.');
+}
+
+function checkSongRedCountGuard() {
+  logStep('Song red count guard');
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  const detailText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '06-track-detail-lyrics-actions.js'), 'utf8');
+  if (!/pn === '\/api\/song\/red-count'/.test(serverText) || !/song_red_count\(\{ id, cookie: userCookie/.test(serverText)) {
+    fail('the red heart count must be served from the netease song/red/count endpoint');
+  }
+  // 小Q 与小狗没有红心数接口，无条件渲染会留一个永远显示占位的胶囊。
+  if (!/songAccountProvider\(song\) === 'netease' && song\.id/.test(detailText) || !/id="detail-red-count"/.test(detailText)) {
+    fail('the detail red count chip must only render for netease songs with an id');
+  }
+  if (!/function loadDetailRedCount/.test(detailText) || !/function applyDetailRedCount/.test(detailText) || !/\/api\/song\/red-count\?id=/.test(detailText)) {
+    fail('the detail panel must fetch and render the red count');
+  }
+  if (!/redCount != null && provider === 'netease'/.test(detailText)) {
+    fail('a like toggle must refresh the visible red count from its own response');
+  }
+  // 详情弹窗可能开在另一首歌上（专辑曲目、给队列里别的歌点红心），写胶囊前
+  // 必须确认同曲，否则 A 歌的胶囊会被 B 歌的数字覆盖。
+  const applyBody = (detailText.match(/function applyDetailRedCount[\s\S]*?\n\}/) || [''])[0];
+  if (!/detailCommentSong/.test(applyBody) || !/sameSong/.test(applyBody)) {
+    fail('applyDetailRedCount must only write the detail chip when the open song matches');
+  }
+  // 上游原文（40w+）只能给详情胶囊，底栏必须与搜索徽标统一按 count 缩写。
+  if (!/el\.textContent = '红心数 ' \+ \(countDesc \|\| formatRedCountDisplay\(n\)\)/.test(detailText)
+    || !/badge\.textContent = formatRedCountDisplay\(n\)/.test(applyBody)) {
+    fail('the bottom bar heart count must be formatted from count, not from the upstream countDesc');
+  }
+  // 0 个红心在底栏与搜索徽标都必须隐藏，两处行为不能分叉。
+  if (!/badge && isCurrent[\s\S]*?if \(n > 0\)/.test(applyBody)
+    || !/cached > 0/.test(detailText)) {
+    fail('a zero red count must hide the bottom bar badge instead of showing 0');
+  }
+  // 非当前播放的歌回填数字时不能清空底栏，那会把正在显示的数字抹掉。
+  if (!/badge && isCurrent/.test(applyBody)) {
+    fail('the bottom bar badge must only be written for the currently playing song');
+  }
+  // 红心写操作只是顺带回填数字，不能让整个红心操作被上游挂死。
+  if (!/promiseWithTimeout\(\s*song_red_count\(/.test(serverText)) {
+    fail('the like handler must time-bound its red count refresh');
+  }
+  // 同一首歌会被列表反复请求，没有短缓存（含 0 负缓存）就会一直打上游。
+  if (!/function readRedCountCache/.test(serverText) || !/function writeRedCountCache/.test(serverText)
+    || !/RED_COUNT_CACHE_TTL_MS/.test(serverText)) {
+    fail('the red count endpoint must keep a short TTL cache, including for zero counts');
+  }
+  // 队列必须封顶：滚动窗口会不断推进新歌，无上限会把上千个请求堆在内存里。
+  if (!/HEART_COUNT_MAX_QUEUE/.test(detailText) || !/heartCountQueue\.length >= HEART_COUNT_MAX_QUEUE/.test(detailText)) {
+    fail('the heart count queue must be bounded so scrolling cannot pile up unbounded requests');
+  }
+  // generateConfig 内部把失败全吞掉，只看跑没跑过会把失败当成功置位，
+  // 公钥仍为空时重试分支永远进不去。
+  if (!/function neteaseXeapiKeyOnDisk/.test(serverText) || !/neteaseXeapiKeyOnDisk\(\)/.test(serverText)) {
+    fail('config readiness must be confirmed from the key actually on disk, not from generateConfig resolving');
+  }
+  // 等公钥不能吃光 resolveDeadline：4800ms 预算里等满 3 秒，档位探测必然超时。
+  if (!/keyWaitBudget = Math\.min\(3000, Math\.max\(0, resolveDeadline - Date\.now\(\) - 500\)\)/.test(serverText)) {
+    fail('the xeapi key wait must stay inside the direct resolve deadline');
+  }
+  const homeText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
+  const audioSwitchText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '13-playback-start-audio.js'), 'utf8');
+  if (!/id="heart-btn" class="ctrl-btn heart-count-btn"/.test(homeText) || !/id="heart-count" class="comment-count"/.test(homeText)) {
+    fail('the bottom bar heart button must carry a count badge like the comment button');
+  }
+  if (!/function updateHeartCountForSong/.test(detailText) || !/heartCountSeq/.test(detailText) || !/heartCountCache/.test(detailText)) {
+    fail('track switches must fetch and cache the bottom bar heart count');
+  }
+  if (!/safePlaybackStep\('heart-count'/.test(audioSwitchText)) {
+    fail('the playback switch chain must refresh the bottom bar heart count');
+  }
+  // 搜索结果行与搜索墙卡片也要显示红心数；一屏几十首必须限流，不能一屏一个请求。
+  const searchText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '07-search.js'), 'utf8');
+  const wallText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '07a-search-wall.js'), 'utf8');
+  const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
+  const wallCssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'search-wall.css'), 'utf8');
+  if (!/function heartCountBadgeHtml/.test(detailText)
+    || !/HEART_COUNT_MAX_CONCURRENCY/.test(detailText)
+    || !/HEART_COUNT_REQUEST_TIMEOUT_MS/.test(detailText)
+    || !/function ensureHeartCountForSongs/.test(detailText)
+    || !/function fillHeartCountBadges/.test(detailText)) {
+    fail('the shared heart count badge must render, backfill, and throttle per-song fetches');
+  }
+  if (!/heartCountBadgeHtml\(s\)/.test(searchText) || !/ensureHeartCountForSongs\(/.test(searchText)) {
+    fail('search result rows must render and fetch the heart count');
+  }
+  if (!/heartCountBadgeHtml\(song, 'is-card'\)/.test(wallText) || !/ensureHeartCountForSongs\(/.test(wallText)) {
+    fail('search wall song cards must render and fetch the heart count');
+  }
+  if (!/\.search-result-actions>button\.search-heart-btn/.test(cssText) || !/\.heart-count-mini\.is-card/.test(wallCssText)) {
+    fail('both heart count badges need layout rules that leave room for the number');
+  }
+  console.log('[OK] Red heart count is scoped to netease and refreshed on like toggles.');
+}
+
 function checkLyricVerticalFloatToggleGuard() {
   logStep('Lyric vertical float toggle guard');
   const htmlText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
@@ -1485,6 +1624,9 @@ async function checkProviderFallbackTerminalStateGuard() {
   const beatPrefetchText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '03-beat', '00-tempo-worker-cache-prefetch.js'), 'utf8');
   const controlsText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '14-player-controls.js'), 'utf8');
   const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  // 首字节超时是可调的性能参数，不是安全边界。这里只要求它存在且保持有界，
+  // 绑定某一次调优的具体数字会让每次慢 CDN 调参都变成一次假失败。
+  const audioProxyOpenTimeoutMs = Number((serverText.match(/AUDIO_PROXY_OPEN_TIMEOUT_MS\s*=\s*(\d+)/) || [])[1] || 0);
   if (!/function sourceFallbackProviderReady/.test(fallbackText) || !/status\.playbackKeyReady === true/.test(fallbackText) || !/function alternatePlaybackProviders/.test(fallbackText) || /if \(provider === 'netease'\) return 'qq'/.test(fallbackText)) {
     fail('automatic fallback must only select logged-in direct providers with complete playback authorization');
   }
@@ -1506,7 +1648,7 @@ async function checkProviderFallbackTerminalStateGuard() {
   if (!/var remotePlayback\s*=/.test(beatPrefetchText) || !/if \(remotePlayback\)[\s\S]{0,180}hideBeatChip\(\)/.test(beatPrefetchText) || /bufferedLead/.test(beatPrefetchText)) {
     fail('online playback must reuse beat-map caches without starting or repeatedly retrying a whole-track analysis download');
   }
-  if (!/function probePlaybackAudioUrl/.test(serverText) || !/AUDIO_URL_PROBE_BYTES\s*=\s*8192/.test(serverText) || !/function audioProbeMagic/.test(serverText) || !/audioProxyHeadersFor\(audioUrl, 'bytes=0-'/.test(serverText) || !/&& !!magic/.test(serverText) || !/function probeQQAudioUrl/.test(serverText) || !/probe\.ok/.test(serverText) || !/function readStreamChunkWithTimeout/.test(serverText) || !/AUDIO_PROXY_OPEN_TIMEOUT_MS\s*=\s*3200/.test(serverText) || !/AUDIO_PROXY_RANGE_BODY_IDLE_TIMEOUT_MS\s*=\s*5000/.test(serverText) || !/AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS\s*=\s*45000/.test(serverText) || !/AUDIO_PROXY_RANGE_FETCH_ATTEMPTS\s*=\s*3/.test(serverText) || !/function fetchAudioProxyRangeWithCache/.test(serverText) || !/fetchAudioProxyRangeWithCache\(audioUrl, hdr, lifecycle\)/.test(serverText)) {
+  if (!/function probePlaybackAudioUrl/.test(serverText) || !/AUDIO_URL_PROBE_BYTES\s*=\s*8192/.test(serverText) || !/function audioProbeMagic/.test(serverText) || !/audioProxyHeadersFor\(audioUrl, 'bytes=0-'/.test(serverText) || !/&& !!magic/.test(serverText) || !/function probeQQAudioUrl/.test(serverText) || !/probe\.ok/.test(serverText) || !/function readStreamChunkWithTimeout/.test(serverText) || audioProxyOpenTimeoutMs < 1000 || audioProxyOpenTimeoutMs > 12000 || !/AUDIO_PROXY_RANGE_BODY_IDLE_TIMEOUT_MS\s*=\s*5000/.test(serverText) || !/AUDIO_PROXY_STREAM_IDLE_TIMEOUT_MS\s*=\s*45000/.test(serverText) || !/AUDIO_PROXY_RANGE_FETCH_ATTEMPTS\s*=\s*3/.test(serverText) || !/function fetchAudioProxyRangeWithCache/.test(serverText) || !/fetchAudioProxyRangeWithCache\(audioUrl, hdr, lifecycle\)/.test(serverText)) {
     fail('provider URL resolution and the audio proxy must verify real upstream bytes with bounded connection and stream waits');
   }
   const magicStart = serverText.indexOf('function audioProbeMagic');
@@ -1872,7 +2014,8 @@ function checkSearchGlassEntranceGuard() {
   const searchBoxSourceMergeCount = (searchBoxFilterText.match(/<feMergeNode in="SourceGraphic"/g) || []).length;
   const searchPillSourceMergeCount = (searchPillFilterText.match(/<feMergeNode in="SourceGraphic"/g) || []).length;
   const searchBoxFilterMatchesSavedRgbGlass =
-    /css\/index\.css\?v=20260716-we-continuity-vsync/.test(indexText) &&
+    // 只要求样式表带非空缓存版本串。具体版本号每次改 CSS 都会变，写死等于让守卫过期。
+    /css\/index\.css\?v=[^"'&\s]+/.test(indexText) &&
     /x="-24%"\s+y="-34%"\s+width="158%"/.test(searchBoxFilterText) &&
     /height="168%"/.test(searchBoxFilterText) &&
     /id="search-box-glass-map"\s+x="-10%"\s+y="-4%"\s+width="120%"\s+height="108%"/.test(searchBoxFilterText) &&
@@ -2510,7 +2653,8 @@ function checkAlbumDetailGuard() {
   if (!/function playbackAttemptStillCurrent\(media, token, attempt\)/.test(controlsText) || !/!attempt\.cancelled && media\.__mineradioPlaybackAttempt === attempt/.test(controlsText) || !/expectedMedia: opts\.expectedMedia \|\| audio/.test(controlsText) || !/expectedToken: opts\.expectedToken == null \? trackSwitchToken/.test(controlsText) || !/expectedMedia: playbackMedia, expectedToken: token/.test(playbackText)) {
     fail('stale play promises must be scoped to their media element, track token and uncancelled playback request');
   }
-  if (!/albumMid/.test(snapshotText) || !/albumUri/.test(snapshotText)) {
+  // 小云按 albumId 进入专辑，小Q 按 albumMid。albumUri 是已移除的 Spotify 遗留字段。
+  if (!/albumId/.test(snapshotText) || !/albumMid/.test(snapshotText)) {
     fail('playback snapshots must preserve album identifiers for album detail entry after restore');
   }
   console.log('[OK] Album detail opens from covers, loads provider tracks, and no longer exposes or activates gapless playback.');
@@ -4948,55 +5092,77 @@ function checkFirstLaunchDefaultsAndSplashGuard() {
 
 async function main() {
   console.log(`App root: ${appRoot}`);
-  runNodeSyntaxCheck(jsCheckFiles());
-  runPlaybackAudioGraphRegressionCheck();
-  runPlaybackSourceFallbackTransactionCheck();
-  runQQVipEntitlementRegressionCheck();
-  runDirectLoginFlowRegressionCheck();
-  runPlatformAccountSyncGuardCheck();
-  runHomeDailyRecommendationRegressionCheck();
-  runMusicLibraryWallRegressionCheck();
-  parseCombinedIndexModules();
-  scanForbiddenMarkers();
-  checkMainWindowChrome();
-  checkBackgroundTransparencyControlsGuard();
-  checkWallpaperEngineImportGuard();
-  checkDesktopWallpaperModeGuard();
-  checkDesktopWindowAdaptationGuard();
-  checkLyricLayoutRangeGuard();
-  checkPointerLockPermission();
-  checkProgressSeekDragGuard();
-  checkLyricBackfaceMaterialGuard();
-  checkLyricScrollPerformanceGuard();
-  checkPersistentCacheStorageGuard();
-  checkLyricTranslationCompletenessGuard();
-  checkLyricVerticalFloatToggleGuard();
-  checkPlaybackControlBadgesGuard();
-  await checkProviderFallbackTerminalStateGuard();
-  checkSearchGlassEntranceGuard();
-  checkProviderEntitlementBoundaryGuard();
-  checkQQVipStatusSyncGuard();
-  await checkProviderAuthCookiePathGuard();
-  checkPlaybackResumeRecoveryGuard();
-  checkAudioOutputWorkflowPanelGuard();
-  checkVolumeWheelStepGuard();
-  checkNonCurrentAudioPrefetchGuard();
-  checkCuefieldAutoMixGuard();
-  checkAlbumDetailGuard();
-  checkInternalBetaPackagingGuard();
-  checkReleaseVersionConsistency();
-  checkSonicTopographyPresetGuard();
-  checkLongPressReorderGuard();
-  checkPlaylistPanelTriggerGuard();
-  checkShuffleQueueOrderGuard();
-  await checkLargePlaylistVirtualizationGuard();
-  checkFirstLaunchDefaultsAndSplashGuard();
-  checkFxConsoleWorkspaceGuard();
+  // 一项失败不能中止其余检查。以前一次 fail() 就直接抛出，后面十几项守卫
+  // 根本没跑，开发时会当成全绿。这里逐项捕获，全部跑完再汇总退出。
+  const failures = [];
+  const runGuard = async (name, guard) => {
+    try {
+      await guard();
+    } catch (error) {
+      failures.push({ name, message: String((error && error.message) || error) });
+      console.error(`[FAIL] ${name}: ${failures[failures.length - 1].message}`);
+    }
+  };
+  const guards = [
+    ['node syntax check', () => runNodeSyntaxCheck(jsCheckFiles())],
+    ['playback audio graph track-switch regression', runPlaybackAudioGraphRegressionCheck],
+    ['playback source fallback finite transaction regression', runPlaybackSourceFallbackTransactionCheck],
+    ['QQ VIP entitlement regression', runQQVipEntitlementRegressionCheck],
+    ['direct login flow regression', runDirectLoginFlowRegressionCheck],
+    ['platform account action and listen-sync guard', runPlatformAccountSyncGuardCheck],
+    ['daily recommendation data and bounded rendering regression', runHomeDailyRecommendationRegressionCheck],
+    ['full-window music library wall regression', runMusicLibraryWallRegressionCheck],
+    ['combined index module parse', parseCombinedIndexModules],
+    ['forbidden FSR/DLSS/native FG scan', scanForbiddenMarkers],
+    ['main window chrome guard', checkMainWindowChrome],
+    ['background transparency controls guard', checkBackgroundTransparencyControlsGuard],
+    ['wallpaper engine additive import guard', checkWallpaperEngineImportGuard],
+    ['desktop wallpaper mode guard', checkDesktopWallpaperModeGuard],
+    ['desktop window adaptation guard', checkDesktopWindowAdaptationGuard],
+    ['lyric layout range guard', checkLyricLayoutRangeGuard],
+    ['free camera pointer-lock guard', checkPointerLockPermission],
+    ['progress drag seek guard', checkProgressSeekDragGuard],
+    ['lyric backface readability guard', checkLyricBackfaceMaterialGuard],
+    ['lyric scroll performance guard', checkLyricScrollPerformanceGuard],
+    ['persistent cache storage guard', checkPersistentCacheStorageGuard],
+    ['netease lyric translation guard', checkLyricTranslationCompletenessGuard],
+    ['netease API package and xeapi guard', checkNeteaseApiPackageGuard],
+    ['song red count guard', checkSongRedCountGuard],
+    ['lyric vertical float toggle guard', checkLyricVerticalFloatToggleGuard],
+    ['playback control source/VIP badge guard', checkPlaybackControlBadgesGuard],
+    ['provider fallback transaction and terminal-state guard', checkProviderFallbackTerminalStateGuard],
+    ['search glass entrance guard', checkSearchGlassEntranceGuard],
+    ['provider entitlement boundary guard', checkProviderEntitlementBoundaryGuard],
+    ['QQ VIP status refresh guard', checkQQVipStatusSyncGuard],
+    ['provider auth cookie path guard', checkProviderAuthCookiePathGuard],
+    ['long-pause playback resume recovery guard', checkPlaybackResumeRecoveryGuard],
+    ['audio output workflow panel guard', checkAudioOutputWorkflowPanelGuard],
+    ['volume wheel step guard', checkVolumeWheelStepGuard],
+    ['non-current audio prefetch guard', checkNonCurrentAudioPrefetchGuard],
+    ['cuefield AutoMix integration guard', checkCuefieldAutoMixGuard],
+    ['album detail guard', checkAlbumDetailGuard],
+    ['internal beta packaging guard', checkInternalBetaPackagingGuard],
+    ['release version consistency guard', checkReleaseVersionConsistency],
+    ['sonic topography visual preset guard', checkSonicTopographyPresetGuard],
+    ['long press playlist/queue reorder guard', checkLongPressReorderGuard],
+    ['playlist panel trigger guard', checkPlaylistPanelTriggerGuard],
+    ['shuffle queue order guard', checkShuffleQueueOrderGuard],
+    ['large playlist virtualization and progressive queue guard', checkLargePlaylistVirtualizationGuard],
+    ['first-launch defaults and splash timing guard', checkFirstLaunchDefaultsAndSplashGuard],
+    ['visual console workspace guard', checkFxConsoleWorkspaceGuard],
+  ];
+  for (const [name, guard] of guards) await runGuard(name, guard);
   if (runElectron) {
-    runElectronRuntimeCheck();
-    runMainStartupRecoveryCheck();
+    await runGuard('electron runtime smoke check', runElectronRuntimeCheck);
+    await runGuard('main startup recovery check', runMainStartupRecoveryCheck);
   }
   else console.log('\n== Electron runtime smoke check ==\n[SKIP] Fast/static mode. Use quick-check.bat full to enable it.');
+  if (failures.length) {
+    const names = failures.map(entry => entry.name);
+    const error = new Error(`${failures.length} guard(s) failed:\n- ${names.join('\n- ')}`);
+    error.failures = failures;
+    throw error;
+  }
 }
 
 main().then(function () {

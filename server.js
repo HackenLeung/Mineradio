@@ -58,8 +58,8 @@ const {
   user_record,
   user_cloud,
   user_cloud_detail,
-} = require('NeteaseCloudMusicApi');
-const {
+  song_red_count,
+  // 4.36.2 起 song/url/v1 换成 xeapi，必须先备好 xeapi 公钥（见 ensureNeteaseApiConfig）。
   scrobble: enhancedNeteaseScrobble,
   song_cloud_download: enhancedNeteaseCloudDownload,
   cloud_lyric_get: enhancedNeteaseCloudLyricGet,
@@ -119,7 +119,66 @@ const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || path.join(DEFA
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.3.3';
+// xeapi（song/url/v1 与其它加密端点）需要临时目录里的 xeapi_public_key 与
+// anonymous_token，两者由包自带的 generateConfig 生成。没有任何主入口会调用它，
+// 缺了就会在取播放地址时直接抛 "xeapi public key is missing"。
+const NETEASE_API_CONFIG_TTL_MS = 12 * 60 * 60 * 1000;
+let neteaseApiConfigReadyAt = 0;
+let neteaseApiConfigPromise = null;
+// generateConfig 会把匿名注册、公钥、neapi 三步各自 try/catch 掉并
+// console.log，任何一步失败它都照常 resolve。只看「有没有跑过」会把失败当成
+// 成功置位，于是重试分支永远进不去，后续请求照样抛 xeapi public key is missing。
+function neteaseXeapiKeyOnDisk() {
+  try {
+    const file = path.join(os.tmpdir(), 'xeapi_public_key');
+    return !!(JSON.parse(fs.readFileSync(file, 'utf-8')) || {}).sk;
+  } catch (_) {
+    return false;
+  }
+}
+function ensureNeteaseApiConfig(force) {
+  const age = Date.now() - neteaseApiConfigReadyAt;
+  if (!force && neteaseApiConfigReadyAt && age < NETEASE_API_CONFIG_TTL_MS) return Promise.resolve(true);
+  if (neteaseApiConfigPromise) return neteaseApiConfigPromise;
+  neteaseApiConfigPromise = Promise.resolve()
+    .then(() => {
+      // 延迟 require：包顶层会写匿名 token 文件，不能让它在启动路径上同步阻塞。
+      const generateConfig = require('@neteasecloudmusicapienhanced/api/generateConfig');
+      return generateConfig();
+    })
+    .then(() => {
+      // 只有公钥真的落盘才置位，否则 NETEASE_XEAPI_KEY_WAIT_MS 与 force 重试会失效。
+      if (!neteaseXeapiKeyOnDisk()) {
+        console.warn('[NeteaseApiConfig] xeapi public key missing after generateConfig');
+        return false;
+      }
+      neteaseApiConfigReadyAt = Date.now();
+      return true;
+    })
+    .catch((err) => {
+      console.warn('[NeteaseApiConfig]', err && err.message);
+      return false;
+    })
+    .finally(() => { neteaseApiConfigPromise = null; });
+  return neteaseApiConfigPromise;
+}
+// song/url/v1 只在等公钥，给出上限即可；失败由调用方的既有重试与超时兜底。
+const NETEASE_XEAPI_KEY_WAIT_MS = 8000;
+let neteaseApiKeyWait = null;
+async function awaitNeteaseApiKey() {
+  if (neteaseApiConfigReadyAt) return true;
+  if (!neteaseApiKeyWait) {
+    const started = Date.now();
+    neteaseApiKeyWait = (async () => {
+      const ready = await ensureNeteaseApiConfig();
+      if (ready || Date.now() - started >= NETEASE_XEAPI_KEY_WAIT_MS) return ready;
+      return ensureNeteaseApiConfig(true);
+    })().finally(() => { neteaseApiKeyWait = null; });
+  }
+  return neteaseApiKeyWait;
+}
+// package.json 读取失败时的兜底。这个值必须跟随发布版本，否则守卫会静默失效。
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.4.0';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
@@ -2963,8 +3022,33 @@ function classifyQQPlaybackRestriction(info, session) {
   }
   return playbackRestriction('qq', 'url_unavailable', '小Q没有返回播放地址，可能受版权、会员或官方客户端限制', 'switch_source', { code, rawMessage: rawMsg });
 }
+// ---------- 红心数短缓存 ----------
+// 搜索列表与播放队列会把同一首歌反复交给 /api/song/red-count，短 TTL 缓存挡住
+// 列表内的重复渲染。0 也要缓存，否则列表里的冷门歌每次都真的打上游。
+const RED_COUNT_CACHE_TTL_MS = 60 * 1000;
+const RED_COUNT_CACHE_LIMIT = 500;
+const redCountCache = new Map();
+function readRedCountCache(id) {
+  const key = String(id);
+  const hit = redCountCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > RED_COUNT_CACHE_TTL_MS) {
+    redCountCache.delete(key);
+    return null;
+  }
+  return hit.payload;
+}
+function writeRedCountCache(id, payload) {
+  const key = String(id);
+  if (redCountCache.size >= RED_COUNT_CACHE_LIMIT) {
+    redCountCache.delete(redCountCache.keys().next().value);
+  }
+  redCountCache.set(key, { at: Date.now(), payload });
+}
 const NETEASE_QUALITY_CANDIDATES = [
   { level: 'jymaster', br: 1999000, label: '超清母带', svip: true },
+  // 高清臻音的新名字。上游 4.38.0 起 jyeffect 的文案从「高清环绕声」改成「高清臻音」。
+  { level: 'jyeffect', br: 3285289, label: '高清臻音' },
   { level: 'hires',    br: 1999000, label: '高清臻音' },
   { level: 'lossless', br: 1411000, label: '无损' },
   { level: 'exhigh',   br: 999000,  label: '极高' },
@@ -2984,6 +3068,7 @@ const QQ_QUALITY_CANDIDATE_TEMPLATES = [
 function normalizeQualityPreference(value) {
   const raw = String(value || '').toLowerCase().trim();
   if (['jymaster', 'master', 'studio', 'svip'].includes(raw)) return 'jymaster';
+  if (['jyeffect', 'effect', 'spatial2'].includes(raw)) return 'jyeffect';
   if (['hires', 'hi-res', 'highres', 'zhenyin', 'spatial'].includes(raw)) return 'hires';
   if (['lossless', 'flac', 'sq'].includes(raw)) return 'lossless';
   if (['exhigh', 'high', '320', '320k', 'hq'].includes(raw)) return 'exhigh';
@@ -6287,7 +6372,12 @@ async function resolveNeteaseDirectSongUrl(id, loginInfo, qualityPreference) {
   const svipReady = hasNeteaseSvip(loginInfo);
   const qualities = qualityCandidatesFrom(requestedQuality, NETEASE_QUALITY_CANDIDATES)
     .filter(q => !q.svip || svipReady);
-
+  // 只在公钥还没落地时等一次，且绝不越过 resolveDeadline：这里等满 3 秒就会
+  // 吃掉 4800ms 预算的一大半，档位探测必然超时，用户看到「有 VIP 却没地址」。
+  const keyWaitBudget = Math.min(3000, Math.max(0, resolveDeadline - Date.now() - 500));
+  if (keyWaitBudget > 0) {
+    await promiseWithTimeout(awaitNeteaseApiKey(), keyWaitBudget, 'NETEASE_XEAPI_KEY_TIMEOUT').catch(() => false);
+  }
   let trialFallback = null; // 兜底: 即使是试听也要能播
   let lastData = null;
   let lastError = null;
@@ -6503,7 +6593,7 @@ async function handleNeteaseCloudSongUrl(id, loginInfo, qualityPreference) {
       source: 'netease-cloud',
       playable: false,
       error: 'NETEASE_CLOUD_LOGIN_REQUIRED',
-      message: '网易云音乐云盘需要登录后播放',
+      message: '小云云盘需要登录后播放',
     };
   }
   const result = await enhancedNeteaseCloudDownload({ id, cookie: userCookie, timestamp: Date.now() });
@@ -6520,7 +6610,7 @@ async function handleNeteaseCloudSongUrl(id, loginInfo, qualityPreference) {
       cloudId: id,
       playable: false,
       error: 'NETEASE_CLOUD_URL_UNAVAILABLE',
-      message: '网易云音乐云盘没有返回可播放地址',
+      message: '小云云盘没有返回可播放地址',
       code: body && body.code,
       requestedQuality: qualityPreference || '',
     };
@@ -8229,7 +8319,7 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
-  // ---------- 网易云音乐云盘 ----------
+  // ---------- 小云云盘 ----------
   if (pn === '/api/user/cloud') {
     try {
       const info = await requireLogin(res, sendPrivateJSON);
@@ -8289,6 +8379,42 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  // ---------- 红心数 ----------
+  // 只有小云有；小Q 与小狗没有对应接口，前端按 provider 决定是否显示。
+  if (pn === '/api/song/red-count') {
+    // id 声明在 try 之外：catch 回错误时也要用它，try 里的 const 在 catch 中不可见。
+    const id = String(url.searchParams.get('id') || '').trim();
+    try {
+      if (!id) { sendJSON(res, { error: 'Missing song id' }, 400); return; }
+      // 0 也要缓存一短段时间：搜索列表同一首歌会反复出现，没有负缓存的话
+      // 每一次都真的打上游，短 TTL 足以挡住列表内的重复渲染。
+      const cached = readRedCountCache(id);
+      if (cached) {
+        sendJSON(res, cached);
+        return;
+      }
+      const result = await song_red_count({ id, cookie: userCookie, timestamp: Date.now() });
+      const data = (result && result.body && result.body.data) || (result && result.data) || {};
+      const count = Number(data.count) || 0;
+      const payload = count
+        ? {
+          provider: 'netease',
+          id,
+          count,
+          // 上游自己给的缩写（40w+）。有就直出，没有让前端按 count 缩。
+          countDesc: String(data.countDesc || ''),
+          available: true,
+        }
+        : { provider: 'netease', id, count: 0, available: false };
+      writeRedCountCache(id, payload);
+      sendJSON(res, payload);
+    } catch (err) {
+      console.error('[SongRedCount]', err);
+      sendJSON(res, { provider: 'netease', id, count: 0, error: err.message }, 500);
+    }
+    return;
+  }
+
   // ---------- 红心状态 ----------
   if (pn === '/api/song/like/check') {
     try {
@@ -8340,7 +8466,23 @@ async function handleHttpRequest(req, res) {
       if (!id) { sendJSON(res, { error: 'Missing song id' }, 400); return; }
       const r = await like_song({ id, like: String(nextLike), cookie: userCookie, timestamp: Date.now() });
       const code = (r.body && r.body.code) || r.code || 200;
-      sendJSON(res, { loggedIn: true, id, liked: nextLike, code, body: r.body || r });
+      // 详情页的红心数直接由这次写操作回填，省掉一次额外请求。
+      // 必须限时：这个接口只是锦上添花，上游挂住不能把整个红心操作拖死。
+      let redCount = null;
+      let redCountDesc = '';
+      try {
+        const rc = await promiseWithTimeout(
+          song_red_count({ id, cookie: userCookie, timestamp: Date.now() }),
+          800,
+          'NETEASE_RED_COUNT_TIMEOUT'
+        );
+        const rcData = (rc && rc.body && rc.body.data) || (rc && rc.data) || {};
+        redCount = Number(rcData.count) || 0;
+        redCountDesc = String(rcData.countDesc || '');
+      } catch (e) {
+        console.warn('[Like] red count refresh failed:', e.message);
+      }
+      sendJSON(res, { loggedIn: true, id, liked: nextLike, code, redCount, redCountDesc, body: r.body || r });
     } catch (err) {
       console.error('[Like]', err);
       sendJSON(res, { error: err.message }, 500);
@@ -9011,6 +9153,9 @@ async function handleHttpRequest(req, res) {
 
 const server = http.createServer(handleHttpRequest);
 
+// 启动第一件事就把 xeapi 公钥备好，别让用户第一次点播放才等它。
+ensureNeteaseApiConfig();
+
 server.listen(PORT, HOST, () => {
   console.log('======================================================');
   console.log(' 粒子音乐可视化 v2  →  http://localhost:' + PORT);
@@ -9067,6 +9212,26 @@ function tryListenRemote(port) {
   });
 }
 
+// Windows 允许 0.0.0.0:P 与别人已经占着的 127.0.0.1:P 同时绑定成功，而且回环
+// 流量全部落到那个更具体的 127.0.0.1 上。于是 0.0.0.0 绑成功并不代表端口可用：
+// 本机连过来会打到别的进程，遥控监听器上的请求也就不会被认成外部来源。
+// 先单独试绑 127.0.0.1，被占就说明这个候选端口是「半遮蔽」的，必须跳过。
+function probeRemoteLoopbackPortFree(port) {
+  return new Promise((resolve) => {
+    const probe = http.createServer();
+    const finish = (value) => {
+      probe.removeListener('error', onError);
+      probe.removeListener('listening', onListening);
+      resolve(value);
+    };
+    const onError = () => finish(false);
+    const onListening = () => { probe.close(() => finish(true)); };
+    probe.once('error', onError);
+    probe.once('listening', onListening);
+    probe.listen(port, '127.0.0.1');
+  });
+}
+
 // 端口是浏览器 origin 的一部分。优先复用持久化端口，避免关闭或重启后换端口，
 // 导致手机看不到旧 origin 下 localStorage 里的 token 而被迫重新配对。
 async function startRemoteListener() {
@@ -9089,6 +9254,12 @@ async function startRemoteListener() {
     let lastError = null;
     for (const candidate of candidates) {
       try {
+        // 0.0.0.0 绑成功不代表端口可用，见 probeRemoteLoopbackPortFree 的说明。
+        if (!await probeRemoteLoopbackPortFree(candidate)) {
+          const shadowed = new Error('REMOTE_LISTENER_PORT_SHADOWED');
+          shadowed.code = 'EADDRINUSE';
+          throw shadowed;
+        }
         remoteListener = await tryListenRemote(candidate);
         remoteListenerPort = candidate;
         if (remoteAuth.preferredPort !== candidate) {

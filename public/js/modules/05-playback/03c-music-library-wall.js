@@ -202,7 +202,7 @@ function musicLibraryWallBuildLibraries() {
       kind: 'netease-cloud',
       provider: 'netease',
       playlistId: 'all',
-      title: '网易云音乐云盘',
+      title: '小云云盘',
       subtitle: cloudCount ? (cloudCount + ' 首 · 云端上传歌曲') : '云端上传歌曲 · 小云',
       count: cloudCount,
       cover: musicLibraryWallCloudCatalog.cover || ''

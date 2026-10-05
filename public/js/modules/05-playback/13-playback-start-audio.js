@@ -413,6 +413,7 @@ async function playQueueAt(idx, opts) {
     safePlaybackStep('cover-button', updateCustomCoverButton);
     safePlaybackStep('like-buttons', function () { updateLikeButtons(song); });
     safePlaybackStep('comment-button', function () { if (typeof updateCommentButtonForSong === 'function') updateCommentButtonForSong(song); });
+    safePlaybackStep('heart-count', function () { if (typeof updateHeartCountForSong === 'function') updateHeartCountForSong(song); });
     safePlaybackStep('like-status', function () { syncLikeStatusForSong(song); });
     safePlaybackStep('cinema-track-profile', function () { if (!qualitySwitch) resetCinemaTrackProfile(song); });
     safePlaybackStep('empty-home', function () { if (!opts.preserveHomeState) updateEmptyHomeVisibility(); });

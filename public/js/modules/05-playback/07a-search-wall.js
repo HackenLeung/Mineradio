@@ -308,6 +308,9 @@ async function searchWallRunSearch(query, opts) {
       if (typeof syncLikeStatusForSongs === 'function') {
         syncLikeStatusForSongs(songs.slice(0, searchWallState.visibleCount));
       }
+      if (typeof ensureHeartCountForSongs === 'function') {
+        ensureHeartCountForSongs(songs.slice(0, searchWallState.visibleCount));
+      }
     } else if (typeof searchProviderNotice !== 'undefined' && searchProviderNotice) {
       searchWallState.notice = searchProviderNotice;
     }
@@ -339,6 +342,9 @@ async function searchWallLoadMore() {
     if (typeof syncLikeStatusForSongs === 'function') {
       syncLikeStatusForSongs(searchWallState.songs.slice(0, searchWallState.visibleCount));
     }
+    if (typeof ensureHeartCountForSongs === 'function') {
+      ensureHeartCountForSongs(searchWallState.songs.slice(0, searchWallState.visibleCount));
+    }
     renderSearchWall({ forceGrid: true });
     return true;
   }
@@ -364,6 +370,9 @@ async function searchWallLoadMore() {
     searchWallReleasePillResults();
     if (typeof syncLikeStatusForSongs === 'function') {
       syncLikeStatusForSongs(merged.slice(before, searchWallState.visibleCount));
+    }
+    if (typeof ensureHeartCountForSongs === 'function') {
+      ensureHeartCountForSongs(merged.slice(before, searchWallState.visibleCount));
     }
     renderSearchWall({ forceGrid: true });
     return merged.length > before;
@@ -460,7 +469,7 @@ function searchWallSongCardHtml(song, index) {
   var actions = '<span class="sw-card-actions">'
     + '<button class="sw-card-action' + (liked ? ' is-liked' : '') + '" type="button" data-sw-like="' + index + '"'
     + ' title="' + (liked ? '取消红心' : '红心喜欢') + '" aria-label="' + (liked ? '取消红心' : '红心喜欢') + '">'
-    + heart + '</button>'
+    + heart + (typeof heartCountBadgeHtml === 'function' ? heartCountBadgeHtml(song, 'is-card') : '') + '</button>'
     + '<button class="sw-card-action" type="button" data-sw-collect="' + index + '" title="收藏到歌单"'
     + ' aria-label="收藏到歌单">' + collectIcon + '</button>'
     + '<button class="sw-card-action is-next" type="button" data-sw-next="' + index + '" title="下一首播放"'
@@ -565,6 +574,7 @@ function searchWallOpenArtist(artistId) {
       playlist = searchWallArtistState.songs;
       searchWallReleasePillResults();
       if (typeof syncLikeStatusForSongs === 'function') syncLikeStatusForSongs(searchWallArtistState.songs);
+      if (typeof ensureHeartCountForSongs === 'function') ensureHeartCountForSongs(searchWallArtistState.songs);
     }
     renderSearchWall({ forceGrid: true });
   });
@@ -740,6 +750,10 @@ function renderSearchWall(opts) {
       + '<div id="search-wall-song-grid" class="sw-grid" role="list">' + cards + '</div>'
       + '</section>';
     searchWallState.gridWindowKey = windowKey;
+    // 虚拟窗口只渲染可见的十几张卡，滑进来的新卡不在首次取数的范围内，得按窗口补。
+    if (typeof ensureHeartCountForSongs === 'function') {
+      ensureHeartCountForSongs(songs.slice(virtual.start, virtual.end));
+    }
   }
   if (footer) footer.innerHTML = searchWallFooterHtml();
   if (searchWallState.focusAfterRender) {

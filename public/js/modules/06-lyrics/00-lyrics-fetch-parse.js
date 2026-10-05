@@ -33,7 +33,7 @@ function isNeteaseCloudSong(song) {
   return !!(song && (song.cloudSong || song.cloudSource === 'netease-cloud'));
 }
 
-// 网易的 al.pic / pic 是纯数字图片 ID，不是地址；酷狗的 pic 才是真地址。
+// 小云的 al.pic / pic 是纯数字图片 ID，不是地址；酷狗的 pic 才是真地址。
 // 数字 ID 落进 song.cover 后会被当相对路径请求成 localhost:3000/1099511689…（404），
 // 而且会写进 localStorage 长期生效。这里按「像不像地址」筛，不按字段名筛。
 function isCloudLyricRematchCoverUrl(value) {

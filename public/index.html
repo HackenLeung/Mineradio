@@ -16,9 +16,9 @@
   <script src="vendor/gsap.min.js"></script>
   <script src="vendor/qrcode-generator.js"></script>
   <script src="js/preload-mode.js"></script>
-  <link rel="stylesheet" href="css/index.css?v=20260904-bottom-bar-widths-v1">
+  <link rel="stylesheet" href="css/index.css?v=20261004-search-heart-count-v1">
   <link rel="stylesheet" href="css/music-library-wall.css?v=20260811-library-wall-controls-v5">
-  <link rel="stylesheet" href="css/search-wall.css?v=20260823-search-wall-v1">
+  <link rel="stylesheet" href="css/search-wall.css?v=20261004-search-heart-count-v1">
   <link rel="stylesheet" href="css/mv-theater.css?v=20260905-mv-theater-v2">
 </head>
 
@@ -1644,11 +1644,11 @@
               </div>
             </div>
           </div>
-          <button id="heart-btn" class="ctrl-btn" onclick="toggleLikeCurrent()" title="红心喜欢"><svg class="heart-svg"
+          <button id="heart-btn" class="ctrl-btn heart-count-btn" onclick="toggleLikeCurrent()" title="红心喜欢"><svg class="heart-svg"
               viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M12 21.45c-.32 0-.62-.12-.86-.34l-1.23-1.12C5.54 16.03 2.25 13.05 2.25 8.9 2.25 5.48 4.88 2.9 8.28 2.9c1.7 0 3.35.72 4.52 1.96C13.97 3.62 15.62 2.9 17.32 2.9c3.4 0 6.03 2.58 6.03 6 0 4.15-3.29 7.13-7.66 11.09l-1.23 1.12c-.24.22-.54.34-.86.34z" />
-            </svg></button>
+            </svg><span id="heart-count" class="comment-count" hidden></span></button>
           <button id="comment-btn" class="ctrl-btn comment-btn" onclick="toggleCommentPanel(event)" title="评论">
             <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
             <span id="comment-count" class="comment-count">0</span>

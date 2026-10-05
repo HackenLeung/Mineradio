@@ -786,6 +786,7 @@ body.search-wall-active #search-area {
 }
 
 .sw-card-action {
+  position: relative;
   width: 30px;
   height: 30px;
   padding: 0;
@@ -816,6 +817,29 @@ body.search-wall-active #search-area {
 .sw-card-action.is-liked {
   border-color: rgba(255, 107, 129, .52);
   color: #ff8ba0
+}
+
+/* 卡片是 30px 圆钮，数字塞不进去，挂在按钮右上角。
+   卡片本身有 3D 倾斜，徽标不能跟着转。 */
+.sw-card-action .heart-count-mini.is-card {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(6, 8, 11, .82);
+  color: rgba(248, 249, 252, .82);
+  font: 650 9px/14px 'JetBrains Mono', monospace;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateZ(0)
+}
+
+.sw-card-action .heart-count-mini.is-card:empty {
+  display: none
 }
 
 /* 只统一尺寸，不碰 fill/stroke —— 图标复用队列那几个函数，各自的

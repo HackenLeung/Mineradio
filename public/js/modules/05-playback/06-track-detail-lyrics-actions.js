@@ -50,6 +50,132 @@ var commentPanelOpen = false;
 var commentPanelSeq = 0;
 var commentPanelSubmitBusy = false;
 var commentPanelCache = {};
+var heartCountCache = Object.create(null);
+var heartCountSeq = 0;
+// 上游红心数会随别人点红心变化，缓存留太久底栏就会一直显示旧数字。
+var HEART_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+// apiJson 不传 timeoutMs 就完全不设上限，悬住的请求会让数字永远停在「…」，
+// 搜索列表的限流队列也会被永久占住。
+var HEART_COUNT_REQUEST_TIMEOUT_MS = 12000;
+function readCachedHeartCount(key) {
+  var entry = heartCountCache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.at > HEART_COUNT_CACHE_TTL_MS) {
+    delete heartCountCache[key];
+    return null;
+  }
+  return entry.count;
+}
+function writeCachedHeartCount(key, count) {
+  if (!key || count == null) return;
+  heartCountCache[key] = { count: Number(count) || 0, at: Date.now() };
+}
+function formatRedCountDisplay(count) {
+  var n = Number(count) || 0;
+  if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '亿';
+  if (n >= 10000) return Math.round(n / 10000) + '万';
+  return String(n);
+}
+function updateHeartCountForSong(song) {
+  song = song || currentCoverSong();
+  var badge = document.getElementById('heart-count');
+  if (!badge) return;
+  var provider = songAccountProvider(song);
+  if (provider !== 'netease' || !song || !song.id) {
+    badge.hidden = true;
+    badge.textContent = '';
+    return;
+  }
+  var key = 'netease:' + String(song.id);
+  var seq = ++heartCountSeq;
+  var cached = readCachedHeartCount(key);
+  if (cached != null) {
+    // 与搜索徽标一致：0 个红心不显示数字，直接隐藏徽标。
+    if (cached > 0) {
+      badge.textContent = formatRedCountDisplay(cached);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+      badge.textContent = '';
+    }
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = '…';
+  apiJson('/api/song/red-count?id=' + encodeURIComponent(song.id), { timeoutMs: HEART_COUNT_REQUEST_TIMEOUT_MS }).then(function (result) {
+    if (seq !== heartCountSeq) return;
+    var count = result && !result.error && result.available !== false && typeof result.count === 'number' ? result.count : null;
+    if (count == null) {
+      badge.hidden = true;
+      badge.textContent = '';
+      return;
+    }
+    writeCachedHeartCount(key, count);
+    badge.textContent = formatRedCountDisplay(count);
+  }).catch(function () {
+    if (seq !== heartCountSeq) return;
+    badge.hidden = true;
+    badge.textContent = '';
+  });
+}
+// 搜索结果行与搜索墙卡片共用同一个徽标：渲染时只画已知值，未知值留空占位，
+// 拿到数字后按 data-heart-count-key 回填。空占位已占住数字位，回填时位移很小。
+function heartCountBadgeHtml(song, extraClass) {
+  if (songAccountProvider(song) !== 'netease' || !song || !song.id) return '';
+  var key = 'netease:' + String(song.id);
+  var cached = readCachedHeartCount(key);
+  var known = cached != null && cached > 0;
+  return '<span class="heart-count-mini' + (extraClass ? (' ' + extraClass) : '')
+    + '" data-heart-count-key="' + escHtml(key) + '">'
+    + (known ? escHtml(formatRedCountDisplay(cached)) : '') + '</span>';
+}
+function fillHeartCountBadges(key, count) {
+  var n = Number(count) || 0;
+  var nodes = document.querySelectorAll('[data-heart-count-key="' + key + '"]');
+  Array.prototype.forEach.call(nodes, function (node) {
+    node.textContent = n > 0 ? formatRedCountDisplay(n) : '';
+  });
+}
+// 红心数是每首歌一个请求，一屏几十首不能一次全放出去，排队限流。
+var HEART_COUNT_MAX_CONCURRENCY = 4;
+// 快速滚动或翻大量列表时窗口会不断推进，队列不能无上限攒下去：每首歌最终
+// 都要打一次上游，几千个积压会让编号牌一直停在空白，也白占住并发位。
+var HEART_COUNT_MAX_QUEUE = 200;
+var heartCountPending = Object.create(null);
+var heartCountQueue = [];
+var heartCountInFlight = 0;
+function pumpHeartCountQueue() {
+  while (heartCountInFlight < HEART_COUNT_MAX_CONCURRENCY && heartCountQueue.length) {
+    (function (job) {
+      heartCountInFlight++;
+      apiJson('/api/song/red-count?id=' + encodeURIComponent(job.id), { timeoutMs: HEART_COUNT_REQUEST_TIMEOUT_MS }).then(function (result) {
+        // available 为 false 就是 0 个红心，不显示比显示 0 干净。
+        if (result && !result.error && result.available !== false && typeof result.count === 'number') {
+          writeCachedHeartCount(job.key, result.count);
+          fillHeartCountBadges(job.key, result.count);
+        }
+      }).catch(function () {}).then(function () {
+        delete heartCountPending[job.key];
+        heartCountInFlight--;
+        pumpHeartCountQueue();
+      });
+    })(heartCountQueue.shift());
+  }
+}
+function ensureHeartCountForSongs(songs) {
+  (songs || []).forEach(function (song) {
+    if (songAccountProvider(song) !== 'netease' || !song || !song.id) return;
+    var key = 'netease:' + String(song.id);
+    var cached = readCachedHeartCount(key);
+    if (cached != null) { fillHeartCountBadges(key, cached); return; }
+    if (heartCountPending[key]) return;
+    // 队列满时丢弃本首，并清掉 pending，滚动回来还能重新排队。
+    if (heartCountQueue.length >= HEART_COUNT_MAX_QUEUE) return;
+    heartCountPending[key] = true;
+    heartCountQueue.push({ key: key, id: song.id });
+  });
+  pumpHeartCountQueue();
+}
 function normalizeArtistNameForMatch(name) {
   return String(name || '')
     .toLowerCase()
@@ -306,6 +432,46 @@ function loadDetailComments(song, seq) {
     if (seq === trackDetailSeq && nextTarget) nextTarget.innerHTML = '<div class="detail-empty">评论加载失败</div>';
     bindTrackDetailScrollers();
   });
+}
+// 详情页拿到的数字顺手回填底栏缓存，避免同一首歌再请求一次。
+function applyDetailRedCount(song, count, countDesc) {
+  var el = document.getElementById('detail-red-count');
+  var n = Number(count) || 0;
+  if (el) {
+    // 弹窗可能开在别的歌上（专辑曲目、歌手热门歌曲、给队列里另一首点红心）。
+    // 数字与胶囊必须同曲，否则 A 歌的胶囊会被 B 歌的数字覆盖。
+    var open = detailCommentSong;
+    var sameSong = !!(song && song.id && open && String(open.id) === String(song.id));
+    if (sameSong) {
+      // 上游原文（40w+）只给详情胶囊，底栏统一按 count 缩写，两处不会前后不一致。
+      el.textContent = '红心数 ' + (countDesc || formatRedCountDisplay(n));
+      el.title = '小云红心数 ' + n;
+    }
+  }
+  if (song && song.id) writeCachedHeartCount('netease:' + String(song.id), n);
+  if (song && song.id) fillHeartCountBadges('netease:' + String(song.id), n);
+  // 底栏只认当前播放的那首，别的歌回填数字时不能动它。
+  var active = currentCoverSong();
+  var isCurrent = !!(song && song.id && active && String(song.id) === String(active.id));
+  var badge = document.getElementById('heart-count');
+  if (badge && isCurrent) {
+    // 与搜索徽标一致：0 个红心不显示数字，徽标是空的，底栏也该隐藏。
+    // 取消红心会一路掉到 0，这时也要回填，否则底栏会一直停在旧数字上。
+    if (n > 0) {
+      badge.textContent = formatRedCountDisplay(n);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+      badge.textContent = '';
+    }
+  }
+}
+function loadDetailRedCount(song, seq) {
+  if (songAccountProvider(song) !== 'netease' || !song || !song.id) return Promise.resolve();
+  return apiJson('/api/song/red-count?id=' + encodeURIComponent(song.id), { timeoutMs: HEART_COUNT_REQUEST_TIMEOUT_MS }).then(function (result) {
+    if (seq !== trackDetailSeq || !result || result.error) return;
+    applyDetailRedCount(song, result.count, result.countDesc);
+  }).catch(function () {});
 }
 async function submitDetailComment() {
   if (detailCommentSubmitBusy || !detailCommentSong) return;
@@ -818,6 +984,7 @@ async function applyLocalMatchCandidate(index) {
   renderLocalLibraryPanel();
   if (typeof renderPlaylistPanelDetailPanel === 'function') renderPlaylistPanelDetailPanel();
   if (typeof updateCommentButtonForSong === 'function') updateCommentButtonForSong(activeSong || song);
+  if (typeof updateHeartCountForSong === 'function') updateHeartCountForSong(activeSong || song);
   if (commentPanelOpen) renderCommentPanelForSong(activeSong || song, null);
   closeLocalMatchModal();
   // 自定义封面压过任何匹配结果。不静默丢弃、也不擅自清除用户设的封面，只是说清楚
@@ -998,6 +1165,11 @@ function openTrackDetailModal(type, songOverride) {
       '<div class="detail-chip-row">' +
       '<span class="detail-chip">' + escHtml(songSourceLabel(song)) + '</span>' +
       (isSongLiked(song) ? '<span class="detail-chip">红心喜欢</span>' : '') +
+      // 红心数是异步来的，先占位再由 loadDetailRedCount 回填。小Q / 小狗没有这个接口，
+      // 占位直接不渲染，避免留一个永远空的胶囊。
+      (songAccountProvider(song) === 'netease' && song.id
+        ? '<span class="detail-chip" id="detail-red-count">红心数 --</span>'
+        : '') +
       (getCustomCoverForSong(song) ? '<span class="detail-chip">自定义封面</span>' : '') +
       (hasCustomLyricForSong(song) ? '<span class="detail-chip">自定义歌词</span>' : '') +
       // 底栏那颗 MV 按钮在窄窗口下会被收纳梯度隐掉（index.css @media max-width:1040px）。
@@ -1012,6 +1184,7 @@ function openTrackDetailModal(type, songOverride) {
     if (detailCanLoadComments) {
       loadDetailComments(commentSubject, seq);
     }
+    loadDetailRedCount(commentSubject, seq);
   }
   bindTrackDetailScrollers();
   openGsapModal(document.getElementById('track-detail-modal'));
@@ -1758,6 +1931,12 @@ async function toggleLikeSong(song) {
     });
     if (r && (r.error || r.success === false)) throw new Error(r.error || r.message || 'LIKE_FAILED');
     likedSongMap[stateKey] = r && r.liked != null ? !!r.liked : next;
+    // 写操作已经带回新数字，直接回填，详情页不必再发一次请求。
+    if (r && r.redCount != null && provider === 'netease') {
+      writeCachedHeartCount('netease:' + String(id), r.redCount);
+      applyDetailRedCount(song, r.redCount, r.redCountDesc);
+      fillHeartCountBadges('netease:' + String(id), r.redCount);
+    }
     showToast(next ? '已加入红心喜欢' : '已取消红心');
   } catch (err) {
     likedSongMap[stateKey] = !next;

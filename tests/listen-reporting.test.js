@@ -9,7 +9,6 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const stats = fs.readFileSync(path.join(root, 'public', 'js', 'modules', '05-playback', '02-listen-stats.js'), 'utf8');
-const packageJson = require(path.join(root, 'package.json'));
 
 function namedFunctionSource(source, name) {
   const declaration = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
@@ -46,7 +45,7 @@ test('Netease listen reports use the first valid context source and fall back to
 });
 
 test('Netease uses the enhanced EAPI startplay/play reporter and validates both responses', () => {
-  assert.equal(packageJson.dependencies['@neteasecloudmusicapienhanced/api'], '4.36.1');
+  // 包名收窄成单一实现后，这里只守行为，不再钉版本号，否则每次升级都要改测试。
   assert.match(server, /scrobble: enhancedNeteaseScrobble/);
   assert.match(server, /await enhancedNeteaseScrobble\(/);
   assert.match(server, /startplayCode !== 200 \|\| playCode !== 200/);

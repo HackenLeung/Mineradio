@@ -101,7 +101,10 @@ var PLAYBACK_QUALITY_DEFAULTS = { netease: 'hires', qq: 'lossless', kugou: 'loss
 var PLAYBACK_QUALITY_OPTIONS = {
   netease: [
     { key: 'jymaster', title: '超清母带', sub: 'SVIP / 最高规格', svip: true },
-    { key: 'hires', title: '高清臻音', sub: '默认 / 细节优先' },
+    // jyeffect 是 hires 之外的上游档位，两者不能共用同一个标题，否则菜单里
+    // 出现两个「高清臻音」，用户分不出选的是哪一档。
+    { key: 'jyeffect', title: '臻音全景', sub: '环绕声 / 细节优先' },
+    { key: 'hires', title: '高清臻音', sub: '常规 / 稳定优先' },
     { key: 'lossless', title: '无损 SQ', sub: 'FLAC 优先' },
     { key: 'exhigh', title: '极高 HQ', sub: '320kbps' },
     { key: 'standard', title: '标准', sub: '128kbps' }

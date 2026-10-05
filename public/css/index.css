@@ -3190,6 +3190,25 @@ body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs
   line-height: 1
 }
 
+/* 带红心数的按钮要放得下数字，固定 28px 宽度会把数字挤出去。 */
+.search-result-actions>button.search-heart-btn {
+  width: auto;
+  min-width: 28px;
+  flex: 0 0 auto;
+  padding: 0 7px;
+  gap: 4px;
+  border-radius: 14px
+}
+
+/* 空徽标也占住宽度，数字回来时位移很小。 */
+.search-result-actions .heart-count-mini {
+  min-width: 16px;
+  color: rgba(255, 255, 255, .54);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-align: center
+}
+
 .search-result img {
   width: 40px;
   height: 40px;
@@ -8273,6 +8292,22 @@ body:not(.controls-visible) .lyric-timing-control::before,
 
 .comment-btn.disabled {
   opacity: .42
+}
+
+.heart-count-btn {
+  width: auto;
+  min-width: 48px;
+  padding: 0 7px;
+  gap: 4px
+}
+
+.heart-count-btn .heart-svg {
+  width: 18px;
+  height: 18px
+}
+
+.heart-count-btn .comment-count {
+  min-width: 14px
 }
 
 .comment-panel {

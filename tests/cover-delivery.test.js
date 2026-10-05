@@ -104,7 +104,7 @@ test('local library wall exposes search, current-track locate, and back-to-top c
   assert.match(libraryWallCss, /right:\s*calc\(clamp\(24px, 4vw, 64px\) \+ 80px\)/);
 });
 
-// 网易的 al.pic / pic 是纯数字图片 ID 而不是地址。它一旦当成 <img src>，
+// 小云的 al.pic / pic 是纯数字图片 ID 而不是地址。它一旦当成 <img src>，
 // 浏览器按相对路径解析成 http://localhost:3000/109951168971888100 刷一屏 404，
 // 而且坏值会写进 song.cover 和 localStorage 长期生效。这里把守卫按行为钉住。
 test('cover guard rejects bare numeric picIds and keeps real addresses', () => {

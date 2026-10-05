@@ -9,9 +9,8 @@ Mineradio 使用了以下第三方项目或服务。各项目版权归其原作�
 - GSAP
 - music-tempo
 - qrcode-generator (Kazuhiko Arase, MIT)
-- NeteaseCloudMusicApi
+- @neteasecloudmusicapienhanced/api
 - mpg123-decoder
-
 ## Community Contributions
 
 - Wallpaper Engine local-library detection and import UX: independently adapted from the approach used by [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music) at commit `a5ef80a219709080700be5b1d00f1ea71a5a2576` (GPL-3.0). Mineradio only indexes local `project.json` metadata; it does not execute imported Web/Application projects or replace the user's existing background-media settings.
@@ -26,7 +25,3 @@ Mineradio 不是任何音乐平台的官方客户端，也不隶属于上述平�
 ## Original Design
 
 Mineradio 名称、MR Logo、界面视觉设计、启动动画方向、粒子视觉体验和电影镜头系统的产品表达属于作者原创设计。
-
-emily 作为 Mineradio 早期视觉底层想法与 `emily` 视觉预设改进方向的共创者和灵感来源之一，特此致谢。
-
-感谢小天才e宝、应春日、锋将军、軌跡、林中、骊、风痕、花椰菜🥦在早期体验、测试反馈和发布准备中的帮助。
