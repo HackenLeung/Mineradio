@@ -93,18 +93,20 @@
     }
   },
   "dependencies": {
-    "@neteasecloudmusicapienhanced/api": "4.41.0",
+    "@neteasecloudmusicapienhanced/api": "4.41.1",
     "gsap": "^3.15.0",
     "mpg123-decoder": "^1.0.3",
-    "music-metadata": "11.14.0"
+    "music-metadata": "11.16.1"
   },
   "overrides": {
-    "axios": "1.18.1",
-    "body-parser": "1.20.6",
-    "music-metadata": "11.14.0"
+    "axios": "^1.20.0",
+    "music-metadata": "$music-metadata",
+    "get-uri": {
+      "basic-ftp": "^6.2.3"
+    }
   },
   "devDependencies": {
-    "electron": "^42.4.1",
+    "electron": "^42.11.14",
     "electron-builder": "^26.15.3",
     "rcedit": "^5.0.2"
   }

@@ -1355,6 +1355,23 @@ function checkNeteaseApiPackageGuard() {
   if (!packageJson.dependencies['@neteasecloudmusicapienhanced/api']) {
     fail('the enhanced netease API package must stay declared');
   }
+  const lock = JSON.parse(fs.readFileSync(path.join(appRoot, 'package-lock.json'), 'utf8'));
+  for (const [name, section] of [
+    ['@neteasecloudmusicapienhanced/api', 'dependencies'],
+    ['music-metadata', 'dependencies'],
+    ['electron', 'devDependencies'],
+  ]) {
+    const locked = lock.packages[`node_modules/${name}`];
+    const installed = JSON.parse(fs.readFileSync(path.join(appRoot, 'node_modules', name, 'package.json'), 'utf8'));
+    if (lock.packages[''][section][name] !== packageJson[section][name]
+      || !locked || installed.version !== locked.version) {
+      fail(`${name} declaration, lockfile and installed version must stay synchronized; run npm install`);
+    }
+  }
+  if (lock.packages['node_modules/NeteaseCloudMusicApi']
+    || fs.existsSync(path.join(appRoot, 'node_modules', 'NeteaseCloudMusicApi'))) {
+    fail('the legacy NeteaseCloudMusicApi must not remain in the lockfile or node_modules');
+  }
   // 4.36.2 起 song/url/v1 走 xeapi，缺 xeapi 公钥时取播放地址会直接抛错。
   if (!/require\('@neteasecloudmusicapienhanced\/api'\)/.test(serverText)
     || /require\('NeteaseCloudMusicApi'\)/.test(serverText)) {

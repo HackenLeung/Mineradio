@@ -27,7 +27,7 @@ const indexHtml = read('public/index.html');
 const indexCss = read('public/css/index.css');
 const renderState = read('public/js/modules/00-state/01-perf-render-state.js');
 
-assert.equal(packageJson.dependencies['music-metadata'], '11.14.0');
+assert.equal(packageJson.dependencies['music-metadata'], '11.16.1');
 assert.match(desktopMain, /import\('music-metadata'\)/);
 assert.match(desktopMain, /LOCAL_LIBRARY_AUDIO_EXTS/);
 assert.match(desktopMain, /sidecarCoverUrl/);
