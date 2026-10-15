@@ -12,7 +12,7 @@
   "extraMetadata": {
     "name": "mineradio-beat-internal",
     "productName": "Mineradio_Beat",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "mineradio": {
       "internalBeta": true,
       "runtimeName": "Mineradio_Beat",

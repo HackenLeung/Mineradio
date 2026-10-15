@@ -1,10 +1,10 @@
 # Changelog
 
-## 未发布
+## v1.4.1
 
 ### 音源接口
 
-- 小云接口统一到维护中的 `@neteasecloudmusicapienhanced/api`，4.41.0，停更的旧包 `NeteaseCloudMusicApi@4.32.0` 已移除。
+- 小云接口统一到维护中的 `@neteasecloudmusicapienhanced/api`，4.41.1，停更的旧包 `NeteaseCloudMusicApi@4.32.0` 已移除。
 - 修复升级后取播放地址失败：上游 4.36.2 起 `song/url/v1` 走 xeapi 通道，需要临时目录里的公钥。服务启动即生成，缺失时在 8 秒上限内重试一次。就绪判定改为读真实落盘的公钥，不再把 `generateConfig` 吞掉的网络失败当成成功；等待也不再越过取地址的 4800ms 预算。
 - 补齐 `jyeffect` 档位：上游 4.38.0 起它从「高清环绕声」改叫「高清臻音」，此前前端会归一成 `hires`，降级判定按 `hires` 记账。现在单独成档，菜单叫「臻音全景」。
 - 红心数：详情弹窗、底栏爱心按钮、搜索结果行与搜索墙卡片都显示 `song/red/count`，切歌与红心时一起刷新。小Q 与小狗没有该接口，不显示而不是留空。

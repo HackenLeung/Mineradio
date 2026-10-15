@@ -178,7 +178,7 @@ async function awaitNeteaseApiKey() {
   return neteaseApiKeyWait;
 }
 // package.json 读取失败时的兜底。这个值必须跟随发布版本，否则守卫会静默失效。
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.4.0';
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '1.4.1';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
