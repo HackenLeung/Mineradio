@@ -848,10 +848,23 @@ function homeDashboardSetStableBackgroundImage(element, src) {
   image.src = src;
 }
 
+function homeDashboardAttrHtml(value) {
+  return escHtml(String(value == null ? '' : value)).replace(/"/g, '&quot;');
+}
+
+// 首页卡片宽度有限，feat. 合作者留在主标题里会把整张卡撑成五六行，标题只留曲名本体。
+function homeDashboardStripFeatTitle(raw) {
+  var text = String(raw == null ? '' : raw).trim();
+  var match = text.match(/^(.*?)\s*[(\[（【]\s*(?:feat\.?|ft\.?|featuring)\s+(.+?)\s*[)\]）】]\s*$/i)
+    || text.match(/^(.*?)\s+(?:feat|ft)\.\s*(.+)$/i);
+  return match && match[1].trim() ? match[1].trim() : text;
+}
+
 function homeDashboardCardHtml(card) {
   var cover = card.cover || homeDashboardGeneratedCover(card.title, card.label, card.tone);
   var artStyle = cover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)"' : '';
-  return '<button class="home-card ' + escHtml(card.className || '') + '" data-home-tone="' + escHtml(card.tone || 'playlist') + '"' +
+  var tooltip = card.tooltip ? ' title="' + homeDashboardAttrHtml(card.tooltip) + '"' : '';
+  return '<button class="home-card ' + escHtml(card.className || '') + '" data-home-tone="' + escHtml(card.tone || 'playlist') + '"' + tooltip +
     ' type="button" onclick="' + card.action + '">' +
     '<div class="home-card-label">' + escHtml(card.label || '') + '</div>' +
     '<div class="home-card-title">' + escHtml(card.title || '') + '</div>' +
@@ -865,6 +878,11 @@ function homeDashboardPatchCard(button, card) {
   var className = 'home-card' + (card.className ? ' ' + card.className : '');
   var displayCover = card.cover || homeDashboardGeneratedCover(card.title, card.label, card.tone);
   if (button.className !== className) button.className = className;
+  var tooltip = card.tooltip || '';
+  if (button.getAttribute('title') !== tooltip) {
+    if (tooltip) button.setAttribute('title', tooltip);
+    else button.removeAttribute('title');
+  }
   if (button.getAttribute('data-home-tone') !== card.tone) button.setAttribute('data-home-tone', card.tone);
   if (button.getAttribute('onclick') !== card.action) button.setAttribute('onclick', card.action);
   var label = button.querySelector('.home-card-label');
@@ -900,17 +918,23 @@ function renderHomeDashboardQuickCards() {
   var ownPlaylistCount = Array.isArray(userPlaylists) ? userPlaylists.length : 0;
   var libraryCount = localCount + accountPlaylistCount + ownPlaylistCount;
   var cards = [
-    {
-      label: 'CONTINUE LISTENING',
-      title: continueItem && (continueItem.name || continueItem.title) || '继续听',
-      sub: recentSnapshotSong
-        ? ('上次队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · 从歌曲开头播放')
-        : (continueItem ? (homeDashboardSubtitle(continueItem) || '继续最近一次有效聆听') : '完整听过一首歌后会出现在这里'),
-      cover: continueItem && continueItem.cover || '',
-      action: 'resumeHomeDashboardPlayback()',
-      tone: 'search',
-      className: 'home-card-featured',
-    },
+    (function () {
+      var rawTitle = continueItem && (continueItem.name || continueItem.title) || '';
+      var queueText = '队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · 从头播放';
+      var sub = recentSnapshotSong
+        ? queueText
+        : (continueItem ? (homeDashboardSubtitle(continueItem) || '继续最近一次有效聆听') : '完整听过一首歌后会出现在这里');
+      return {
+        label: 'CONTINUE LISTENING',
+        title: homeDashboardStripFeatTitle(rawTitle) || '继续听',
+        sub: sub,
+        tooltip: [rawTitle, sub].filter(Boolean).join('\n'),
+        cover: continueItem && continueItem.cover || '',
+        action: 'resumeHomeDashboardPlayback()',
+        tone: 'search',
+        className: 'home-card-featured',
+      };
+    })(),
     {
       label: 'LIBRARY',
       title: '音乐库',
@@ -942,7 +966,7 @@ function renderHomeDashboardQuickCards() {
     },
   ];
   var fingerprint = cards.map(function (card) {
-    return [card.title, card.sub, card.cover, card.action].join('|');
+    return [card.title, card.sub, card.tooltip, card.cover, card.action].join('|');
   }).join('||');
   if (fingerprint === homeDashboardQuickFingerprint && grid.classList.contains('home-quick-grid')) return;
   homeDashboardQuickFingerprint = fingerprint;

@@ -106,7 +106,7 @@ test('recent playback restores the persisted full queue, current item, and mode 
   assert.equal(restored.queue.length, 3);
   assert.equal(restored.index, 1);
   assert.match(html, /onclick="resumeHomeDashboardPlayback\(\)"[\s\S]*<div class="home-card-title">继续听<\/div>/);
-  assert.match(dashboard, /上次队列 '[^']*' 首/);
+  assert.match(dashboard, /队列 ' \+ Math\.max\(1, recentSnapshotQueue\.length\) \+ ' 首/);
   assert.match(restoreRecent, /playQueue = restoredQueue\.queue/);
   assert.match(restoreRecent, /currentIdx = restoredQueue\.index/);
   assert.match(restoreRecent, /if \(snapshot\.playMode\) playMode = snapshot\.playMode/);
