@@ -95,7 +95,6 @@ assert.match(afterPack, /fs\.rmSync\(appUpdateConfigPath, \{ force: true \}\)/,
 assert.equal(packageJson.mineradio.update.owner, 'HackenLeung');
 assert.equal(packageJson.build.publish[0].owner, 'HackenLeung');
 assert.match(indexHtml, /class="update-version-row"[\s\S]*?https:\/\/github\.com\/HackenLeung\/Mineradio/);
-assert.match(updatePreview, /updatePreviewState\.downloadUrl = '';[\s\S]*?updatePreviewState\.patchAvailable = false/);
 assert.match(updatePreview, /function openUpdatePanel\(\)[\s\S]*?正在检查 GitHub 最新版本。[\s\S]*?checkLatestUpdate\(\)\.finally/);
 assert.match(updatePreview, /function startUpdatePreviewDownload\(\)[\s\S]*?https:\/\/github\.com\/HackenLeung\/Mineradio\/releases\/tag\/v[\s\S]*?window\.open\(releaseUrl, '_blank'\)/);
 

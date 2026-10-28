@@ -288,6 +288,10 @@ function downloadJobStatusText(job) {
   return '排队';
 }
 
+function downloadJobCanCancel(job) {
+  return !!job && (job.status === 'queued' || job.status === 'resolving' || job.status === 'downloading');
+}
+
 function renderDownloadCenter() {
   var panel = document.getElementById('download-center');
   if (!panel) return;
@@ -301,10 +305,29 @@ function renderDownloadCenter() {
   if (!jobs.length) html += '<div class="dl-center-empty">暂无下载任务</div>';
   else html += '<div class="dl-center-list">' + jobs.map(function (job) {
     var statusClass = job.status === 'done' ? ' done' : (job.status === 'error' ? ' error' : (job.status === 'skipped' ? ' skipped' : ' active'));
-    return '<div class="dl-center-item' + statusClass + '"><div class="dl-item-info"><strong>' + escHtml(job.songName || '') + '</strong><small>' + escHtml(job.songArtist || job.message || '') + '</small></div><span class="dl-item-status">' + downloadJobStatusText(job) + '</span>' +
+    var cancelButton = downloadJobCanCancel(job)
+      ? '<button type="button" class="dl-item-cancel" onclick="cancelDownloadJob(\'' + escHtml(job.id || '') + '\')">取消</button>'
+      : '';
+    return '<div class="dl-center-item' + statusClass + '"><div class="dl-item-info"><strong>' + escHtml(job.songName || '') + '</strong><small>' + escHtml(job.songArtist || job.message || '') + '</small></div><span class="dl-item-status">' + downloadJobStatusText(job) + '</span>' + cancelButton +
       (job.status === 'downloading' ? '<div class="dl-item-bar"><i style="width:' + Math.max(0, Math.min(100, Number(job.progress) || 0)) + '%"></i></div>' : '') + '</div>';
   }).join('') + '</div>';
   panel.innerHTML = html;
+}
+
+async function cancelDownloadJob(id) {
+  if (!id) return;
+  try {
+    var response = await apiJson('/api/download/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    if (!response || response.ok !== true) throw new Error(response && response.error || 'DOWNLOAD_CANCEL_FAILED');
+    showToast(response.cancelled ? '已取消下载' : '任务已开始写入，无法取消');
+    pollDownloadStatus();
+  } catch (error) {
+    showToast('取消失败' + (error && error.message ? '：' + error.message : ''));
+  }
 }
 
 async function openDownloadFolder() {

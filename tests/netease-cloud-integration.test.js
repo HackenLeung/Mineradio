@@ -18,10 +18,9 @@ const lyrics = read('public/js/modules/06-lyrics/00-lyrics-fetch-parse.js');
 const lyricTiming = read('public/js/modules/06-lyrics/06-lyric-timing-offset.js');
 const lyricActions = read('public/js/modules/05-playback/06-track-detail-lyrics-actions.js');
 
-assert.match(server, /user_cloud,\s*user_cloud_detail/);
+assert.match(server, /  user_cloud,\s*\n/);
 assert.match(server, /song_cloud_download: enhancedNeteaseCloudDownload/);
 assert.match(server, /if \(pn === '\/api\/user\/cloud'\)/);
-assert.match(server, /if \(pn === '\/api\/user\/cloud\/detail'\)/);
 assert.match(server, /handleNeteaseCloudSongUrl/);
 assert.match(server, /if \(pn === '\/api\/cloud\/lyric'\)/);
 assert.match(server, /cloudPlaybackRequested \? sendPrivateJSON : sendJSON/);

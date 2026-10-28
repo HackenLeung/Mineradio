@@ -4768,21 +4768,6 @@ ipcMain.handle('kugou-music-clear-login', async () => {
   return clearKugouMusicLoginSession();
 });
 
-ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
-  try {
-    const target = path.resolve(String(filePath || ''));
-    const updateDir = path.resolve(getUpdateDownloadDir());
-    if (!target || !target.startsWith(updateDir + path.sep)) {
-      return { ok: false, error: 'INVALID_UPDATE_PATH' };
-    }
-    if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
-    const error = await shell.openPath(target);
-    return error ? { ok: false, error } : { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };
-  }
-});
-
 ipcMain.handle('mineradio-restart-app', async () => {
   try {
     app.relaunch();

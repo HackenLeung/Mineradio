@@ -1,5 +1,16 @@
 # Changelog
 
+## 未发布
+
+### 下载中心
+
+- 下载中心新增取消按钮：排队中、解析地址中、下载中的任务都能取消。取消会中断上游连接并删除未完成的临时分片，不再留下 `.download` 残片。
+
+### 服务端清理
+
+- 移除四个前端从未调用的端点：`/api/platform/capabilities`、`/api/podcast/detail`、`/api/song/comments/like`、`/api/user/cloud/detail`，以及更新下载四路由（`/api/update/download`、`/api/update/download/status`、`/api/update/patch`、`/api/update/patch/status`）。`/api/download/cancel` 保留并接到下载中心。
+- 移除随之失效的更新下载引擎：镜像选路、摘要校验、快速补丁写盘与备份约占 660 行，前端 `startRealUpdateDownload` / `startRealUpdatePatch` 与轮询逻辑约 260 行。软件内更新一直是「只检查、跳转 GitHub」，这段代码从未被调用。
+
 ## v1.4.1
 
 ### 音源接口

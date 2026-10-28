@@ -28,6 +28,9 @@ test('music download queue resolves Netease, QQ and Kugou without advertising un
   assert.match(server, /if \(pn === '\/api\/download'\)/);
   assert.match(server, /if \(pn === '\/api\/download\/status'\)/);
   assert.match(server, /if \(pn === '\/api\/download\/cancel'\)/);
+  assert.match(downloads, /apiJson\('\/api\/download\/cancel'/);
+  assert.match(server, /job\.cancelRequested = true/);
+  assert.match(server, /job\.abort\.abort\(\)/);
 });
 
 test('desktop exposes persistent download directory controls before the local server starts', () => {
