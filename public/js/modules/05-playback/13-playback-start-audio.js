@@ -372,7 +372,29 @@ async function playQueueAt(idx, opts) {
       }, 0);
       return true;
     }
+    // 只有明确来自「恢复上次播放」的调用才接上次进度：启动自动播放、
+    // 首页继续听、以及恢复队列里点播放键续播。普通点播不能跳到中间。
     var requestedResumeAt = Math.max(0, Number(opts.resumeAt) || 0);
+    var restoringLastPlayback = !!(opts.resumeFromSnapshot || opts.startupAutoplay);
+    if (typeof playbackSnapshotPendingResumeForSong === 'function') {
+      var restoredResumeAt = playbackSnapshotPendingResumeForSong(song);
+      if (!restoredResumeAt) {
+        // 起播的不是快照里那首，待用进度直接作废，不能留到以后误用。
+        if (typeof notePlaybackSnapshotResumeConsumed === 'function') notePlaybackSnapshotResumeConsumed();
+      } else if (
+        restoringLastPlayback
+        && !opts.autoRepeat
+        && !opts.qualitySwitch
+        && !opts.fallbackDepth
+        && !opts.resumeRecovery
+      ) {
+        // 不清空待用值：同一首重试起播时还要接这个位置，换歌时才作废。
+        if (!requestedResumeAt) requestedResumeAt = restoredResumeAt;
+      } else if (!restoringLastPlayback) {
+        // 用户主动点了这首歌：按点击意图从头播，旧进度作废。
+        if (typeof notePlaybackSnapshotResumeConsumed === 'function') notePlaybackSnapshotResumeConsumed();
+      }
+    }
     var isRemotePlaybackSong = !(song && (song.type === 'local' || song.source === 'local' || song.localUrl));
     // A remote mid-track recovery starts with a thin range buffer around the requested position.
     // Keep whole-track analysis, next-track beat prefetch, and B-deck preload
@@ -465,6 +487,10 @@ async function playQueueAt(idx, opts) {
       if (localStarted === true && typeof completeSourceFallbackRecovery === 'function') {
         completeSourceFallbackRecovery(sourceFallbackRecoveryFromOptions(opts));
       }
+      // 本地歌走这条独立分支拿不到下面的 session-begin，进度也要在这里清掉。
+      if (localStarted === true && restoredResumeAt > 0 && typeof notePlaybackSnapshotResumeConsumed === 'function') {
+        notePlaybackSnapshotResumeConsumed();
+      }
       return localStarted === true;
     }
     safePlaybackStep('show-loading', function () { showLoading({ trackSwitch: true, seamlessCover: true }); });
@@ -546,7 +572,7 @@ async function playQueueAt(idx, opts) {
         if (isQQPlayback && typeof applyQQPlaybackStatusEvidence === 'function') applyQQPlaybackStatusEvidence(data, song);
       }
       var retryPlaybackOpts = Object.assign({}, opts);
-      if (opts.resumeAt != null) retryPlaybackOpts.resumeAt = requestedResumeAt;
+      if (requestedResumeAt > 0) retryPlaybackOpts.resumeAt = requestedResumeAt;
       if (!data || !data.url) {
         var fallbackResult = await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts);
         if (fallbackResult !== null) return fallbackResult === true;
@@ -825,6 +851,8 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('session-begin');
       safePlaybackStep('listen-session-begin', function () { beginListenSession(song, playbackContext); });
+      // 起播成功，待用进度使命结束：无论这次是否接了位置，都不能留给下一次起播。
+      if (restoredResumeAt > 0 && typeof notePlaybackSnapshotResumeConsumed === 'function') notePlaybackSnapshotResumeConsumed();
       markPlayPhase('lyrics-fetch');
       if (song.type === 'podcast') {
         if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();

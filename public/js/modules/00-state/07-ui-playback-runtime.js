@@ -25,6 +25,7 @@ var startupAutoplayHomeQueuedReason = '';
 var startupHomeRevealReady = false;
 var startupRestoreHomePending = false;
 var restoredLastPlaybackSnapshot = null;
+var pendingPlaybackResumeAt = 0;
 var lastPlaybackSnapshotSavedAt = 0;
 var hotkeySettings = readHotkeySettings();
 var immersiveMode = false;

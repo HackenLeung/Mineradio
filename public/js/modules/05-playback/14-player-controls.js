@@ -865,11 +865,19 @@ async function togglePlay() {
   try {
     forcePlaybackControlsInteractive();
     if ((!audio || !audio.src) && playQueue.length && currentIdx >= 0) {
-      await playQueueAt(currentIdx, { manual: true });
+      // 点播放键续播恢复出来的那首，同样接上次进度。
+      await playQueueAt(currentIdx, {
+        manual: true,
+        resumeFromSnapshot: !!playbackSnapshotPendingResumeForSong(playQueue[currentIdx])
+      });
       return;
     }
     if (audio && audio.src && playQueue.length && currentIdx >= 0 && !playbackMediaMatchesCurrentQueueItem(audio)) {
-      await playQueueAt(currentIdx, { manual: true, suppressPlayFailureNotice: true });
+      await playQueueAt(currentIdx, {
+        manual: true,
+        suppressPlayFailureNotice: true,
+        resumeFromSnapshot: !!playbackSnapshotPendingResumeForSong(playQueue[currentIdx])
+      });
       return;
     }
     if ((!audio || !audio.src) && currentLocalSong && (currentLocalSong.localMissing || !currentLocalSong.localUrl)) {
@@ -974,7 +982,9 @@ function clearQueue() {
   currentLocalSong = null;
   startupRestoreHomePending = false;
   restoredLastPlaybackSnapshot = null;
+  if (typeof pendingPlaybackResumeAt === 'number') pendingPlaybackResumeAt = 0;
   try { localStorage.removeItem(LAST_PLAYBACK_STORE_KEY); } catch (e) { }
+  if (typeof clearPlaybackProgressCheckpoint === 'function') clearPlaybackProgressCheckpoint();
   safeRenderQueuePanel('clear-queue');
   safeShelfRebuild('clear-queue');
   updateCustomCoverButton();

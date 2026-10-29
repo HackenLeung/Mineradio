@@ -74,7 +74,7 @@ function readLastPlaybackSnapshot() {
     if (raw) {
       var data = JSON.parse(raw);
       if (data && data.version === 1 && data.current) {
-        data.currentTime = 0;
+        data.currentTime = Math.max(0, Number(data.currentTime) || 0);
         return data;
       }
     }
@@ -94,7 +94,7 @@ function readLastPlaybackSnapshot() {
       savedAt: Number(legacy.savedAt) || Date.now(),
       reason: 'main-playback-session-v1',
       currentIdx: legacyIndex,
-      currentTime: 0,
+      currentTime: Math.max(0, Number(legacy.currentTime) || 0),
       duration: playbackDurationFromSong(legacyCurrent),
       playing: false,
       playMode: legacy.playMode || 'loop',
@@ -105,6 +105,105 @@ function readLastPlaybackSnapshot() {
     return null;
   }
 }
+// 少于这个秒数不寻址：既省一次多余 seek，也避免刚点开就被拉回上一轮的极短位置。
+var PLAYBACK_SNAPSHOT_RESUME_MIN_SECONDS = 3;
+// 进度单独存一个小 key。把它塞进完整队列快照会让每次 timeupdate 都重新
+// 序列化整条队列；这里只有四个字段，5 秒一次也不会有主线程压力。
+var PLAYBACK_PROGRESS_STORE_KEY = 'mineradio-last-playback-progress-v1';
+var PLAYBACK_SNAPSHOT_PROGRESS_SAVE_INTERVAL_MS = 5000;
+var lastPlaybackProgressSavedAt = 0;
+
+function readPlaybackProgressCheckpoint() {
+  try {
+    var raw = localStorage.getItem(PLAYBACK_PROGRESS_STORE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data || data.version !== 1 || !data.key) return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+// 快照和 checkpoint 只认音频时钟。MV 剧场期间 getPlaybackCurrentSeconds()
+// 读的是视频时钟，片头长度和音频版对不上，写进去会让下次恢复到错误位置。
+function playbackSnapshotAudioSeconds() {
+  var currentSec = audio && isFinite(audio.currentTime) && audio.currentTime > 0 ? Number(audio.currentTime) : 0;
+  // 起播时 seek 还没落地，currentTime 仍是 0；以待应用的 resume 位置为下限，
+  // 否则刚接上的进度会被下一次写盘覆盖成 0。
+  if (audio && Number(audio.__mineradioPendingResumeSeconds) > 0) {
+    currentSec = Math.max(currentSec, Number(audio.__mineradioPendingResumeSeconds) || 0);
+  }
+  return currentSec;
+}
+function playbackSnapshotAudioDurationSeconds() {
+  if (audio && isFinite(audio.duration) && audio.duration > 0) return Number(audio.duration);
+  return playbackDurationFromSong(currentCoverSong());
+}
+function writePlaybackProgressCheckpoint(song, currentSec, durationSec, extra) {
+  if (!song) return;
+  var key = queueItemKey(song);
+  if (!key) return;
+  var payload = {
+    version: 1,
+    key: key,
+    currentTime: Math.max(0, Number(currentSec) || 0),
+    duration: Math.max(0, Number(durationSec) || 0),
+    savedAt: Date.now(),
+    playing: !!(audio && !audio.paused && !audio.ended)
+  };
+  if (extra && extra.reason) payload.reason = extra.reason;
+  try { localStorage.setItem(PLAYBACK_PROGRESS_STORE_KEY, JSON.stringify(payload)); } catch (e) { }
+}
+function clearPlaybackProgressCheckpoint() {
+  try { localStorage.removeItem(PLAYBACK_PROGRESS_STORE_KEY); } catch (e) { }
+}
+// 播放中每 5 秒落一次进度，崩溃或被强杀时最多丢 5 秒。
+function schedulePlaybackProgressSnapshotSave() {
+  var now = Date.now();
+  if (now - lastPlaybackProgressSavedAt < PLAYBACK_SNAPSHOT_PROGRESS_SAVE_INTERVAL_MS) return;
+  lastPlaybackProgressSavedAt = now;
+  var song = currentCoverSong();
+  if (!song) return;
+  if (!audio || !audio.src) return;
+  if (typeof playbackMediaMatchesCurrentQueueItem === 'function' && !playbackMediaMatchesCurrentQueueItem(audio)) return;
+  writePlaybackProgressCheckpoint(song, playbackSnapshotAudioSeconds(), playbackSnapshotAudioDurationSeconds(), { reason: 'progress' });
+}
+// 用户手动拖进度后立刻允许下一次写入，否则拖完几秒内退出会恢复到旧位置。
+function notePlaybackProgressSeeked() {
+  lastPlaybackProgressSavedAt = 0;
+}
+// 快照里的进度只有在能对上当前歌、且离结尾还有余量时才值得恢复。
+function playbackSnapshotResumeSeconds(snapshot) {
+  snapshot = snapshot || {};
+  var currentSec = Math.max(0, Number(snapshot.currentTime) || 0);
+  var durationSec = Math.max(0, Number(snapshot.duration) || 0);
+  // checkpoint 写得更勤，但它可能比完整快照更旧（例如 beforeunload 刚写过快照）。
+  // 只有确实更新时才用它覆盖，否则会把刚保存的进度回退几秒。
+  var checkpoint = readPlaybackProgressCheckpoint();
+  if (checkpoint && snapshot.current && checkpoint.key === queueItemKey(snapshot.current)) {
+    var checkpointAt = Number(checkpoint.savedAt) || 0;
+    var snapshotAt = Number(snapshot.savedAt) || 0;
+    if (!snapshotAt || checkpointAt >= snapshotAt) {
+      currentSec = Math.max(0, Number(checkpoint.currentTime) || 0);
+      durationSec = Math.max(durationSec, Number(checkpoint.duration) || 0);
+    }
+  }
+  if (durationSec > 0) currentSec = Math.min(currentSec, Math.max(0, durationSec - 1));
+  if (currentSec < PLAYBACK_SNAPSHOT_RESUME_MIN_SECONDS) return 0;
+  if (durationSec > 0 && currentSec >= durationSec - 1) return 0;
+  return currentSec;
+}
+// 只有确实属于恢复出来的那首歌才带上进度，用户点别的歌不能跳位置。
+function playbackSnapshotPendingResumeForSong(song) {
+  if (!pendingPlaybackResumeAt) return 0;
+  var restored = restoredLastPlaybackSnapshot && restoredLastPlaybackSnapshot.current;
+  if (!restored || !song) return 0;
+  return queueItemKey(song) === queueItemKey(restored) ? pendingPlaybackResumeAt : 0;
+}
+function notePlaybackSnapshotResumeConsumed() {
+  pendingPlaybackResumeAt = 0;
+}
+
 function saveLastPlaybackSnapshot(force, reason) {
   var now = Date.now();
   if (!force && now - lastPlaybackSnapshotSavedAt < 2500) return;
@@ -113,14 +212,24 @@ function saveLastPlaybackSnapshot(force, reason) {
   if (!audio && restoredLastPlaybackSnapshot && restoredLastPlaybackSnapshot.current && queueItemKey(song) === queueItemKey(restoredLastPlaybackSnapshot.current)) return;
   // 无论成功还是失败都推进节流时间戳，避免配额写入失败后紧密重试。
   lastPlaybackSnapshotSavedAt = now;
-  var durationSec = getPlaybackDurationSeconds();
+  var durationSec = playbackSnapshotAudioDurationSeconds();
+  var currentSec = playbackSnapshotAudioSeconds();
+  if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
+  // 播放、暂停、切歌都会走到这里，顺手刷新进度 checkpoint。只在确有实时音频
+  // 且属于当前队列项时写，避免刚恢复还没起播就把好进度覆盖成 0。
+  var liveAudioMatchesQueue = !!(
+    audio
+    && audio.src
+    && (typeof playbackMediaMatchesCurrentQueueItem !== 'function' || playbackMediaMatchesCurrentQueueItem(audio))
+  );
+  if (liveAudioMatchesQueue) writePlaybackProgressCheckpoint(song, currentSec, durationSec, { reason: reason || '' });
   var sourceQueue = Array.isArray(playQueue) ? playQueue : [];
   function payloadForQueue(queue, minimal) { return {
     version: 1,
     savedAt: now,
     reason: reason || '',
     currentIdx: currentIdx,
-    currentTime: 0,
+    currentTime: Math.max(0, Number(currentSec) || 0),
     duration: Math.max(0, Number(durationSec) || playbackDurationFromSong(song) || 0),
     playing: !!(audio && !audio.paused && !audio.ended),
     playMode: playMode || 'loop',
@@ -149,9 +258,11 @@ function saveLastPlaybackSnapshot(force, reason) {
 function applyRestoredPlaybackProgressUi(snapshot) {
   snapshot = snapshot || {};
   var durationSec = Number(snapshot.duration) || playbackDurationFromSong(snapshot.current) || 0;
-  setProgressVisual(0);
+  var currentSec = playbackSnapshotResumeSeconds(snapshot);
+  if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
+  setProgressVisual(durationSec > 0 ? (currentSec / durationSec * 100) : 0);
   var timeDisplay = document.getElementById('time-display');
-  if (timeDisplay) timeDisplay.textContent = '0:00 / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
+  if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
 function hydrateLastPlaybackSnapshotQueue(snapshot) {
   snapshot = snapshot || {};
@@ -184,6 +295,7 @@ function restoreLastPlaybackSnapshot() {
   var isLocal = current.type === 'local' || !!current.localKey || current.localMissing;
   restoredLastPlaybackSnapshot = snapshot;
   startupRestoreHomePending = !startupAutoplayPreference;
+  pendingPlaybackResumeAt = playbackSnapshotResumeSeconds(snapshot);
   playQueue = restoredQueue.queue;
   currentIdx = restoredQueue.index;
   currentLocalSong = isLocal ? playQueue[currentIdx] : null;
@@ -209,7 +321,7 @@ function restoreLastPlaybackSnapshot() {
       }, 180);
     }
   }
-  applyRestoredPlaybackProgressUi(snapshot);
+  applyRestoredPlaybackProgressUi(Object.assign({}, snapshot, { currentTime: pendingPlaybackResumeAt }));
   showRestoredPlaybackControls('restore');
   return true;
 }
@@ -290,6 +402,7 @@ function tryStartupAutoplayHomeFallback(jobId) {
       currentIdx = 0;
       currentLocalSong = null;
       startupRestoreHomePending = false;
+      pendingPlaybackResumeAt = 0;
       startupAutoplayAttemptCount = 0;
       safeRenderQueuePanel('startup-autoplay-home-fallback', { scrollCurrent: miniQueueOpen });
       safeShelfRebuild('startup-autoplay-home-fallback', true);

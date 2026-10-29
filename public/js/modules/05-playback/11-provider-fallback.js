@@ -635,6 +635,8 @@ async function skipFailedQueueItem(idx, token, message, opts) {
     sourceFallbackQueuePlaybackOptions(opts.playbackOpts || {}, recovery),
     { skipShuffleOrder: true }
   );
+  // resumeAt 只属于刚才那首。漏到队列下一首会让它从别的歌的秒数开始播。
+  delete nextPlaybackOpts.resumeAt;
   var nextStarted = await playQueueAt(nextIdx, nextPlaybackOpts);
   if (nextStarted === true) completeSourceFallbackRecovery(recovery);
   else if (sourceFallbackRecoveryIdentityActive(recovery) && !sourceFallbackRecoveryCanContinue(recovery)) {

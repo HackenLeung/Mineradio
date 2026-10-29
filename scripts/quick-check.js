@@ -1122,8 +1122,8 @@ function checkLyricScrollPerformanceGuard() {
   if (!/function scheduleStageLyricFullTrackWarmup/.test(stageText) || !/stageLyricFullTrackWarmupTargetAt/.test(stageText) || !/scheduleStageLyricFullTrackWarmup\('lyrics-ready-preload', 24\)/.test(lyricText)) {
     fail('lyrics must schedule full-track warmup as soon as a lyric response is parsed');
   }
-  if (/stageLyricRestoreWarmup|scheduleStageLyricRestorePrewarm|startup-restore-lyrics/.test(stageText + lyricText) || /pendingPlaybackResumeAt|restoreResumeAt/.test(playbackText) || !/var requestedResumeAt = Math\.max\(0, Number\(opts\.resumeAt\) \|\| 0\)/.test(playbackText)) {
-    fail('cross-restart playback must start at zero while explicit runtime resume positions remain supported');
+  if (/stageLyricRestoreWarmup|scheduleStageLyricRestorePrewarm|startup-restore-lyrics/.test(stageText + lyricText) || /restoreResumeAt/.test(playbackText) || !/var requestedResumeAt = Math\.max\(0, Number\(opts\.resumeAt\) \|\| 0\)/.test(playbackText) || !/playbackSnapshotPendingResumeForSong\(song\)/.test(playbackText) || !/notePlaybackSnapshotResumeConsumed\(\)/.test(playbackText)) {
+    fail('cross-restart playback must resume the saved position only for the restored track while runtime recovery keeps explicit resume positions');
   }
   if (!/function clearStageLyricFullTrackWarmup/.test(stageText) || /function disposeStageLyricPrewarmMesh\(\)\s*\{[\s\S]{0,220}stageLyricFullTrackWarmupTimer/.test(stageText)) {
     fail('disposing a lightweight prewarm mesh must not cancel the pending full-track lyric warmup');

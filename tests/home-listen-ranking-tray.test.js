@@ -110,13 +110,14 @@ test('recent playback restores the persisted full queue, current item, and mode 
   assert.match(restoreRecent, /playQueue = restoredQueue\.queue/);
   assert.match(restoreRecent, /currentIdx = restoredQueue\.index/);
   assert.match(restoreRecent, /if \(snapshot\.playMode\) playMode = snapshot\.playMode/);
-  assert.doesNotMatch(restoreRecent, /resumeAt|pendingPlaybackResumeAt/);
+  assert.match(restoreRecent, /pendingPlaybackResumeAt = typeof playbackSnapshotResumeSeconds === 'function'/);
+  assert.doesNotMatch(restoreRecent, /resumeAt:\s*0\b/);
   assert.doesNotMatch(restoreRecent, /preserveHomeState:\s*true/);
   assert.match(restoreRecent, /dismissHomePage\(\{ toast: false \}\)/);
   assert.match(restoreRecent, /skipShuffleOrder: true/);
 });
 
-test('cross-restart playback always starts at zero while runtime recovery keeps explicit resume positions', () => {
+test('cross-restart playback resumes the saved position while runtime recovery keeps explicit resume positions', () => {
   const values = new Map();
   const localStorage = {
     getItem(key) { return values.has(key) ? values.get(key) : null; },
@@ -142,7 +143,7 @@ test('cross-restart playback always starts at zero while runtime recovery keeps 
     queue: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }],
   }));
   const current = readSnapshot();
-  assert.equal(current.currentTime, 0);
+  assert.equal(current.currentTime, 87);
   assert.equal(current.currentIdx, 1);
   assert.equal(current.playMode, 'shuffle');
   assert.equal(current.queue.length, 2);
@@ -155,23 +156,28 @@ test('cross-restart playback always starts at zero while runtime recovery keeps 
     queue: [{ id: 3, name: 'Legacy', duration: 180 }],
   }));
   const legacy = readSnapshot();
-  assert.equal(legacy.currentTime, 0);
+  assert.equal(legacy.currentTime, 54);
   assert.equal(legacy.playMode, 'single');
 
   const saveSnapshot = namedFunctionSource(queueSnapshot, 'saveLastPlaybackSnapshot');
-  assert.match(saveSnapshot, /currentTime:\s*0/);
-  assert.doesNotMatch(saveSnapshot, /getPlaybackCurrentSeconds/);
+  assert.match(saveSnapshot, /currentTime: Math\.max\(0, Number\(currentSec\) \|\| 0\)/);
+  assert.match(queueSnapshot, /function playbackSnapshotAudioSeconds\(\)/);
+  assert.match(queueSnapshot, /function playbackSnapshotResumeSeconds\(snapshot\)/);
+  assert.match(queueSnapshot, /PLAYBACK_SNAPSHOT_RESUME_MIN_SECONDS = 3/);
+  assert.match(queueSnapshot, /function playbackSnapshotPendingResumeForSong\(song\)/);
+  assert.match(queueSnapshot, /function schedulePlaybackProgressSnapshotSave\(\)/);
+  assert.match(progressSeek, /schedulePlaybackProgressSnapshotSave\(\)/);
   assert.doesNotMatch(progressSeek, /saveLastPlaybackSnapshot\(false,\s*'tick'\)|saveLastPlaybackSnapshot\(true,\s*'seek'\)/);
 
   assert.doesNotMatch(html, /startup-resume-mode|按上次进度|重播整首/);
   assert.doesNotMatch(dashboard, /恢复上次进度/);
   assert.doesNotMatch(stores, /STARTUP_RESUME_MODE_STORE_KEY/);
   assert.doesNotMatch(preferences, /StartupResumeMode|startupResumeMode|startupResumeSecondsFromSnapshot/);
-  assert.doesNotMatch(playbackRuntime, /startupResumeMode|pendingPlaybackResumeAt/);
   assert.doesNotMatch(fxBindings, /bindStartupResumeModeControls/);
   assert.doesNotMatch(consoleWorkspace, /startupResumeMode|startup-resume-mode/);
   assert.doesNotMatch(portableProbe, /mineradio-startup-resume-mode-v1/);
-  assert.doesNotMatch(playbackStart, /pendingPlaybackResumeAt|restoredLastPlaybackSnapshot/);
+  assert.match(playbackStart, /playbackSnapshotPendingResumeForSong\(song\)/);
+  assert.match(playbackStart, /notePlaybackSnapshotResumeConsumed\(\)/);
   assert.doesNotMatch(providerFallback, /pendingPlaybackResumeAt/);
   assert.match(playbackStart, /var requestedResumeAt = Math\.max\(0, Number\(opts\.resumeAt\) \|\| 0\)/);
   assert.match(playbackStart, /scheduleAudioResumePosition\(audio, requestedResumeAt, token\)/);

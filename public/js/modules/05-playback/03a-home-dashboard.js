@@ -909,6 +909,9 @@ function renderHomeDashboardQuickCards() {
     ? Math.max(0, Math.min(recentSnapshotQueue.length - 1, Number(recentSnapshot.currentIdx) || 0))
     : -1;
   var recentSnapshotSong = recentSnapshotIndex >= 0 ? recentSnapshotQueue[recentSnapshotIndex] : (recentSnapshot && recentSnapshot.current);
+  var recentSnapshotResumeSec = typeof playbackSnapshotResumeSeconds === 'function'
+    ? playbackSnapshotResumeSeconds(recentSnapshot)
+    : 0;
   var daily = homeDiscoverState && homeDiscoverState.songs && homeDiscoverState.songs[0] || null;
   var continueItem = recentSnapshotSong || recent;
   var recentHistory = listenStatsState && Array.isArray(listenStatsState.history) ? listenStatsState.history : [];
@@ -920,7 +923,10 @@ function renderHomeDashboardQuickCards() {
   var cards = [
     (function () {
       var rawTitle = continueItem && (continueItem.name || continueItem.title) || '';
-      var queueText = '队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · 从头播放';
+      var resumeText = recentSnapshotResumeSec > 0 && typeof formatProgramTime === 'function'
+        ? ('从 ' + formatProgramTime(recentSnapshotResumeSec) + ' 继续')
+        : '从头播放';
+      var queueText = '队列 ' + Math.max(1, recentSnapshotQueue.length) + ' 首 · ' + resumeText;
       var sub = recentSnapshotSong
         ? queueText
         : (continueItem ? (homeDashboardSubtitle(continueItem) || '继续最近一次有效聆听') : '完整听过一首歌后会出现在这里');

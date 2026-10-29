@@ -67,12 +67,16 @@ async function playHomeRecentQueue(record) {
     : null;
   if (typeof applyRestoredPlayMode === 'function') applyRestoredPlayMode(snapshot.playMode);
   else if (snapshot.playMode) playMode = snapshot.playMode;
+  pendingPlaybackResumeAt = typeof playbackSnapshotResumeSeconds === 'function'
+    ? playbackSnapshotResumeSeconds(snapshot)
+    : Math.max(0, Number(snapshot.currentTime) || 0);
   safeRenderQueuePanel('home-recent-queue', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('home-recent-queue', true);
   forcePlaybackControlsInteractive();
   var started = await playQueueAt(currentIdx, {
     manual: true,
-    skipShuffleOrder: true
+    skipShuffleOrder: true,
+    resumeFromSnapshot: true
   });
   if (started === true) {
     if (typeof dismissHomePage === 'function') dismissHomePage({ toast: false });

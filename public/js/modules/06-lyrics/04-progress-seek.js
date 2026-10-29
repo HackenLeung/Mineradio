@@ -161,6 +161,16 @@ function setProgressVisual(percent) {
   if (fill) fill.style.width = percent + '%';
   if (thumb) thumb.style.left = percent + '%';
 }
+// 恢复上次播放后，audio 还没建起来（或 seek 还没落地）时，底栏进度要沿用
+// 待恢复的位置。不这么做的话，200ms 的刷新循环会把刚恢复出来的位置抹回 0:00。
+function pendingRestoredProgressSeconds() {
+  if (audio && audio.src) {
+    var pendingSeek = Number(audio.__mineradioPendingResumeSeconds) || 0;
+    return pendingSeek > 0 ? pendingSeek : 0;
+  }
+  if (typeof pendingPlaybackResumeAt !== 'number' || !(pendingPlaybackResumeAt > 0)) return 0;
+  return Number(pendingPlaybackResumeAt) || 0;
+}
 function updatePlaybackProgressUi() {
   if (isProgressDragPreviewActive() && progressDragState.previewDuration > 0) {
     renderProgressPreview(getProgressPreviewClockSeconds(), progressDragState.previewDuration);
@@ -168,6 +178,8 @@ function updatePlaybackProgressUi() {
   }
   var durationSec = getPlaybackDurationSeconds();
   var currentSec = getPlaybackCurrentSeconds();
+  var restoredResumeSec = pendingRestoredProgressSeconds();
+  if (restoredResumeSec > currentSec) currentSec = restoredResumeSec;
   if (durationSec > 0 && currentSec > durationSec) currentSec = durationSec;
   setProgressVisual(durationSec > 0 ? (currentSec / durationSec * 100) : 0);
   var timeDisplay = document.getElementById('time-display');
@@ -197,6 +209,8 @@ function bindPlaybackProgressEvents(audioEl) {
   });
   audioEl.addEventListener('timeupdate', function () {
     if (typeof tickSmartCrossfade === 'function') tickSmartCrossfade();
+    // timeupdate 大约每 250ms 一次，节流到 5 秒写一次盘，崩溃退出最多丢几秒进度。
+    if (typeof schedulePlaybackProgressSnapshotSave === 'function') schedulePlaybackProgressSnapshotSave();
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
@@ -209,7 +223,8 @@ function bindPlaybackProgressEvents(audioEl) {
       ) return;
       if (name === 'ended' && audioEl === audio && playbackTransitionHasAudibleNextDeck()) return;
       syncPlaybackStateFromAudioEvent(name);
-      if (name === 'playing' || name === 'ended') saveLastPlaybackSnapshot(true, name);
+      // 暂停也落一次盘：之后直接关窗或断电，进度不会回退到 5 秒前那次。
+      if (name === 'playing' || name === 'pause' || name === 'ended') saveLastPlaybackSnapshot(true, name);
     });
   });
   ['error', 'stalled'].forEach(function (name) {
@@ -438,6 +453,8 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
   if (resumeAfterSeek) primeProgressSeekPlayback(media, mediaSrc, serial);
   renderProgressPreview(targetTime, durationSec);
   syncBeatMapPlaybackCursor(targetTime, true);
+  // 拖完就允许下一次进度写入，别让 5 秒节流把新位置挡在外面。
+  if (typeof notePlaybackProgressSeeked === 'function') notePlaybackProgressSeeked();
   waitForProgressSeekReady(media, targetTime, serial, 1800).then(function (ready) {
     if (serial !== progressDragState.commitSerial || !progressSeekMediaStillCurrent(media, mediaSrc)) return false;
     if (ready) return true;
