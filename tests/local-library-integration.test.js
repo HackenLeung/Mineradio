@@ -172,6 +172,11 @@ assert.match(indexHtml, /id="local-lyric-match-chip"/);
 assert.match(indexCss, /\.local-library-folder\{[^}]*grid-template-columns:44px minmax\(0,1fr\);[^}]*overflow:hidden/);
 assert.match(indexCss, /\.local-library-name,\.local-library-sub\{[^}]*display:block;[^}]*text-overflow:ellipsis/);
 assert.match(indexCss, /\.local-library-folder:hover \.folder-lyric-match-btn/);
+assert.match(upload, /class="local-library-song-actions"/);
+assert.match(upload, /queueLocalLibrarySongNext\(' \+ index \+ '\).*下一首播放/);
+assert.match(upload, /showLocalLibrarySongInFolder\(' \+ index \+ '\)/);
+assert.match(upload, /function showLocalLibrarySongInFolder\(index\)[\s\S]{0,200}showLocalSongInFolder\(song\)/);
+assert.match(indexCss, /\.local-library-song:hover \.local-library-song-actions[\s\S]{0,160}pointer-events:auto/);
 
 assert.match(coverLoading, /isInlineCoverSrc\(directUrl\)[\s\S]{0,120}applyCoverDataUrl\(directUrl, opts\)/);
 assert.match(providerFallback, /\[\|｜;；\]/);

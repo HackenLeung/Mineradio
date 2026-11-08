@@ -862,9 +862,13 @@ function renderLocalLibraryPanel() {
     list.innerHTML = matches.length ? matches.slice(0, 240).map(function (song) {
       var index = localLibrarySongs.indexOf(song);
       var cover = localLibraryCover(song);
-      return '<button class="local-library-song' + (currentLocalSong && currentLocalSong.localKey === song.localKey ? ' now' : '') + '" type="button" onclick="playLocalLibrarySong(' + index + ')">' +
+      return '<div class="local-library-song' + (currentLocalSong && currentLocalSong.localKey === song.localKey ? ' now' : '') + '" role="button" tabindex="0" onclick="playLocalLibrarySong(' + index + ')" onkeydown="if(event.target!==event.currentTarget)return;if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();playLocalLibrarySong(' + index + ')}">' +
         (cover ? '<img class="local-library-cover" src="' + escHtml(cover) + '" alt="">' : '<span class="local-library-cover"></span>') +
-        '<span class="local-library-meta"><span class="local-library-name">' + escHtml(song.name) + '</span><span class="local-library-sub">' + escHtml(song.artist || song.localFolderName) + '</span></span></button>';
+        '<span class="local-library-meta"><span class="local-library-name">' + escHtml(song.name) + '</span><span class="local-library-sub">' + escHtml(song.artist || song.localFolderName) + '</span></span>' +
+        '<span class="local-library-song-actions">' +
+        '<button type="button" class="local-library-song-action local-song-next" onclick="event.stopPropagation();queueLocalLibrarySongNext(' + index + ')" title="下一首播放" aria-label="下一首播放">下</button>' +
+        '<button type="button" class="local-library-song-action" onclick="event.stopPropagation();showLocalLibrarySongInFolder(' + index + ')" title="打开所在文件夹" aria-label="打开所在文件夹">' + (typeof folderLocationIconSvg === 'function' ? folderLocationIconSvg() : '') + '</button>' +
+        '</span></div>';
     }).join('') : '<div class="local-library-empty">没有匹配的本地音乐</div>';
     if (typeof renderMusicLibraryWallFromSources === 'function') renderMusicLibraryWallFromSources();
     return;
@@ -1091,6 +1095,19 @@ function rebindRestoredLocalQueueSongs() {
     var activeCover = typeof localLibraryCover === 'function' ? localLibraryCover(activeSong) : '';
     if (activeCover) loadCoverFromUrl(activeCover, { trackToken: trackSwitchToken, deferHeavy: false, delay: 0, timeout: 500, seamlessTrackSwitch: true });
   }
+}
+function localLibrarySongAt(index) {
+  var position = Number(index);
+  if (!isFinite(position) || position < 0) return null;
+  return localLibrarySongs[position] || null;
+}
+function queueLocalLibrarySongNext(index) {
+  var song = localLibrarySongAt(index);
+  if (song) queueDetailSongNext(song);
+}
+function showLocalLibrarySongInFolder(index) {
+  var song = localLibrarySongAt(index);
+  if (song && typeof showLocalSongInFolder === 'function') showLocalSongInFolder(song);
 }
 function playLocalLibrarySong(index) {
   var song = localLibrarySongs[Number(index) || 0];
