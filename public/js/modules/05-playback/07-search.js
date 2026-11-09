@@ -837,6 +837,10 @@ function searchVersionSignature(text) {
   ].forEach(function (entry) {
     if (entry[1].test(raw)) signatures.push(entry[0]);
   });
+  // Radio Edit 常和原版同名同歌手却差十几秒，必须单独算一个版本；但它只是
+  // Remix Edit 之类的修饰词，已经有别的版本标记时不再叠一个 edit，否则用户在
+  // 搜索词里明确写的 remix/live 会被判成不匹配。
+  if (!signatures.length && /\bradio\s*edit\b|\bedit\b|电台版|剪辑版/.test(raw)) signatures.push('edit');
   return signatures.sort().join('+');
 }
 function searchTokenCoverage(tokens, song) {

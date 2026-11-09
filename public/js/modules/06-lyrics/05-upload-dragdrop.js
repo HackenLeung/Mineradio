@@ -240,6 +240,30 @@ function normalizeLocalMatchCandidate(candidate, provider) {
   candidate.source = candidate.provider;
   return candidate;
 }
+// 时长是「同名同歌手但版本不同」的唯一客观证据：Radio Edit 和原版就差在这十几秒上，
+// 而歌名和歌手完全一样。两侧时长可能一边是秒一边是毫秒（本地歌 onloadedmetadata 写秒，
+// 服务端写毫秒），所以统一走播放层的归一函数。
+function localMatchDurationSeconds(value) {
+  if (typeof normalizePlaybackDurationSeconds === 'function') return normalizePlaybackDurationSeconds(value);
+  var raw = Number(value);
+  if (!isFinite(raw) || raw <= 0) return 0;
+  return raw > 1000 ? raw / 1000 : raw;
+}
+function localMatchDurationGapSeconds(song, candidate) {
+  var source = localMatchDurationSeconds(song && (song.duration || song.durationMs));
+  var target = localMatchDurationSeconds(candidate && (candidate.duration || candidate.durationMs || candidate.dt));
+  if (!source || !target) return 0;
+  // 归一函数把 >1000 当毫秒，所以二十多分钟的整段现场会被折成几十秒。两侧都短于
+  // 45 秒时基本是片段、铃声或已被误折的长音频，这个差值不可信，直接不参与判定。
+  if (source < 45 || target < 45) return 0;
+  return Math.abs(source - target);
+}
+// 版本判定的时长容忍度。固定 8 秒对三四分钟的歌够用，但十级分钟的现场专辑本身
+// 录制误差就大，按比例放宽才不会把正常匹配全部否掉。
+function localMatchDurationToleranceSeconds(song) {
+  var source = localMatchDurationSeconds(song && (song.duration || song.durationMs));
+  return Math.max(8, source * 0.04);
+}
 function localMetadataMatchScore(song, candidate, query) {
   var score = typeof scoreSongSearchResult === 'function' ? scoreSongSearchResult(candidate, query, 0) : 0;
   if (typeof isSameTitleArtist === 'function' && isSameTitleArtist(song, candidate)) score += 160;
@@ -248,11 +272,20 @@ function localMetadataMatchScore(song, candidate, query) {
   var sourceTitle = simpleSearchNorm(song && (song.name || song.title) || '');
   var candidateTitle = simpleSearchNorm(candidate && (candidate.name || candidate.title) || '');
   if (sourceTitle && candidateTitle === sourceTitle) score += 80;
+  // 时长差本身就是扣分项，不只看硬上限：两首都只是「差不多长」时，短的那个仍然排在前面。
+  score -= Math.min(120, localMatchDurationGapSeconds(song, candidate) * 5);
   return score;
 }
 function isAcceptableLocalLyricCandidate(song, candidate, score) {
   if (!candidate || Number(score) < 100) return false;
   return isCompatibleLocalOnlineMetadata(song, candidate);
+}
+// 时长门槛只在「这首歌真的要用这份歌词」时生效。封面匹配不依赖时间轴，多差几秒
+// 也照样能用，所以不能把门槛塞进 isAcceptableLocalLyricCandidate——封面搜索和
+// 手动选版本都会经过那里。
+function isSameLyricTimeline(candidateSong, song) {
+  var gap = localMatchDurationGapSeconds(song, candidateSong);
+  return !gap || gap <= localMatchDurationToleranceSeconds(song);
 }
 async function fetchLocalMetadataCandidates(song, query, provider) {
   provider = provider || (typeof normalizePlaybackProvider === 'function' ? normalizePlaybackProvider(activeAccountProvider) : 'netease');
@@ -696,7 +729,11 @@ async function localLyricCandidatesForProvider(song, provider, savedMetadata) {
     out.push(metadata);
   }
   if (savedMetadata && savedMetadata.provider === provider && savedMetadata.manualMatched === true) append(savedMetadata);
-  ranked.slice(0, 2).forEach(function (entry) { append(compactLocalOnlineMetadata(entry.candidate, provider)); });
+  var timelineMatched = ranked.filter(function (entry) {
+    // 这份歌词会真的贴到这首歌上，时间轴必须对得上。
+    return isSameLyricTimeline(entry.candidate, song);
+  });
+  timelineMatched.slice(0, 2).forEach(function (entry) { append(compactLocalOnlineMetadata(entry.candidate, provider)); });
   if (savedMetadata && savedMetadata.provider === provider) append(savedMetadata);
   return out;
 }
@@ -704,6 +741,9 @@ async function localLyricCandidatesForProvider(song, provider, savedMetadata) {
 async function resolveLocalOnlineLyricMatch(song, desktopApi) {
   var savedMetadata = normalizeStoredLocalOnlineMetadata(song.onlineMetadata) || storedLocalMetadataForSong(song);
   if (savedMetadata && (!isLocalLyricMatchProvider(savedMetadata.provider) || !isCompatibleLocalOnlineMetadata(song, savedMetadata))) savedMetadata = null;
+  // 之前版本存下来的匹配可能正是那条错位的歌词，它躺在缓存里会一直复发。
+  // 手动匹配是用户的显式选择，必须原样尊重。
+  if (savedMetadata && savedMetadata.manualMatched !== true && !isSameLyricTimeline(savedMetadata, song)) savedMetadata = null;
   if (savedMetadata) {
     var savedOnlineSong = localLyricOnlineSong(song, savedMetadata);
     var savedPayload = savedOnlineSong ? await readReusableLocalLyricCache(song, savedOnlineSong, desktopApi) : null;

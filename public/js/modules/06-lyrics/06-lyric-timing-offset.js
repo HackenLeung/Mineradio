@@ -1,12 +1,15 @@
 var LYRIC_TIMING_OFFSET_STORE_KEY = 'mineradio-lyric-timing-offsets-v1';
 var LYRIC_TIMING_OFFSET_LIMIT = 500;
+// ±5s 只够微调口型。不同剪辑版本的歌词整段能差到 20 秒以上，超过这个数就只能
+// 重新匹配歌词了，所以上限放到 60。
+var LYRIC_TIMING_OFFSET_MAX_SECONDS = 60;
 var lyricTimingOffsetMap = readLyricTimingOffsetMap();
 var lyricTimingPopoverCloseTimer = null;
 
 function normalizeLyricTimingOffsetSeconds(value) {
   var raw = Number(value);
   if (!isFinite(raw)) raw = 0;
-  return Math.round(clampRange(raw, -5, 5) * 10) / 10;
+  return Math.round(clampRange(raw, -LYRIC_TIMING_OFFSET_MAX_SECONDS, LYRIC_TIMING_OFFSET_MAX_SECONDS) * 10) / 10;
 }
 
 function lyricTimingOffsetEntryValue(entry) {

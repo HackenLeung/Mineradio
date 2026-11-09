@@ -151,12 +151,25 @@ assert.match(upload, /while \(true\)[\s\S]*availableAt <= now[\s\S]*await localL
 assert.match(upload, /function isLocalLyricMatchProvider\(/);
 assert.match(upload, /function localLyricMatchProviderOrder\(/);
 assert.match(upload, /function isAcceptableLocalLyricCandidate\(/);
+// 同名同歌手的不同剪辑版本只能靠时长区分，这里的门槛必须真的在挡 Radio Edit。
+assert.match(upload, /function localMatchDurationGapSeconds\(song, candidate\)/);
+assert.match(upload, /function localMatchDurationToleranceSeconds\(song\)/);
+assert.match(upload, /if \(!source \|\| !target\) return 0;[\s\S]{0,400}return Math\.abs\(source - target\);/,
+  'a one-sided or unusable duration must be skipped instead of counted as a perfect match');
+assert.match(upload, /score -= Math\.min\(120, localMatchDurationGapSeconds\(song, candidate\) \* 5\);/,
+  'a duration gap must lose points, not only fail the hard ceiling');
+assert.doesNotMatch(upload, /function isAcceptableLocalLyricCandidate[\s\S]{0,300}localMatchDurationGapSeconds/,
+  'the ceiling must stay out of the shared gate: cover matching does not depend on the timeline');
+assert.match(upload, /var timelineMatched = ranked\.filter\(function \(entry\) \{[\s\S]{0,200}isSameLyricTimeline\(entry\.candidate, song\)/,
+  'lyric candidates must be filtered before slicing, or both top entries disappearing leaves nothing');
 assert.match(upload, /function resolveLocalOnlineLyricMatch\(/);
 assert.match(upload, /LOCAL_ONLINE_LYRIC_EMPTY/);
 assert.match(upload, /!localFolderHasUsableLyricPayload\(song, response\)/);
 assert.match(upload, /savedPayload = savedOnlineSong \? await readReusableLocalLyricCache/);
 assert.match(upload, /provider: savedMetadata\.provider, metadata: savedMetadata, payload: savedPayload/);
-assert.match(upload, /ranked\.slice\(0, 2\)/);
+assert.match(upload, /timelineMatched\.slice\(0, 2\)/);
+assert.match(upload, /if \(savedMetadata && savedMetadata\.manualMatched !== true && !isSameLyricTimeline\(savedMetadata, song\)\) savedMetadata = null;/,
+  'a wrongly matched lyric saved by an older build must not keep coming back from cache, but a manual match must survive');
 assert.doesNotMatch(upload, /providers = \[savedMetadata\.provider\]/);
 assert.match(upload, /syncLocalMetadata\(song, metadata\);[\s\S]{0,180}return \{ reused: false, source: 'remote'/);
 assert.match(upload, /return await resolveLocalOnlineLyricMatch\(song, desktopApi\)/);
@@ -299,5 +312,132 @@ function testUntaggedLocalFileMatching() {
 }
 
 testUntaggedLocalFileMatching();
+
+// 时长门槛只有语义正确才有意义，静态正则证明不了；这里用真实那首歌的数字跑一遍。
+function testLocalMatchDurationGate() {
+  const sandbox = { Number, Math, isFinite };
+  function normalizePlaybackDurationSeconds(value) {
+    const raw = Number(value);
+    if (!isFinite(raw) || raw <= 0) return 0;
+    return raw > 1000 ? raw / 1000 : raw;
+  }
+  sandbox.normalizePlaybackDurationSeconds = normalizePlaybackDurationSeconds;
+  vm.runInNewContext([
+    grabFunction(upload, 'localMatchDurationSeconds'),
+    grabFunction(upload, 'localMatchDurationGapSeconds'),
+    grabFunction(upload, 'localMatchDurationToleranceSeconds'),
+    grabFunction(upload, 'isSameLyricTimeline'),
+    'this.gap = localMatchDurationGapSeconds; this.tolerance = localMatchDurationToleranceSeconds; this.sameTimeline = isSameLyricTimeline;'
+  ].join('\n'), sandbox, { filename: 'local-match-duration' });
+  const song = { duration: 256.944, name: '被风吹过的夏天', artist: '金莎/林俊杰' };
+  const candidate = durationMs => ({ duration: durationMs, name: song.name, artist: song.artist });
+
+  assert.ok(Math.abs(sandbox.tolerance(song) - 10.28) < 0.5, 'tolerance must scale with song length');
+  assert.equal(sandbox.sameTimeline(candidate(272000), song), false,
+    'the 272s Radio Edit must not be used as the lyric timeline for the 256.9s album version');
+  assert.equal(sandbox.sameTimeline(candidate(256944), song), true,
+    'the album version itself must stay inside the tolerance');
+  assert.equal(sandbox.gap(song, { name: song.name, artist: song.artist }), 0,
+    'a candidate without duration must not be penalised');
+  assert.equal(sandbox.gap({ duration: 0 }, candidate(272000)), 0,
+    'a local file whose duration is not read yet must not be penalised');
+  assert.equal(sandbox.sameTimeline(candidate(272000), { duration: 0 }), true,
+    'a local file whose duration is not read yet must still match a lyric candidate');
+  // 秒/毫秒混用是真实存在的：本地歌 onloadedmetadata 写秒，服务端写毫秒。
+  assert.ok(Math.abs(sandbox.gap({ duration: 256.944 }, candidate(272000)) - sandbox.gap({ duration: 256944 }, candidate(272000))) < 0.001,
+    'seconds and milliseconds must be normalised to the same value');
+}
+
+testLocalMatchDurationGate();
+
+// 时间轴校准只该处理「歌词排到音频结束之后」这一种可证明错误的情况。
+function testLyricTimelineCalibration() {
+  const sandbox = { Number, Math, isFinite };
+  let playingSong = { id: 'playing', duration: 256.944 };
+  sandbox.currentLyricSong = () => playingSong;
+  sandbox.lyricSongKey = song => (song ? 'song:' + song.id : '');
+  sandbox.audio = { duration: 256.944 };
+  sandbox.playbackDurationFromSong = song => {
+    const raw = Number(song && song.duration) || 0;
+    return raw > 1000 ? raw / 1000 : raw;
+  };
+  vm.runInNewContext([
+    // 常量从源码取，避免测试里再抄一份数字后与实现悄悄分叉。
+    (lyrics.match(/var LYRIC_TIMELINE_END_GUARD_SECONDS = [\d.]+;/) || [''])[0],
+    (lyrics.match(/var LYRIC_TIMELINE_MIN_SCALE = [\d.]+;/) || [''])[0],
+    grabFunction(lyrics, 'lyricTimelineAudioDuration'),
+    grabFunction(lyrics, 'lyricTimelineEndSeconds'),
+    grabFunction(lyrics, 'scaleLyricTimelineSeconds'),
+    grabFunction(lyrics, 'scaleLyricLineTimeline'),
+    grabFunction(lyrics, 'calibrateLyricTimelineAgainstAudio'),
+    grabFunction(lyrics, 'finalizeLyricLineDurations'),
+    'this.calibrate = calibrateLyricTimelineAgainstAudio;'
+  ].join('\n'), sandbox, { filename: 'lyric-timeline' });
+
+  function sheet(lastStart, lastDuration) {
+    const lines = [];
+    for (let index = 0; index < 8; index += 1) {
+      lines.push({ t: index * 30, duration: 4, text: 'L' + index, words: [{ t: index * 30, d: 0.5 }] });
+    }
+    const last = lines[lines.length - 1];
+    last.t = lastStart;
+    last.duration = lastDuration;
+    last.words[0].t = lastStart;
+    return lines;
+  }
+  function endOf(lines) {
+    return lines.reduce((max, line) => Math.max(max, line.t + line.duration), 0);
+  }
+
+  const overflowing = sheet(268, 4);
+  const overflowResult = sandbox.calibrate(playingSong, overflowing, []);
+  assert.equal(overflowResult.corrected, true, 'a lyric sheet ending after the audio must be compressed');
+  assert.ok(endOf(overflowing) <= 256.944, 'the compressed sheet must fit inside the audio');
+  assert.ok(overflowing[overflowing.length - 1].words[0].t < 268, 'word-level karaoke times must follow the line times');
+
+  const fitting = sheet(242.84, 4);
+  const fittingResult = sandbox.calibrate(playingSong, fitting, []);
+  assert.equal(fittingResult.corrected, false,
+    'a sheet that merely ends early is normal (instrumental outro) and must not be rescaled');
+
+  const huge = sheet(580, 6);
+  assert.equal(sandbox.calibrate({ id: 'playing', duration: 200 }, huge, []).corrected, false,
+    'a sheet that would need to shrink past the floor belongs to another song and must be left alone');
+
+  const fallbackLines = sheet(268, 4);
+  fallbackLines[0].fallback = true;
+  assert.equal(sandbox.calibrate(playingSong, fallbackLines, []).corrected, false,
+    'placeholder lyrics must never be rescaled');
+
+  const prefetched = sheet(268, 4);
+  playingSong = { id: 'other', duration: 180 };
+  sandbox.audio = { duration: 180 };
+  assert.equal(sandbox.calibrate({ id: 'played', duration: 180 }, prefetched, []).corrected, true,
+    'a non-current song must fall back to its own duration instead of reading the playing audio');
+}
+
+testLyricTimelineCalibration();
+
+// Radio Edit 和原版同名同歌手，只有版本签名能把两者分开。
+function testSearchVersionSignature() {
+  const search = read('public/js/modules/05-playback/07-search.js');
+  const sandbox = {};
+  vm.runInNewContext([
+    grabFunction(search, 'searchVersionSignature'),
+    'this.signature = searchVersionSignature;'
+  ].join('\n'), sandbox, { filename: 'search-version' });
+  const signature = text => sandbox.signature(text);
+
+  assert.equal(signature('被风吹过的夏天'), '');
+  assert.equal(signature('被风吹过的夏天 (Radio Edit)'), 'edit');
+  assert.equal(signature('某某 电台版'), 'edit');
+  assert.notEqual(signature('被风吹过的夏天 (Radio Edit)'), signature('被风吹过的夏天'),
+    'a Radio Edit must not share the original version signature');
+  assert.equal(signature('晴天 live'), 'live', 'existing markers must keep working');
+  assert.equal(signature('晴天 remix edit'), 'remix',
+    'an explicit remix query must keep matching after edit is recognised');
+}
+
+testSearchVersionSignature();
 
 console.log('OK local-library-integration');

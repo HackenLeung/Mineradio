@@ -351,12 +351,20 @@ function applyFetchedLyricResponse(song, token, response, options) {
   cancelPendingTrackFallbackLyrics();
   var state = parseLyricResponseToOriginalState(song, mergedResponse);
   setOriginalLyricsState(state.lines, state.hasNativeKaraoke, state.timingSource, state.translationLines, state.translationSource);
+  if (state.timelineCorrected) {
+    notifyLyricTimelineCorrected(song, state.timelineOverflowSeconds);
+  }
   applyPreferredLyricsForCurrent(true);
   scheduleNeteaseLyricTranslationFallback(song, token, state);
   if (state.usableLyric && options.persist !== false) writePersistentLyricCache(song, mergedResponse);
   return state;
 }
-
+function notifyLyricTimelineCorrected(song, overflowSeconds) {
+  if (typeof showToast !== 'function') return;
+  var seconds = Math.round(Number(overflowSeconds) || 0);
+  showToast('歌词和音频版本不一致，已按音频时长校正时间轴'
+    + (seconds > 0 ? '（原本超出 ' + seconds + ' 秒）' : ''));
+}
 function refreshPersistentLyricCache(song) {
   apiJson(lyricEndpointForSong(song)).then(function (response) {
     var mergedResponse = mergeInlineLyricResponseForSong(song, response || {});
@@ -499,6 +507,70 @@ function withLyricFallbackForSong(song, lines) {
   var text = lyricFallbackTextForSong(song);
   return text ? [{ t: 0, text: text, duration: 9999, charCount: Math.max(1, text.length), fallback: true }] : [];
 }
+// 歌词和音频取自不同剪辑版本时整段会错开。但「按比例压缩」并不能修好这件事：
+// 实测同名的 272s Radio Edit 与 256.9s 专辑版，整段固定差 20s，按比例压缩只能
+// 把误差降到 13s，统一平移只能降到 6s，两者仍然明显错位。所以这里不做猜谜式缩放，
+// 只处理唯一可证明错误的情况：某行歌词被排到了音频结束之后（那张表根本不可能属于
+// 这段音频），此时按音频长度把时间轴压回去，压得过头就放弃。
+var LYRIC_TIMELINE_END_GUARD_SECONDS = 0.6;
+// 压缩比的地板：最多压到原长的 0.6 倍。正常的不同剪辑版本也就差一两成；要压掉
+// 四成以上，那更像是匹配到了完全另一首歌，此时保留原表比缩放更安全。
+var LYRIC_TIMELINE_MIN_SCALE = 0.6;
+function lyricTimelineAudioDuration(song) {
+  var current = typeof currentLyricSong === 'function' ? currentLyricSong() : null;
+  var sameSong = !!(song && current && lyricSongKey(song) === lyricSongKey(current));
+  // 预取下一首时 audio 还停在上一首，读它会把结论算错。
+  if (sameSong && typeof audio !== 'undefined' && audio && isFinite(audio.duration) && audio.duration > 0) return audio.duration;
+  return typeof playbackDurationFromSong === 'function' ? playbackDurationFromSong(song) : 0;
+}
+function lyricTimelineEndSeconds(lines) {
+  var end = 0;
+  (Array.isArray(lines) ? lines : []).forEach(function (line) {
+    var lineEnd = (Number(line && line.t) || 0) + (Number(line && line.duration) || 0);
+    if (lineEnd > end) end = lineEnd;
+  });
+  return end;
+}
+function scaleLyricTimelineSeconds(value, scale) {
+  var raw = Number(value);
+  // 缺失的时间要原样留着，让 finalizeLyricLineDurations 继续按相邻行推断；
+  // 归零会被当成「真的是第 0 秒」。
+  if (!isFinite(raw)) return value;
+  return raw * scale;
+}
+function scaleLyricLineTimeline(line, scale) {
+  if (!line || typeof line !== 'object') return line;
+  line.t = scaleLyricTimelineSeconds(line.t, scale);
+  line.duration = scaleLyricTimelineSeconds(line.duration, scale);
+  if (line.translationTime != null) line.translationTime = scaleLyricTimelineSeconds(line.translationTime, scale);
+  (Array.isArray(line.words) ? line.words : []).forEach(function (word) {
+    if (!word) return;
+    word.t = scaleLyricTimelineSeconds(word.t, scale);
+    word.d = scaleLyricTimelineSeconds(word.d, scale);
+  });
+  return line;
+}
+function calibrateLyricTimelineAgainstAudio(song, lines, translationLines) {
+  var result = { audioDuration: 0, sheetEnd: 0, overflowSeconds: 0, scale: 1, corrected: false };
+  var items = Array.isArray(lines) ? lines : [];
+  if (items.length < 4 || items.some(function (line) { return line && line.fallback; })) return result;
+  var duration = lyricTimelineAudioDuration(song);
+  if (!(duration > 30)) return result;
+  var sheetEnd = lyricTimelineEndSeconds(items);
+  if (!(sheetEnd > duration + LYRIC_TIMELINE_END_GUARD_SECONDS)) return result;
+  result.audioDuration = duration;
+  result.sheetEnd = sheetEnd;
+  result.overflowSeconds = sheetEnd - duration;
+  var scale = (duration - LYRIC_TIMELINE_END_GUARD_SECONDS) / sheetEnd;
+  // 要压掉一大半说明这不是「同一首歌的另一个剪辑」而是完全另一首歌，宁可不动。
+  if (!(scale >= LYRIC_TIMELINE_MIN_SCALE && scale < 1)) return result;
+  items.forEach(function (line) { scaleLyricLineTimeline(line, scale); });
+  (Array.isArray(translationLines) ? translationLines : []).forEach(function (line) { scaleLyricLineTimeline(line, scale); });
+  finalizeLyricLineDurations(items);
+  result.scale = scale;
+  result.corrected = true;
+  return result;
+}
 function parseLyricResponseToOriginalState(song, response) {
   response = response || {};
   var nativeLines = parseYrcText(response.yrc || '');
@@ -510,6 +582,7 @@ function parseLyricResponseToOriginalState(song, response) {
   var primaryLines = nativeLines.length ? nativeLines : lrcLines;
   var lines = withLyricFallbackForSong(song, attachLyricTranslations(primaryLines, translationLines));
   if (lines.length && lines[0].fallback) timingSource = 'fallback';
+  var timeline = calibrateLyricTimelineAgainstAudio(song, lines, translationLines);
   return {
     lines: cloneLyricLines(lines),
     hasNativeKaraoke: hasNativeKaraoke,
@@ -517,6 +590,8 @@ function parseLyricResponseToOriginalState(song, response) {
     translationLines: cloneLyricLines(translationLines),
     translationSource: translationPayload.source,
     usableLyric: hasUsableLyricLines(lines),
+    timelineCorrected: timeline.corrected,
+    timelineOverflowSeconds: timeline.overflowSeconds,
     cachedAt: Date.now()
   };
 }

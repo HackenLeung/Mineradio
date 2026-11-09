@@ -7092,7 +7092,7 @@ body.home-controls-locked #bottom-bar {
   left: 50%;
   bottom: 46px;
   transform: translateX(-50%) translateY(8px);
-  width: 226px;
+  width: 268px;
   padding: 10px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, .10);
@@ -7158,7 +7158,7 @@ body:not(.controls-visible) .lyric-timing-control::before,
 
 .lyric-timing-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px
 }
 
