@@ -17,6 +17,10 @@ var RENDER_INTERACTION_FPS = 0;
 var RENDER_INTERACTION_LARGE_FPS = 90;
 var RENDER_INTERACTION_HUGE_FPS = 75;
 var RENDER_INTERACTION_HOLD_MS = 900;
+// 高刷屏（144/165/179Hz）在 vsync 下会按刷新率整帧渲染，音乐播放器没必要。
+// 失焦时按 60fps 走，eco 画质下 vsync 再封顶 90fps。
+var RENDER_UNFOCUSED_FPS = 60;
+var RENDER_ECO_VSYNC_MAX_FPS = 60;
 var renderInteractionBoostUntil = 0;
 var renderInteractionReason = '';
 var renderRefreshState = {

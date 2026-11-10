@@ -668,7 +668,8 @@ async function fetchLocalSongLyric(song, token) {
   // A manual re-match is an explicit correction, so it outranks the sidecar /
   // embedded lyrics baked into the file — those are often what was wrong.
   var inlineText = hasManualLocalLyricMatch(song) ? '' : String(song.localLyricText || song.embeddedLyrics || '');
-  if (inlineText.trim()) {
+  // 内嵌内容只有作词/作曲/编曲名单时不算歌词，继续走在线匹配。
+  if (inlineText.trim() && !(typeof isCreditOnlyLocalLyricText === 'function' && isCreditOnlyLocalLyricText(inlineText))) {
     return applyFetchedLyricResponse(song, token, { lyric: inlineText }, { persist: false });
   }
   if (typeof resolveLocalOnlineLyricMatch === 'function') {

@@ -81,9 +81,34 @@ function resolveAdaptiveRenderCadence(now, mode) {
   var context = currentRenderAdaptiveContext(now);
   return selectAdaptiveRenderCadence(context.kind, context.tier);
 }
+function mainWindowVisibleButUnfocused() {
+  if (typeof desktopRuntimeState !== 'undefined' && desktopRuntimeState && desktopRuntimeState.desktop) {
+    if (desktopRuntimeState.minimized || desktopRuntimeState.visible === false) return false;
+    if (desktopRuntimeState.fullscreen) return false;
+    return desktopRuntimeState.focused === false;
+  }
+  if (typeof document === 'undefined' || typeof document.hasFocus !== 'function') return false;
+  if (document.visibilityState && document.visibilityState !== 'visible') return false;
+  return !document.hasFocus();
+}
+function mainWindowWantsFullBackgroundRender() {
+  if (fx && fx.wallpaperMode === true) return true;
+  return typeof isLiveBackgroundKeepMode === 'function' && isLiveBackgroundKeepMode();
+}
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
+  if (mode === 'vsync') {
+    // eco 画质下给高刷屏一个上限，179Hz 不再整帧渲染。
+    var quality = (typeof normalizePerformanceQuality === 'function')
+      ? normalizePerformanceQuality(fx && fx.performanceQuality)
+      : '';
+    var displayHz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
+    // 窗口可见但已经切到别的应用时，没必要继续按屏幕刷新率跑满帧。
+    if (mainWindowVisibleButUnfocused() && !mainWindowWantsFullBackgroundRender()) return RENDER_UNFOCUSED_FPS;
+    if (quality === 'eco' && displayHz > 120) return Math.min(RENDER_ECO_VSYNC_MAX_FPS, displayHz);
+    return 0;
+  }
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) return fixedFps;
   if (RENDER_VISIBLE_VSYNC) return 0;

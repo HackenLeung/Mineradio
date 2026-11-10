@@ -833,7 +833,14 @@ function searchVersionSignature(text) {
     ['cover', /\bcover\b|翻唱|致敬版/],
     ['demo', /\bdemo\b|试听版/],
     ['sped', /sped\s*up|加速版|变速版/],
-    ['slowed', /slowed|慢速版/]
+    ['slowed', /slowed|慢速版/],
+    // 同名同曲的日/韩/中/英版本时长几乎一样，光靠时长分不出来；
+    // 只在明确写了 ver./版 时才算签名，避免 "Englishman in New York" 这类标题误伤。
+    ['japanese', /\bjapanese\s*(?:ver\.?|version)\b|日语版?|日文版?|日本語/],
+    ['korean', /\bkorean\s*(?:ver\.?|version)\b|韩语版?|韩文版?/],
+    ['chinese', /\b(?:chinese|mandarin)\s*(?:ver\.?|version)\b|中文版?|国语版?|普通话/],
+    ['english', /\benglish\s*(?:ver\.?|version)\b|英文版?|英语版?/],
+    ['cantonese', /\bcantonese\s*(?:ver\.?|version)\b|粤语版?/]
   ].forEach(function (entry) {
     if (entry[1].test(raw)) signatures.push(entry[0]);
   });

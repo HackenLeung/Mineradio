@@ -94,6 +94,25 @@ function readLocalMetadataMap() {
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (e) { return {}; }
 }
+// 不少 FLAC/MP3 的「内嵌歌词」其实只有作词/作曲/编曲三行制作名单。
+// 这种文本非空但不是歌词，不能挡住后面的在线匹配。
+function isCreditOnlyLocalLyricText(text) {
+  var raw = String(text || '');
+  if (!raw.trim()) return true;
+  var creditPattern = /^\s*(作词|作曲|编曲|词|曲|制作人|监制|混音|录音|吉他|贝斯|鼓|和声|出品|发行|OP|SP|lyrics?|composer|arranger|producer|mixed|recorded|written|composed)\s*[:：]/i;
+  var contentLines = 0;
+  raw.split(/\r?\n/).forEach(function (line) {
+    var textLine = String(line || '')
+      .replace(/\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '')
+      .replace(/\[[a-z]+:[^\]]*\]/gi, '')
+      .trim();
+    if (!textLine) return;
+    if (creditPattern.test(textLine)) return;
+    if (/^[\s\-–—:：/\\|]+$/.test(textLine)) return;
+    contentLines += 1;
+  });
+  return contentLines === 0;
+}
 var localMetadataMap = readLocalMetadataMap();
 var localMetadataSaveTimer = 0;
 var localMetadataHydrationPromise = null;
@@ -277,6 +296,14 @@ function localMetadataMatchScore(song, candidate, query) {
   var sourceTitle = simpleSearchNorm(song && (song.name || song.title) || '');
   var candidateTitle = simpleSearchNorm(candidate && (candidate.name || candidate.title) || '');
   if (sourceTitle && candidateTitle === sourceTitle) score += 80;
+  // 同名同歌手的不同语种版本时长几乎一致，专辑是第二个能区分它们的证据。
+  var sourceAlbum = simpleSearchNorm(song && (song.album || '') || '');
+  var candidateAlbum = simpleSearchNorm(candidate && (candidate.album || '') || '');
+  if (sourceAlbum.length >= 2 && candidateAlbum.length >= 2) {
+    if (sourceAlbum === candidateAlbum) score += 60;
+    else if (sourceAlbum.length >= 4 && candidateAlbum.length >= 4
+      && (sourceAlbum.indexOf(candidateAlbum) >= 0 || candidateAlbum.indexOf(sourceAlbum) >= 0)) score += 20;
+  }
   // 时长差本身就是扣分项，不只看硬上限：两首都只是「差不多长」时，短的那个仍然排在前面。
   score -= Math.min(120, localMatchDurationGapSeconds(song, candidate) * 5);
   return score;
@@ -609,7 +636,7 @@ function noteLocalCoverSearchMiss(song) {
 
 function hasReusableLocalLyricMatch(song) {
   var inlineLyric = String(song && (song.localLyricText || song.embeddedLyrics) || '').trim();
-  var inlineIsEnough = inlineLyric.length >= 8;
+  var inlineIsEnough = inlineLyric.length >= 8 && !isCreditOnlyLocalLyricText(inlineLyric);
   if (inlineIsEnough && (localLibraryCover(song) || localCoverSearchMissedRecently(song))) return true;
   var metadata = normalizeStoredLocalOnlineMetadata(song && song.onlineMetadata) || storedLocalMetadataForSong(song);
   if (!hasReusableLocalOnlineMetadata(metadata) || !isCompatibleLocalOnlineMetadata(song, metadata)) return false;
@@ -827,7 +854,7 @@ async function matchLocalSongLyricsWithRetry(song, desktopApi) {
         }
       }
       var inlineLyric = String(song && (song.localLyricText || song.embeddedLyrics) || '').trim();
-      if (inlineLyric.length >= 8) {
+      if (inlineLyric.length >= 8 && !isCreditOnlyLocalLyricText(inlineLyric)) {
         if (localLibraryCover(song)) return { reused: true, source: 'inline' };
         if (localCoverSearchMissedRecently(song)) return { reused: true, source: 'inline' };
         var coverMetadata = await resolveLocalOnlineMetadata(song, null, { requireCover: true, throttle: true });
