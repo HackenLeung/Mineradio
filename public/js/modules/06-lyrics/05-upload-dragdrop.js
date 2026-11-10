@@ -249,6 +249,11 @@ function localMatchDurationSeconds(value) {
   if (!isFinite(raw) || raw <= 0) return 0;
   return raw > 1000 ? raw / 1000 : raw;
 }
+function localMatchDurationComparable(song, candidate) {
+  var source = localMatchDurationSeconds(song && (song.duration || song.durationMs));
+  var target = localMatchDurationSeconds(candidate && (candidate.duration || candidate.durationMs || candidate.dt));
+  return source >= 45 && target >= 45;
+}
 function localMatchDurationGapSeconds(song, candidate) {
   var source = localMatchDurationSeconds(song && (song.duration || song.durationMs));
   var target = localMatchDurationSeconds(candidate && (candidate.duration || candidate.durationMs || candidate.dt));
@@ -732,6 +737,18 @@ async function localLyricCandidatesForProvider(song, provider, savedMetadata) {
   var timelineMatched = ranked.filter(function (entry) {
     // 这份歌词会真的贴到这首歌上，时间轴必须对得上。
     return isSameLyricTimeline(entry.candidate, song);
+  }).sort(function (left, right) {
+    // 时长最接近的那版歌词，整段偏移最小。分数里虽然扣了时长差，但同名同歌手
+    // 的加分足以盖过去，所以这里先按时长排，再按分数排。
+    var leftKnown = localMatchDurationComparable(song, left.candidate);
+    var rightKnown = localMatchDurationComparable(song, right.candidate);
+    if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+    if (leftKnown) {
+      var leftGap = localMatchDurationGapSeconds(song, left.candidate);
+      var rightGap = localMatchDurationGapSeconds(song, right.candidate);
+      if (leftGap !== rightGap) return leftGap - rightGap;
+    }
+    return right.score - left.score;
   });
   timelineMatched.slice(0, 2).forEach(function (entry) { append(compactLocalOnlineMetadata(entry.candidate, provider)); });
   if (savedMetadata && savedMetadata.provider === provider) append(savedMetadata);

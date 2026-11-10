@@ -807,6 +807,25 @@ function closeLocalMatchModal() {
   localMatchModalState.candidates = [];
   closeGsapModal(document.getElementById('local-match-modal'));
 }
+function formatLocalMatchDuration(seconds) {
+  var sec = Math.max(0, Math.round(Number(seconds) || 0));
+  var m = Math.floor(sec / 60);
+  var s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+// 同名不同剪辑在候选里长得一模一样，时长是唯一能看见的客观差别；
+// 差 2 秒以上基本就是另一个版本，歌词会整段错位。
+var LOCAL_MATCH_VISIBLE_GAP_SECONDS = 1.5;
+function localMatchCandidateDurationInfo(song, candidate) {
+  var localSec = typeof localMatchDurationSeconds === 'function'
+    ? localMatchDurationSeconds(song && (song.duration || song.durationMs))
+    : 0;
+  var candidateSec = typeof localMatchDurationSeconds === 'function'
+    ? localMatchDurationSeconds(candidate && (candidate.duration || candidate.durationMs || candidate.dt))
+    : 0;
+  if (!(localSec >= 45) || !(candidateSec >= 45)) return null;
+  return { localSec: localSec, candidateSec: candidateSec, gapSec: candidateSec - localSec };
+}
 async function searchLocalMatchCandidates() {
   var song = localMatchModalState.song;
   var session = localMatchModalState.session;
@@ -841,10 +860,21 @@ async function searchLocalMatchCandidates() {
       var cover = songCoverSrc(candidate, 88);
       var score = Number(candidate._localMatchScore);
       var scoreLabel = isFinite(score) ? ('匹配 ' + Math.round(score)) : '候选';
+      var durationInfo = localMatchCandidateDurationInfo(song, candidate);
+      var durationHtml = '';
+      if (durationInfo) {
+        var gapAbs = Math.abs(durationInfo.gapSec);
+        var gapText = gapAbs >= LOCAL_MATCH_VISIBLE_GAP_SECONDS
+          ? (' · 比本曲' + (durationInfo.gapSec > 0 ? '长 ' : '短 ') + gapAbs.toFixed(1) + ' 秒')
+          : '';
+        durationHtml = '<small class="local-match-item-duration' + (gapText ? ' is-off' : '') + '">' +
+          formatLocalMatchDuration(durationInfo.candidateSec) + gapText + '</small>';
+      }
       return '<button type="button" class="local-match-item" onclick="applyLocalMatchCandidate(' + index + ')">' +
         (cover ? '<img class="local-match-item-cover" src="' + escHtml(coverUrlWithSize(cover, 88)) + '" alt="" loading="lazy">' : '<span class="local-match-item-cover local-match-cover"></span>') +
         '<span class="local-match-item-main"><strong class="local-match-item-title">' + escHtml(candidate.name || candidate.title || '') + '</strong>' +
-        '<small class="local-match-item-meta">' + escHtml((candidate.artist || '未知歌手') + (candidate.album ? (' · ' + candidate.album) : '')) + '</small></span>' +
+        '<small class="local-match-item-meta">' + escHtml((candidate.artist || '未知歌手') + (candidate.album ? (' · ' + candidate.album) : '')) + '</small>' +
+        durationHtml + '</span>' +
         '<span class="local-match-item-tail"><small>' + escHtml(scoreLabel) + '</small><b>使用</b></span></button>';
     }).join('') : '<div class="detail-empty">换一个关键词再试</div>';
   } catch (error) {
@@ -991,9 +1021,13 @@ async function applyLocalMatchCandidate(index) {
   // 封面为什么没变——否则匹配看起来完全没生效。
   var customCoverWins = typeof getCustomCoverForSong === 'function' && !!getCustomCoverForSong(song);
   var matchedLabel = metadata.name || song.name || '在线歌曲';
+  var durationInfo = localMatchCandidateDurationInfo(song, metadata);
+  var durationHint = durationInfo && Math.abs(durationInfo.gapSec) >= LOCAL_MATCH_VISIBLE_GAP_SECONDS
+    ? ('，与本曲时长差 ' + Math.abs(durationInfo.gapSec).toFixed(1) + ' 秒，可用歌词校准对齐')
+    : '';
   showToast(customCoverWins
-    ? '已匹配歌词: ' + matchedLabel + '（自定义封面仍在生效，需先取消才会换封面）'
-    : '已匹配歌词和封面: ' + matchedLabel);
+    ? '已匹配歌词: ' + matchedLabel + '（自定义封面仍在生效，需先取消才会换封面）' + durationHint
+    : '已匹配歌词和封面: ' + matchedLabel + durationHint);
 }
 function openTrackDetailModal(type, songOverride) {
   var song = songOverride || currentCoverSong();
