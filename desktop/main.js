@@ -2550,13 +2550,25 @@ async function enrichLocalLibraryEntryMetadata(item, force = false) {
   return item;
 }
 
-function localLibraryEntryFromPath(filePath, rootPath) {
+function localLibraryEntryNameKey(name) {
+  const text = String(name || '');
+  return process.platform === 'win32' ? text.toLowerCase() : text;
+}
+
+function localLibraryEntryFromPath(filePath, rootPath, options = {}) {
   const absolutePath = path.resolve(String(filePath || ''));
   const extension = path.extname(absolutePath).toLowerCase();
   if (!LOCAL_LIBRARY_AUDIO_EXTS.has(extension)) return null;
   let stat;
   try { stat = fs.statSync(absolutePath); } catch (_) { return null; }
   if (!stat.isFile()) return null;
+  // 扫描时目录已经 readdir 过一遍，侧车文件是否存在直接查名字集合即可。
+  // 早先每个文件都要为封面/歌词做二十多次 existsSync，一万首就是二十五万次
+  // 同步系统调用，启动后能占满一个核好几秒。
+  const directoryEntryNames = options.directoryEntryNames instanceof Set ? options.directoryEntryNames : null;
+  const sidecarExists = (candidate) => directoryEntryNames
+    ? directoryEntryNames.has(localLibraryEntryNameKey(path.basename(candidate)))
+    : fs.existsSync(candidate);
   const root = rootPath ? path.resolve(rootPath) : path.dirname(absolutePath);
   const relativePath = path.relative(root, absolutePath) || path.basename(absolutePath);
   const directory = path.dirname(absolutePath);
@@ -2564,13 +2576,13 @@ function localLibraryEntryFromPath(filePath, rootPath) {
   let sidecarCoverUrl = '';
   for (const coverExtension of LOCAL_LIBRARY_COVER_EXTS) {
     const candidate = base + coverExtension;
-    if (fs.existsSync(candidate)) { sidecarCoverUrl = localMediaUrl(candidate); break; }
+    if (sidecarExists(candidate)) { sidecarCoverUrl = localMediaUrl(candidate); break; }
   }
   if (!sidecarCoverUrl) {
     for (const name of LOCAL_LIBRARY_COVER_NAMES) {
       for (const coverExtension of LOCAL_LIBRARY_COVER_EXTS) {
         const candidate = path.join(directory, name + coverExtension);
-        if (fs.existsSync(candidate)) { sidecarCoverUrl = localMediaUrl(candidate); break; }
+        if (sidecarExists(candidate)) { sidecarCoverUrl = localMediaUrl(candidate); break; }
       }
       if (sidecarCoverUrl) break;
     }
@@ -2579,6 +2591,8 @@ function localLibraryEntryFromPath(filePath, rootPath) {
   let sidecarLyricPath = '';
   for (const lyricExtension of LOCAL_LIBRARY_LYRIC_EXTS) {
     const candidate = base + lyricExtension;
+    // 名字不在目录项里就不必再 stat；真存在时才读，保持原有大小上限判断。
+    if (directoryEntryNames && !directoryEntryNames.has(localLibraryEntryNameKey(path.basename(candidate)))) continue;
     try {
       const lyricStat = fs.statSync(candidate);
       if (lyricStat.isFile() && lyricStat.size > 0 && lyricStat.size <= 512 * 1024) {
@@ -2618,12 +2632,13 @@ async function scanLocalMusicFolder(folderPath) {
     let entries = [];
     try { entries = await fs.promises.readdir(absoluteDirectory, { withFileTypes: true }); } catch (_) { continue; }
     entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }));
+    const directoryEntryNames = new Set(entries.filter((entry) => entry.isFile()).map((entry) => localLibraryEntryNameKey(entry.name)));
     for (const entry of entries) {
       if (++visited > 60000) break;
       const relativeEntry = path.join(relativeDirectory, entry.name);
       if (entry.isDirectory()) { stack.push(relativeEntry); continue; }
       if (!entry.isFile()) continue;
-      const item = localLibraryEntryFromPath(path.join(root, relativeEntry), root);
+      const item = localLibraryEntryFromPath(path.join(root, relativeEntry), root, { directoryEntryNames });
       if (item) { applyCachedLocalLibraryEntryMetadata(item); files.push(item); }
     }
     if (visited > 60000) break;
